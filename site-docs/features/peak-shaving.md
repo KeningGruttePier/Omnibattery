@@ -28,6 +28,24 @@ Grid covers 3,000 W and the battery only 1,500 W
 
 If consumption were 2,000 W (< limit), the battery would not discharge at all.
 
+## Peak shaving for excluded devices
+
+The optional **Peak Shaving for Excluded Devices** switch extends the peak
+limit to loads that are normally excluded from battery coverage. It is disabled
+by default.
+
+When enabled and battery SOC is above the conservation threshold, normal home
+coverage continues unchanged. If the excluded share would leave grid import
+above the configured peak limit, the battery covers only that excess.
+
+For example, with 1,000 W of normal home demand, 4,000 W of excluded demand and
+a 3,000 W peak limit, the battery supplies 2,000 W: 1,000 W for the home and
+1,000 W to shave the excluded-device peak. Grid import remains at 3,000 W.
+
+When SOC is below the conservation threshold, the existing capacity-protection
+behaviour already applies the peak limit to total demand. Battery minimum SOC,
+available discharge power and other safety restrictions always remain in force.
+
 ## When to use it
 
 Useful when:

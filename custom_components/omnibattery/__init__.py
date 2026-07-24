@@ -95,6 +95,7 @@ from .const import (
     DEFAULT_SYSTEM_MAX_CHARGE_POWER,
     DEFAULT_SYSTEM_MAX_DISCHARGE_POWER,
     CONF_CAPACITY_PROTECTION_ENABLED,
+    CONF_CAPACITY_PROTECTION_EXCLUDED_DEVICES,
     CONF_CAPACITY_PROTECTION_SOC_THRESHOLD,
     CONF_CAPACITY_PROTECTION_LIMIT,
     DEFAULT_CAPACITY_PROTECTION_SOC,
@@ -660,9 +661,12 @@ class ChargeDischargeController:
 
         # Capacity Protection Mode state
         self.capacity_protection_enabled = config_entry.data.get(CONF_CAPACITY_PROTECTION_ENABLED, False)
+        self.capacity_protection_excluded_devices = config_entry.data.get(
+            CONF_CAPACITY_PROTECTION_EXCLUDED_DEVICES, False
+        )
         self.capacity_protection_soc_threshold = config_entry.data.get(CONF_CAPACITY_PROTECTION_SOC_THRESHOLD, DEFAULT_CAPACITY_PROTECTION_SOC)
         self.capacity_protection_limit = config_entry.data.get(CONF_CAPACITY_PROTECTION_LIMIT, DEFAULT_CAPACITY_PROTECTION_LIMIT)
-        self._capacity_protection_active = False  # True when SOC < threshold (protection is intervening)
+        self._capacity_protection_active = False  # True while either peak-shaving mode intervenes
         self._excluded_included_adjustment = 0.0  # Tracks excluded device adjustment for included_in_consumption devices
         self._capacity_protection_status = {
             "active": False,
@@ -670,7 +674,7 @@ class ChargeDischargeController:
             "soc_threshold": self.capacity_protection_soc_threshold,
             "peak_limit": self.capacity_protection_limit,
             "estimated_house_load": None,
-            "action": "idle",  # idle, shaving, conserving
+            "action": "idle",  # idle, shaving, shaving_excluded, conserving, charging
             "original_target": None,
             "adjusted_target": None,
         }
@@ -1163,6 +1167,9 @@ class ChargeDischargeController:
             CONF_ROUND_TRIP_EFFICIENCY, DEFAULT_ROUND_TRIP_EFFICIENCY
         )
         self.capacity_protection_enabled = self.config_entry.data.get(CONF_CAPACITY_PROTECTION_ENABLED, False)
+        self.capacity_protection_excluded_devices = self.config_entry.data.get(
+            CONF_CAPACITY_PROTECTION_EXCLUDED_DEVICES, False
+        )
         self.capacity_protection_soc_threshold = self.config_entry.data.get(CONF_CAPACITY_PROTECTION_SOC_THRESHOLD, DEFAULT_CAPACITY_PROTECTION_SOC)
         self.capacity_protection_limit = self.config_entry.data.get(CONF_CAPACITY_PROTECTION_LIMIT, DEFAULT_CAPACITY_PROTECTION_LIMIT)
 
@@ -2319,6 +2326,10 @@ class ChargeDischargeController:
             self._capacity_protection_active = False
             self._capacity_protection_status["active"] = False
             self._capacity_protection_status["action"] = "disabled"
+            self._capacity_protection_status["excluded_peak_excess"] = 0
+            self._capacity_protection_status["excluded_devices_enabled"] = (
+                self.capacity_protection_excluded_devices
+            )
             return self.compute_active_target(), sensor_actual
 
         coordinators_with_data = [c for c in self.coordinators if c.data]
@@ -2336,6 +2347,10 @@ class ChargeDischargeController:
         # solar surplus and the controller starts a short discharge/stop loop.
         active_target = self.compute_active_target_excluding("capacity_protection")
         original_target = active_target
+        estimated_house_load = (
+            sensor_actual + self._excluded_included_adjustment
+        ) - self.previous_power
+        self._capacity_protection_status["excluded_peak_excess"] = 0
 
         if avg_soc < self.capacity_protection_soc_threshold:
             # Estimate house consumption: grid reading minus what the battery is currently doing
@@ -2343,8 +2358,6 @@ class ChargeDischargeController:
             # Add back excluded-device adjustment so capacity protection sees the REAL grid load
             # including devices marked as "included in consumption". This ensures capacity
             # protection can shave peaks even when those devices are normally excluded.
-            estimated_house_load = (sensor_actual + self._excluded_included_adjustment) - self.previous_power
-
             if estimated_house_load > self.capacity_protection_limit:
                 # House load exceeds peak limit: discharge only the excess
                 # Undo excluded-device adjustment so PD controller can discharge against real grid
@@ -2412,20 +2425,63 @@ class ChargeDischargeController:
                     "original_target": original_target, "adjusted_target": active_target,
                 })
         else:
-            # SOC above threshold: protection not needed
+            # Above the conservation threshold, normal self-consumption remains
+            # active. Optionally reduce only the excluded share that would leave
+            # grid import above the peak limit:
+            #
+            #   physical grid target = normal target + excluded adjustment
+            #
+            # Adding just the excess back to sensor_actual preserves the normal
+            # target while making the PD controller cover the above-limit share.
             self.remove_setpoint_override("capacity_protection")
             active_target = self.compute_active_target()
-            self._capacity_protection_active = False
-            self._capacity_protection_status.update({
-                "active": False, "avg_soc": round(avg_soc, 1),
-                "estimated_house_load": None,
-                "action": "idle",
-                "original_target": original_target, "adjusted_target": active_target,
-            })
+            excluded_peak_excess = 0.0
+            if (
+                self.capacity_protection_excluded_devices
+                and self._excluded_included_adjustment > 0
+            ):
+                excluded_peak_excess = max(
+                    0.0,
+                    active_target
+                    + self._excluded_included_adjustment
+                    - self.capacity_protection_limit,
+                )
+
+            if excluded_peak_excess > 0:
+                sensor_actual += excluded_peak_excess
+                self._capacity_protection_active = True
+                self._capacity_protection_status.update({
+                    "active": True, "avg_soc": round(avg_soc, 1),
+                    "estimated_house_load": round(estimated_house_load),
+                    "action": "shaving_excluded",
+                    "excluded_peak_excess": round(excluded_peak_excess),
+                    "original_target": original_target,
+                    "adjusted_target": active_target,
+                })
+                _LOGGER.info(
+                    "Peak shaving for excluded devices ACTIVE: excluded=%.0fW, "
+                    "excess=%.0fW, limit=%dW",
+                    self._excluded_included_adjustment,
+                    excluded_peak_excess,
+                    self.capacity_protection_limit,
+                )
+            else:
+                self._capacity_protection_active = False
+                self._capacity_protection_status.update({
+                    "active": False, "avg_soc": round(avg_soc, 1),
+                    "estimated_house_load": None,
+                    "action": "idle",
+                    "excluded_peak_excess": 0,
+                    "original_target": original_target,
+                    "adjusted_target": active_target,
+                })
 
         # Always keep thresholds up to date
         self._capacity_protection_status["soc_threshold"] = self.capacity_protection_soc_threshold
         self._capacity_protection_status["peak_limit"] = self.capacity_protection_limit
+        self._capacity_protection_status["excluded_devices_enabled"] = (
+            self.capacity_protection_excluded_devices
+        )
         return active_target, sensor_actual
 
     def _is_capacity_protection_soc_limited(self) -> bool:
@@ -5675,6 +5731,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             CONF_DELAY_SOC_SETPOINT_ENABLED,
             CONF_ENABLE_TEMP_CHARGE_LIMIT,
             CONF_CAPACITY_PROTECTION_ENABLED,
+            CONF_CAPACITY_PROTECTION_EXCLUDED_DEVICES,
             CONF_ENABLE_HOURLY_BALANCE,
         )
         if _key not in entry.data

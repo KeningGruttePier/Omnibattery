@@ -1160,6 +1160,9 @@
       "capacity_protection": {
         "name": "Reducción de Picos"
       },
+      "capacity_protection_excluded_devices": {
+        "name": "Reducción de Picos para Dispositivos Excluidos"
+      },
       "backup_function": {
         "name": "Función de Respaldo"
       },

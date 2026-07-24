@@ -429,6 +429,7 @@ WEEKDAY_MAP = {
 
 # Capacity Protection Mode Configuration
 CONF_CAPACITY_PROTECTION_ENABLED = "capacity_protection_enabled"
+CONF_CAPACITY_PROTECTION_EXCLUDED_DEVICES = "capacity_protection_excluded_devices"
 CONF_CAPACITY_PROTECTION_SOC_THRESHOLD = "capacity_protection_soc_threshold"
 CONF_CAPACITY_PROTECTION_LIMIT = "capacity_protection_limit"
 

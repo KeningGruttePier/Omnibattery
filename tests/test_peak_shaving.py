@@ -11,6 +11,7 @@ from custom_components.omnibattery import ChargeDischargeController
 def _controller(*, previous_power: float):
     ctrl = object.__new__(ChargeDischargeController)
     ctrl.capacity_protection_enabled = True
+    ctrl.capacity_protection_excluded_devices = False
     ctrl.capacity_protection_soc_threshold = 25
     ctrl.capacity_protection_limit = 3000
     ctrl.coordinators = [SimpleNamespace(data={"battery_soc": 24})]
@@ -56,3 +57,65 @@ def test_solar_surplus_charge_remains_allowed():
     assert target == 0.0
     assert ctrl._capacity_protection_force_idle is False
     assert ctrl._capacity_protection_status["action"] == "charging"
+
+
+def test_excluded_devices_switch_is_backward_compatible_when_off():
+    ctrl = _controller(previous_power=0.0)
+    ctrl.coordinators = [SimpleNamespace(data={"battery_soc": 80})]
+    ctrl._excluded_included_adjustment = 4000.0
+
+    target, sensor = ctrl._apply_capacity_protection(
+        1000.0, active_target=0.0
+    )
+
+    assert target == 0.0
+    assert sensor == 1000.0
+    assert ctrl._capacity_protection_active is False
+    assert ctrl._capacity_protection_status["action"] == "idle"
+
+
+def test_excluded_devices_switch_covers_only_demand_above_peak_limit():
+    ctrl = _controller(previous_power=0.0)
+    ctrl.coordinators = [SimpleNamespace(data={"battery_soc": 80})]
+    ctrl.capacity_protection_excluded_devices = True
+    ctrl._excluded_included_adjustment = 4000.0
+
+    target, sensor = ctrl._apply_capacity_protection(
+        1000.0, active_target=0.0
+    )
+
+    assert target == 0.0
+    assert sensor == 2000.0
+    assert ctrl._capacity_protection_active is True
+    assert ctrl._capacity_protection_status["action"] == "shaving_excluded"
+    assert ctrl._capacity_protection_status["excluded_peak_excess"] == 1000
+
+
+def test_excluded_devices_switch_preserves_normal_home_coverage():
+    ctrl = _controller(previous_power=-2000.0)
+    ctrl.coordinators = [SimpleNamespace(data={"battery_soc": 80})]
+    ctrl.capacity_protection_excluded_devices = True
+    ctrl._excluded_included_adjustment = 4000.0
+
+    target, sensor = ctrl._apply_capacity_protection(
+        -1000.0, active_target=0.0
+    )
+
+    assert target == 0.0
+    assert sensor == 0.0
+    assert ctrl._capacity_protection_status["action"] == "shaving_excluded"
+
+
+def test_excluded_devices_below_peak_limit_keep_normal_exclusion():
+    ctrl = _controller(previous_power=0.0)
+    ctrl.coordinators = [SimpleNamespace(data={"battery_soc": 80})]
+    ctrl.capacity_protection_excluded_devices = True
+    ctrl._excluded_included_adjustment = 2500.0
+
+    target, sensor = ctrl._apply_capacity_protection(
+        1000.0, active_target=0.0
+    )
+
+    assert target == 0.0
+    assert sensor == 1000.0
+    assert ctrl._capacity_protection_active is False

@@ -202,6 +202,9 @@ class CapacityProtectionStatusSensor(BinarySensorEntity):
         status = self.controller._capacity_protection_status
         return {
             "enabled": self.controller.capacity_protection_enabled,
+            "excluded_devices_enabled": (
+                self.controller.capacity_protection_excluded_devices
+            ),
             "avg_soc": status.get("avg_soc"),
             "soc_threshold": status.get("soc_threshold"),
             "peak_limit_w": status.get("peak_limit"),
@@ -209,6 +212,7 @@ class CapacityProtectionStatusSensor(BinarySensorEntity):
             "action": status.get("action"),
             "original_target_w": status.get("original_target"),
             "adjusted_target_w": status.get("adjusted_target"),
+            "excluded_peak_excess_w": status.get("excluded_peak_excess", 0),
         }
 
     @property
