@@ -2,11 +2,13 @@
 
 Exercises ``_read_raw`` and ``async_write_register`` against a scripted fake
 pymodbus client (no hardware, no HA). These pin three deliberate properties:
-the standard profile uses a single wrapper attempt with pymodbus-internal
-same-transaction-ID retries; the queued-gateway opt-in also sends once per
-transaction ID (no resend under a new tid, widened response window instead,
-issue #77); and failures do not reconnect from inside the loop (the coordinator
-owns reconnection; reconnecting here would storm the v3 single TCP slot, #361).
+the default is a SINGLE wrapper attempt (retries are pymodbus-internal so they
+re-send the same transaction_id and a late reply still matches — wrapper
+retries minted a new tid per attempt, turning every late reply into a
+"transaction_id mismatch, Skipping" error), the same-connection retry loop
+still works for callers that opt in, and a connection error does NOT trigger
+a reconnect from inside the loop (the coordinator owns reconnection;
+reconnecting here would storm the v3 single TCP slot, issue #361).
 
 ``retry_delay=0`` keeps the backoff sleeps at zero so the tests run instantly.
 """
@@ -84,19 +86,11 @@ def test_read_success_returns_registers():
 
 
 def test_read_default_is_single_attempt():
-    """Default = one wrapper attempt; the client selects pymodbus's policy."""
+    """Default = one wrapper attempt: retries are pymodbus-internal (same tid),
+    a wrapper-level retry would mint a new tid and discard the late reply."""
     fake = _FakeClient(read_results=[asyncio.TimeoutError(), _Result([5])])
     c = _client_with_fake(fake)
     regs = asyncio.run(c._read_raw(0x0010, 1, retry_delay=0))
-    assert regs is None
-    assert fake.read_calls == 1
-
-
-def test_queued_gateway_single_attempt_no_resend_on_short_read():
-    """The opt-in sends once per TID: a short read is not resent (#77)."""
-    fake = _FakeClient(read_results=[_Result([1])])
-    c = _client_with_fake(fake, queued_gateway_compatibility=True)
-    regs = asyncio.run(c._read_raw(0x0010, 2, retry_delay=0))
     assert regs is None
     assert fake.read_calls == 1
 
@@ -183,17 +177,9 @@ def test_write_success_returns_true():
 
 
 def test_write_default_is_single_attempt():
-    """Same wrapper property as the read path."""
+    """Same property as the read path: pymodbus owns the retries."""
     fake = _FakeClient(write_results=[asyncio.TimeoutError(), _Result(error=False)])
     c = _client_with_fake(fake)
-    assert asyncio.run(c.async_write_register(0x2000, 1, retry_delay=0)) is False
-    assert fake.write_calls == 1
-
-
-def test_queued_gateway_single_attempt_no_resend_on_write_timeout():
-    """The opt-in sends the write once: a timeout is not resent under a new tid (#77)."""
-    fake = _FakeClient(write_results=[asyncio.TimeoutError()])
-    c = _client_with_fake(fake, queued_gateway_compatibility=True)
     assert asyncio.run(c.async_write_register(0x2000, 1, retry_delay=0)) is False
     assert fake.write_calls == 1
 

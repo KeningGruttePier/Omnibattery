@@ -16,7 +16,7 @@ En cada ciclo del controlador PD (dirigido por eventos, a la cadencia del sensor
 
 El offset se elimina automáticamente cuando:
 
-- La hora actual está fuera de todas las [franjas horarias de descarga](../configuration/time-slots.md) configuradas (o se aplica 24/7 si no hay franjas definidas).
+- La hora actual está fuera de todas las [franjas horarias que permiten la descarga](../configuration/time-slots.md) configuradas (o se aplica 24/7 si no hay franjas definidas).
 - El modo manual está activo.
 
 ## Fuente de datos

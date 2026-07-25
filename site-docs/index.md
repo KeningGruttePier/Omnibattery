@@ -1,6 +1,6 @@
 ![Omnibattery](assets/logo-github.png){ width="420" }
 
-**Omnibattery** is a custom Home Assistant integration to monitor and control pluggable solar batteries — Marstek Venus (E v2/v3, Venus A and Venus D series) and Zendure SolarFlow (2400 AC+ / AC Pro) — via Modbus TCP or local HTTP.
+**Omnibattery** is a custom Home Assistant integration to monitor and control pluggable solar batteries — Marstek Venus (E v2/v3, Venus A and Venus D series), Zendure SolarFlow (2400 AC+ / AC Pro), and Anker SOLIX Solarbank Max AC / 4 E5000 Pro — via Modbus TCP or local HTTP.
 
 <div class="grid cards" markdown>
 
@@ -38,7 +38,7 @@ Three tabs:
 - **No-PD direct-tracking mode** (opt-in): the battery follows the consumption sensor 1:1 in a single cycle — no integral, derivative, smoothing or rate limiter — for installations that prefer raw tracking over the PD control law.
 - **Predictive charging**: three modes (time slot, dynamic pricing, real-time price — including Tibber) that charge from the grid only when the energy balance requires it. Uses a 7-day rolling average of real household consumption to decide whether grid charging is needed.
 - **Multi-battery management**: smart selection with SOC priorities, energy hysteresis and efficiency zone operation.
-- **Discharge time slots**: define time windows and per-slot target grid power levels.
+- **Time slots**: independently control charge and discharge windows, with per-slot SOC and power parameters.
 - **Peak shaving**: reserves battery capacity to cover demand spikes above a configurable power threshold.
 - **Weekly full charge**: charges to 100% once a week for cell balancing.
 - **Cell balance monitor**: measures the voltage spread between the strongest and weakest cell after each full charge; tracks imbalance trends over time, sends alerts for moderate or high imbalance, and blocks discharge during the open-circuit voltage rest period.

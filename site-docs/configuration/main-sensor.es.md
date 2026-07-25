@@ -12,9 +12,11 @@ Sensor de Home Assistant que mide el intercambio de potencia con la red (en **W*
 !!! warning "Frecuencia de actualización"
     El sensor debe actualizarse lo más rápido posible. El controlador es **dirigido por eventos** —recalcula cada vez que este sensor publica un valor nuevo—, así que la frecuencia de actualización del sensor *es* la frecuencia de control: un sensor más rápido implica una respuesta más rápida y precisa. (Un watchdog de 2 segundos sigue ejecutando el ciclo si el sensor se queda en silencio.)
 
-    El consumo del hogar puede variar varios kilovatios en fracciones de segundo (arranque de electrodomésticos, horno, lavadora…). Un sensor que reporta cada 10 segundos o más introduce un desfase que hace que el controlador reaccione a una situación que ya no existe, provocando sobreoscilaciones o correcciones innecesarias.
+    El consumo del hogar puede variar varios kilovatios en fracciones de segundo (arranque de electrodomésticos, horno, lavadora…). Los sensores lentos son compatibles, pero su retraso puede hacer que el controlador reaccione a una situación que ya ha cambiado, reduciendo la calidad de la regulación.
 
     **Recomendado: actualización cada 1–2 segundos.** Los dispositivos como Shelly EM/EM3 soportan este intervalo de forma nativa.
+
+    Omnibattery sigue siempre el último valor publicado hasta que supera los **65 segundos de antigüedad**, independientemente del polling rate del sensor. Los sensores que actualizan repetidamente cada 10 segundos o más generan un único aviso de Repairs de Home Assistant por ejecución de la integración; no se emiten avisos recurrentes en el log. Si el sensor es rápido después del siguiente reinicio, el Repair persistente se elimina tras tres actualizaciones.
 
 ### Detección automática de kW
 

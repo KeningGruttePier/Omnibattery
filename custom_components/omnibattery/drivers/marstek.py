@@ -87,7 +87,15 @@ def _load_definitions(version: str) -> dict[str, list[dict]]:
             BINARY_SENSOR_DEFINITIONS_V3,
             BUTTON_DEFINITIONS_V3,
         )
-        sensor = SENSOR_DEFINITIONS_V3
+        # Venus E v3 firmware's daily energy registers are unreliable.  Do not
+        # expose or poll them; the sensor platform derives the same entity keys
+        # from the lifetime counters, as it does for Anker.
+        sensor = [
+            definition
+            for definition in SENSOR_DEFINITIONS_V3
+            if definition["key"]
+            not in {"total_daily_charging_energy", "total_daily_discharging_energy"}
+        ]
         number = NUMBER_DEFINITIONS_V3
         select = SELECT_DEFINITIONS_V3
         switch = SWITCH_DEFINITIONS_V3
@@ -162,7 +170,6 @@ class MarstekModbusDriver(BatteryDriver):
         definitions: Optional[list[dict]] = None,
         client: Optional[MarstekModbusClient] = None,
         serial_port: Optional[str] = None,
-        queued_gateway_compatibility: bool = False,
     ) -> None:
         """Build the driver.
 
@@ -188,7 +195,6 @@ class MarstekModbusDriver(BatteryDriver):
                 is_v3=self._is_v3_family,
                 slave_id=slave_id,
                 serial_port=serial_port,
-                queued_gateway_compatibility=queued_gateway_compatibility,
             )
         self._client = client
 
@@ -263,6 +269,9 @@ class MarstekModbusDriver(BatteryDriver):
             has_alarm_registers="alarm_status" in self._telemetry_index,
             has_rs485_control=REGISTER_MAP.get(version, {}).get("rs485_control") is not None,
             has_energy_counters=True,  # battery_total_energy + total_*_energy registers
+            # v3's hardware daily registers are unreliable.  The entity layer
+            # derives them from the reliable lifetime counters instead.
+            has_daily_energy_counters=version != "v3",
             # v3/vA/vD pace at 150 ms/frame through a single TCP slot, so a setpoint
             # write + the inverter engaging settles slower than v2's 50 ms/frame.
             actuator_latency_s=0.8 if self._is_v3_family else 0.3,
@@ -273,11 +282,6 @@ class MarstekModbusDriver(BatteryDriver):
     @property
     def capabilities(self) -> DriverCapabilities:
         return self._capabilities
-
-    @property
-    def queued_gateway_compatibility(self) -> bool:
-        """Whether the transport client runs in narrowed queued-gateway mode."""
-        return self._client.queued_gateway_compatibility
 
     _MODEL_LABELS: dict[str, str] = {
         "v2": "Venus E v2",
@@ -692,7 +696,7 @@ class MarstekModbusDriver(BatteryDriver):
         return value == _RS485_ENABLE
 
     @classmethod
-    async def probe(cls, host: str, port: int, version: str, slave_id: int = 1, serial_port: Optional[str] = None, queued_gateway_compatibility: bool = False) -> bool:
+    async def probe(cls, host: str, port: int, version: str, slave_id: int = 1, serial_port: Optional[str] = None) -> bool:
         """Test whether a Marstek battery responds for this version.
 
         Creates a temporary client, reads the SOC register, then tears it down.
@@ -711,7 +715,6 @@ class MarstekModbusDriver(BatteryDriver):
             is_v3=version in _V3_FAMILY,
             slave_id=slave_id,
             serial_port=serial_port,
-            queued_gateway_compatibility=queued_gateway_compatibility,
         )
         try:
             if not await client.async_connect():

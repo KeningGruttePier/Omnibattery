@@ -16,7 +16,7 @@ Every PD control cycle (event-driven, at the grid sensor's cadence) the manager:
 
 The offset is cleared automatically when:
 
-- The current time is outside all configured [discharge time slots](../configuration/time-slots.md) (or 24/7 when no slots are defined).
+- The current time is outside all configured [time slots that allow discharge](../configuration/time-slots.md) (or 24/7 when no slots are defined).
 - Manual mode is active.
 
 ## Data source

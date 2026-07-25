@@ -124,12 +124,11 @@ class MaxSocChargeManager:
     def _bms_cut_signature(coordinator, data: dict) -> bool:
         """Return True when the BMS refuses a charge we are actually commanding.
 
-        ≤10 W + Standby on its own is ambiguous: a battery that is merely idle —
-        not allocated charge this cycle (solar lull, PD prioritising another
-        battery, any other blocker) — reads exactly the same without being full.
-        Gating on the commanded set-point is what separates a real BMS cut from
-        "nobody asked it to charge". Same gate as the weekly twin
-        (weekly_full_charge.tick_bms_cutoff).
+        <=10 W + Standby on its own is ambiguous: a battery that is merely idle,
+        not allocated charge this cycle, reads exactly the same without being
+        full. Gating on the commanded set-point separates a real BMS cut from
+        "nobody asked it to charge". This is the same gate used by the weekly
+        full-charge path.
         """
         power = data.get("battery_power")
         inv = data.get("inverter_state")
@@ -186,12 +185,11 @@ class MaxSocChargeManager:
             except (TypeError, ValueError):
                 accepting = False
             if accepting:
-                # Battery is taking charge → genuinely not full. Reset.
+                # The battery is accepting charge, so it is genuinely not full.
                 c._normal_balance_recal_cutoff_count.pop(coordinator, None)
-            # else: idle / not commanded to charge this cycle — freeze the counter
-            # (neither increment nor reset). A confirmed cutoff stops the battery
-            # from being commanded, which would otherwise reset the very counter
-            # that is about to latch it.
+            # When idle or not commanded, freeze the counter: neither increment
+            # nor reset it. A confirmed cutoff stops the command, and resetting
+            # here would erase the evidence that is about to latch the cutoff.
         return True
 
     def _clear_recal_state(self, coordinator) -> None:
@@ -265,12 +263,12 @@ class MaxSocChargeManager:
                 # the cell relaxes, which would pin the cell at the top voltage.
                 #
                 # Also latch on the BMS-cutoff signature (a charge we commanded
-                # collapsed to ~0 W with the inverter in standby while still in the
-                # top zone). The cell relaxes below the pause voltage within a poll
-                # or two of the cut, so a 2 s poll may never observe vmax >= pause
-                # and the latch would otherwise never arm — the controller keeps
-                # re-commanding charge and the BMS cuts again, an endless
-                # top-of-charge ping-pong.
+                # collapsed to ~0 W with the inverter in standby while still in
+                # the top zone). The
+                # cell relaxes below the pause voltage within a poll or two of the
+                # cut, so a 2 s poll may never observe vmax >= pause and the latch
+                # would otherwise never arm — the controller keeps re-commanding
+                # charge and the BMS cuts again, an endless top-of-charge ping-pong.
                 bms_cut_signature = in_zone and self._bms_cut_signature(
                     coordinator, data
                 )

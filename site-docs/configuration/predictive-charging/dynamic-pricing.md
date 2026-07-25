@@ -4,7 +4,7 @@ Automatically selects the **cheapest hours of the day** to cover the calculated 
 
 ## Compatible price integrations
 
-- **Nordpool**
+- **Nord Pool** — both the official Home Assistant integration and the HACS integration
 - **PVPC** (ESIOS REE, Spain)
 - **CKW** (Switzerland)
 - **EPEX Spot** (e.g. aWATTar)
@@ -14,12 +14,15 @@ Automatically selects the **cheapest hours of the day** to cover the calculated 
 !!! note "Tibber needs no sensor"
     Selecting **Tibber** as the price integration leaves the *Electricity price sensor* field unused — the engine calls the `tibber.get_prices` service (today's prices, plus tomorrow's after ~13:00), caches the slots and refreshes hourly. The official Tibber integration must be configured in HA.
 
+!!! note "Official Nord Pool and HACS are selected the same way"
+    Select **Nordpool** and choose a price entity from the provider. A HACS sensor continues to be read from its `raw_today` / `raw_tomorrow` attributes. If that sensor has `price_in_cents: true`, Omnibattery automatically converts its slots and current price to major currency/kWh, so thresholds must still be entered in €/kWh (or the corresponding major currency), not cents. For an entity from Home Assistant's official Nord Pool integration, Omnibattery automatically resolves its market area, calls `nordpool.get_prices_for_date` for today, converts the returned currency/MWh values to currency/kWh, and refreshes the cache hourly. No separate provider option or template sensor is needed.
+
 ## Configuration
 
 | Field | Description |
 |---|---|
-| **Price integration type** | Nordpool / PVPC / CKW / EPEX Spot / ENTSO-e |
-| **Electricity price sensor** | HA entity with the current price (and hourly forecast attributes) |
+| **Price integration type** | Nordpool / PVPC / CKW / EPEX Spot / ENTSO-e / Tibber |
+| **Electricity price sensor** | HA price entity. For Nord Pool, select either an official-integration entity or the existing HACS sensor; unused for Tibber |
 | **Max price threshold (€)** | (Optional) Price ceiling; does not charge even during "cheap" hours if the price exceeds this value. Also used as the discharge threshold when price-based discharge control is enabled |
 | **Only discharge when price is above threshold** | (Optional) Price-gated discharge — see below |
 | **Discharge price floor (€)** | (Optional) Separate floor for price-gated discharge — opens an idle band between the charge ceiling and this floor. Empty = reuse the max price threshold for both. See [Separate discharge price floor](#separate-discharge-price-floor) |
@@ -82,15 +85,35 @@ In the idle band the battery neither grid-charges nor discharges — but **solar
 
 Both thresholds are also exposed as live `number` entities (**Max Price Threshold** and **Discharge Price Floor**) so automations can rewrite them without entering the options flow.
 
+### Minimum arbitrage margin
+
+A fixed charge ceiling answers "is this price low?" but not "is it low *enough*". Those come apart in winter, when a flat price curve can sit entirely below the ceiling while offering no spread to trade against. Charging then runs the battery through a cycle that the round-trip losses eat.
+
+The optional **Minimum Arbitrage Margin** makes the ceiling move with the day instead. At each evaluation the engine takes the most expensive hours still ahead, as many as it plans to charge for, and requires:
+
+```
+expected_discharge_price × round_trip_efficiency − slot_price ≥ margin
+```
+
+Slots that fail are dropped. If none survive, the day is skipped entirely.
+
+The margin is **empty by default**, which leaves slot selection exactly as it was. Setting it back to `0` disables it again. When set, it applies *on top of* the max price threshold, and whichever ceiling is stricter wins.
+
+The gate runs on the 00:05 evaluation only. The evening recharge after a poor solar day is a deficit-driven safety top-up rather than an arbitrage trade, and by then the remaining horizon holds no expensive hours to price against, so applying the gate there would block every recharge it exists to perform.
+
+**Round-Trip Efficiency** (default `0.85`) is the AC-to-AC ratio used to value a stored kWh. Lower values tighten the gate. Note this is the *marginal* ratio (extra kWh out per extra kWh in), not the gross figure you get by dividing lifetime discharge by lifetime charge, which also carries standby drain. Standby is paid whether or not you cycle, so folding it in here would refuse profitable charges.
+
+Both are exposed as live `number` entities, and the evaluation notification reports the resulting ceiling so a skipped night is traceable.
+
 ### Interaction with time slots
 
-If discharge time slots are configured, **both conditions must be met** for the battery to discharge:
+If time slots are configured to restrict discharge, **both conditions must be met** for the battery to discharge:
 
 ```
-Discharge allowed = within_time_slot AND current_price > threshold
+Discharge allowed = within_discharge_time_slot AND current_price > threshold
 ```
 
-Outside the slot the battery never discharges. Inside the slot, it only discharges when the price is high enough.
+Outside a slot that allows discharge, the battery never discharges. Inside one, it only discharges when the price is high enough.
 
 ### Effect on the PD controller
 

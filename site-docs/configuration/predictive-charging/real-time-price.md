@@ -59,10 +59,10 @@ The inverse logic of charging: charge when price is low, discharge when price is
 
 ### Interaction with time slots
 
-If discharge time slots are configured, **both conditions must be met**:
+If time slots are configured to restrict discharge, **both conditions must be met**:
 
 ```
-Discharge allowed = within_time_slot AND current_price > threshold
+Discharge allowed = within_discharge_time_slot AND current_price > threshold
 ```
 
 ### Effect on the PD controller

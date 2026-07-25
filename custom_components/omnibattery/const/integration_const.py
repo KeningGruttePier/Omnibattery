@@ -39,14 +39,6 @@ DEFAULT_SLAVE_ID = 1
 CONF_SERIAL_PORT = "serial_port"
 SERIAL_BAUDRATE = 115200
 
-# Experimental per-battery compatibility for queued Modbus TCP-to-RTU
-# gateways. Disabled by default: ordinary v2 connections keep pymodbus's
-# internal same-transaction-id retries. When enabled on v2/TCP, each request is
-# sent once with a widened response window (no resend under a new transaction id,
-# which orphaned late gateway replies) and the control loop re-asserts the
-# setpoint every cycle so a dropped write self-heals (issue #77).
-CONF_QUEUED_GATEWAY_COMPATIBILITY = "queued_gateway_compatibility"
-
 # Maximum power (W) per battery version — used by config_flow to set slider limits
 MAX_POWER_BY_VERSION = {
     "v2": 2500,
@@ -271,6 +263,22 @@ FEEDFORWARD_PULSE_GUARD_S = 30.0      # s: opposite-sign step this soon after a 
 # _apply_zero_cross_hold. Legitimate sustained surplus flips after the window.
 PD_ZERO_CROSS_MIN_HOLD_S = 5.0
 
+# A grid-power sensor at or above this interval is slow enough to warrant setup
+# guidance and a Repairs warning. Slow sensors remain supported: their latest
+# reading is authoritative until MAX_SENSOR_STALE_S has elapsed.
+SLOW_SENSOR_WARNING_INTERVAL_S = 10.0
+
+# Maximum age of the latest grid-power reading before the watchdog may perform a
+# stale safety recalculation. This is intentionally time-based rather than a
+# number of 2 s watchdog cycles, so scheduler phase and delayed cycles cannot
+# shorten the promised tolerance.
+MAX_SENSOR_STALE_S = 65.0
+
+# Consecutive real main-sensor intervals at the same cadence class before creating
+# or clearing the slow-sensor repair. Debouncing prevents a single outage/restart
+# gap from flagging an otherwise fast sensor.
+SLOW_SENSOR_WARN_INTERVALS = 3
+
 # An actuator at or below this latency (seconds, DriverCapabilities.actuator_latency_s)
 # reaches its setpoint and reflects it in telemetry within one poll. Such drivers do
 # the hot-path readback and use the measured-power feedforward; slower ones (Zendure
@@ -395,6 +403,15 @@ EXTERNAL_NET_BALANCE_CANDIDATES: list[str] = ["sensor.balance_neto"]
 
 # Weekly Full Charge Delay Constants
 CHARGE_EFFICIENCY = 0.85  # Conservative factor for charge power estimation
+
+# Round-trip efficiency used by the arbitrage-margin gate (see
+# CONF_MIN_ARBITRAGE_MARGIN). Distinct from CHARGE_EFFICIENCY, which derates
+# charge *power* to size a charging window; this one is the AC-to-AC energy
+# ratio (kWh out / kWh in) used to value a stored kWh. Default matches
+# CHARGE_EFFICIENCY so behavior is unchanged for anyone who does not tune it.
+DEFAULT_ROUND_TRIP_EFFICIENCY = 0.85
+MIN_ROUND_TRIP_EFFICIENCY = 0.50
+MAX_ROUND_TRIP_EFFICIENCY = 1.0
 DELAY_SAFETY_FACTOR = 1.3  # 30% margin on energy balance
 LOW_FORECAST_THRESHOLD_FACTOR = 1.5  # forecast < 1.5 × capacity → bad solar day
 T_START_THRESHOLD_KWH = 0.1  # Threshold to detect solar production start
@@ -557,6 +574,14 @@ CONF_MAX_PRICE_THRESHOLD = "max_price_threshold"
 # while price <= this value; unset → falls back to max_price_threshold so
 # existing single-threshold installs keep identical behavior.
 CONF_DISCHARGE_PRICE_THRESHOLD = "discharge_price_threshold"
+# Minimum arbitrage margin (currency/kWh) required before a slot is eligible for
+# grid charging. Unset (None) → disabled, and slot selection behaves exactly as
+# before. When set, a candidate slot must satisfy
+#   expected_discharge_price * round_trip_efficiency - slot_price >= margin
+# so that charging is skipped on days where the intraday spread cannot repay the
+# conversion losses. Applied on top of (not instead of) CONF_MAX_PRICE_THRESHOLD.
+CONF_MIN_ARBITRAGE_MARGIN = "min_arbitrage_margin"
+CONF_ROUND_TRIP_EFFICIENCY = "round_trip_efficiency"
 
 PREDICTIVE_MODE_TIME_SLOT = "time_slot"
 PREDICTIVE_MODE_DYNAMIC_PRICING = "dynamic_pricing"
@@ -575,9 +600,10 @@ PRICE_INTEGRATION_EPEX = "epex"
 PRICE_INTEGRATION_ENTSOE = "entsoe"
 PRICE_INTEGRATION_TIBBER = "tibber"
 
-# Tibber is service-based (tibber.get_prices) rather than sensor-based: the engine
-# polls the service and caches the slots. How stale the cache may get before a refresh.
+# Tibber and the official Nord Pool integration are service-based rather than
+# forecast-attribute based. How stale either cache may get before a refresh.
 TIBBER_REFRESH_MINUTES = 60
+NORDPOOL_REFRESH_MINUTES = 60
 
 # Configuration Number Definitions (for config entities exposed in the UI)
 CONFIG_NUMBER_DEFINITIONS = [

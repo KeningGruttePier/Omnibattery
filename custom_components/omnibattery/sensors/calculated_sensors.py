@@ -3,10 +3,12 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
+from datetime import date, datetime
+from functools import partial
 
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant, State, callback
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import ExtraStoredData, RestoreEntity
@@ -123,10 +125,25 @@ class MarstekVenusEfficiencySensor(CoordinatorEntity, RestoreEntity, SensorEntit
         charge_energy = self.coordinator.data.get(self._dependency_keys["charge"], 0)
         discharge_energy = self.coordinator.data.get(self._dependency_keys["discharge"], 0)
 
+        # Anker and Venus E v3 only expose lifetime energy registers. Their
+        # derived daily counters share a common midnight baseline, unlike the
+        # independent lifetime counters that can retain different historical
+        # baselines. Prefer that like-for-like pair when it is available.
+        if not self.coordinator.capabilities.has_daily_energy_counters:
+            daily_charge = self.coordinator.data.get("total_daily_charging_energy")
+            daily_discharge = self.coordinator.data.get("total_daily_discharging_energy")
+            if daily_charge is not None and daily_discharge is not None:
+                charge_energy = daily_charge
+                discharge_energy = daily_discharge
+
         if charge_energy <= 0:
             return None
 
-        return round((discharge_energy / charge_energy) * 100, 2)
+        # Hardware lifetime counters are normally a reliable round-trip
+        # measurement. Some devices, however, can expose charge and discharge
+        # counters with different historical baselines. Never publish a
+        # physically impossible efficiency when that happens.
+        return round(min((discharge_energy / charge_energy) * 100, 100.0), 2)
 
     @property
     def extra_state_attributes(self):
@@ -355,6 +372,231 @@ SYNTHETIC_ENERGY_SENSOR_DEFINITIONS: list[dict] = [
      "unit": "kWh", "device_class": "energy", "state_class": "total_increasing",
      "precision": 2, "icon": "mdi:battery-minus-variant"},
 ]
+
+# Daily energy derived from lifetime hardware counters. Anker reports accurate
+# cumulative charge/discharge energy but has no registers that reset at midnight.
+# Keep this separate from SyntheticEnergySensor: using hardware counter deltas is
+# more accurate than integrating instantaneous power at poll cadence.
+CUMULATIVE_DAILY_ENERGY_SENSOR_DEFINITIONS: list[dict] = [
+    {"key": "total_daily_charging_energy", "source_key": "total_charging_energy",
+     "unit": "kWh", "device_class": "energy", "state_class": "total_increasing",
+     "precision": 2, "icon": "mdi:battery-plus-variant"},
+    {"key": "total_daily_discharging_energy", "source_key": "total_discharging_energy",
+     "unit": "kWh", "device_class": "energy", "state_class": "total_increasing",
+     "precision": 2, "icon": "mdi:battery-minus-variant"},
+]
+
+
+@dataclass
+class _CumulativeDailyEnergyData(ExtraStoredData):
+    """Persisted daily accumulator backed by a lifetime hardware counter."""
+
+    kwh: float
+    last_total: float | None
+    reset_date: str
+
+    def as_dict(self) -> dict:
+        """Serialize for Home Assistant's restore-state store."""
+        return {
+            "kwh": self.kwh,
+            "last_total": self.last_total,
+            "reset_date": self.reset_date,
+        }
+
+    @classmethod
+    def from_dict(cls, restored: dict) -> "_CumulativeDailyEnergyData | None":
+        """Rebuild persisted state, rejecting incomplete or malformed data."""
+        try:
+            last_total = restored.get("last_total")
+            return cls(
+                kwh=float(restored["kwh"]),
+                last_total=float(last_total) if last_total is not None else None,
+                reset_date=str(restored["reset_date"]),
+            )
+        except (KeyError, TypeError, ValueError):
+            return None
+
+    def update(self, total: float, today: str) -> None:
+        """Accumulate a lifetime-counter sample into the current local day."""
+        if today != self.reset_date:
+            # The first sample after midnight becomes the new baseline. During
+            # normal operation this loses at most one cumulative-counter poll
+            # interval (30 s); after a long offline period no exact split is possible.
+            self.kwh = 0.0
+            self.last_total = total
+            self.reset_date = today
+            return
+
+        if self.last_total is None:
+            self.last_total = total
+            return
+
+        delta = total - self.last_total
+        self.last_total = total
+        if delta >= 0:
+            self.kwh += delta
+        # A negative delta means the lifetime counter reset or wrapped. Preserve
+        # today's accumulated value and use the new reading as the next baseline.
+
+
+def _legacy_daily_energy_value(last_state: State | None, today: str) -> float | None:
+    """Return today's value from the daily-register entity this replaces.
+
+    The v3 migration keeps the entity ID but changes its implementation from a
+    Modbus register sensor to a derived sensor.  The old sensor has no extra
+    restore data, so retain its last numeric state if Home Assistant recorded it
+    today.  A state from an earlier local day must not leak into a new day's
+    counter.
+    """
+    if last_state is None:
+        return None
+    if dt_util.as_local(last_state.last_updated).date().isoformat() != today:
+        return None
+    try:
+        value = float(last_state.state)
+    except (TypeError, ValueError):
+        return None
+    return value if value >= 0 else None
+
+
+def _highest_daily_energy_value(states: list[State]) -> float | None:
+    """Return the highest valid daily-counter value from recorder states."""
+    values = []
+    for state in states:
+        try:
+            value = float(state.state)
+        except (TypeError, ValueError):
+            continue
+        if value >= 0:
+            values.append(value)
+    return max(values, default=None)
+
+
+class CumulativeDailyEnergySensor(CoordinatorEntity, RestoreEntity, SensorEntity):
+    """Daily charge/discharge energy derived from a lifetime hardware counter."""
+
+    def __init__(
+        self, coordinator: MarstekVenusDataUpdateCoordinator, definition: dict
+    ) -> None:
+        """Initialize the derived daily energy sensor."""
+        super().__init__(coordinator)
+        self.definition = definition
+        self._attr_has_entity_name = True
+        self._attr_translation_key = definition["key"]
+        self._attr_unique_id = f"{coordinator.device_key}_{definition['key']}"
+        self.entity_id = english_entity_id("sensor", coordinator.name, definition["key"])
+        self._attr_device_class = definition.get("device_class")
+        self._attr_state_class = definition.get("state_class")
+        self._attr_native_unit_of_measurement = definition.get("unit")
+        self._attr_icon = definition.get("icon")
+        self._attr_suggested_display_precision = definition.get("precision")
+        self._attr_should_poll = False
+
+        self._key = definition["key"]
+        self._source_key = definition["source_key"]
+        self._precision = definition.get("precision", 2)
+        self._energy_data = _CumulativeDailyEnergyData(
+            kwh=0.0,
+            last_total=None,
+            reset_date=dt_util.now().date().isoformat(),
+        )
+
+    async def async_added_to_hass(self) -> None:
+        """Restore today's accumulator and cumulative-counter baseline."""
+        await super().async_added_to_hass()
+        stored = await self.async_get_last_extra_data()
+        restored = _CumulativeDailyEnergyData.from_dict(stored.as_dict()) if stored else None
+        today = dt_util.now().date().isoformat()
+        if restored is not None and restored.reset_date == today:
+            self._energy_data = restored
+        # On migration from v3's register sensor there is no extra restore
+        # payload: that sensor did not inherit RestoreEntity. A previous release
+        # may also have persisted a small post-migration value before this
+        # recovery runs. Read today's recorder history in either case and keep
+        # the greater value: daily counters are monotonic within a day, so this
+        # preserves the old reading plus any value already accumulated by the new
+        # implementation while ignoring unavailable states and later zeroes.
+        recovered_value = await self._recover_daily_value_from_recorder(today)
+        if recovered_value is None:
+            recovered_value = _legacy_daily_energy_value(
+                await self.async_get_last_state(), today
+            )
+        if recovered_value is not None and recovered_value > self._energy_data.kwh:
+            self._energy_data = _CumulativeDailyEnergyData(
+                recovered_value, self._energy_data.last_total, today
+            )
+        self._publish_daily()
+
+    async def _recover_daily_value_from_recorder(self, today: str) -> float | None:
+        """Recover this entity's current-day state from Home Assistant Recorder."""
+        try:
+            from homeassistant.components.recorder import get_instance, history
+
+            local_tz = dt_util.get_time_zone(self.hass.config.time_zone) or dt_util.UTC
+            start = datetime.combine(
+                date.fromisoformat(today), datetime.min.time(), tzinfo=local_tz
+            )
+            query = partial(
+                history.state_changes_during_period,
+                self.hass,
+                start,
+                entity_id=self.entity_id,
+                include_start_time_state=False,
+            )
+            states_map = await get_instance(self.hass).async_add_executor_job(query)
+        except Exception as err:  # Recorder is optional and may not be ready at boot.
+            _LOGGER.debug("Could not recover %s from recorder: %s", self.entity_id, err)
+            return None
+
+        return _highest_daily_energy_value(states_map.get(self.entity_id, []))
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Consume the newest hardware total and publish the daily delta."""
+        self._accumulate()
+        self._publish_daily()
+        super()._handle_coordinator_update()
+
+    def _accumulate(self) -> None:
+        data = self.coordinator.data
+        if not data:
+            return
+        raw_total = data.get(self._source_key)
+        try:
+            total = float(raw_total)
+        except (TypeError, ValueError):
+            return
+        if total < 0:
+            return
+        self._energy_data.update(total, dt_util.now().date().isoformat())
+
+    def _publish_daily(self) -> None:
+        """Make the derived key available to system aggregates and the panel."""
+        if self.coordinator.data is not None:
+            self.coordinator.data[self._key] = self._energy_data.kwh
+
+    @property
+    def native_value(self) -> float:
+        """Return energy accumulated since local midnight."""
+        return round(self._energy_data.kwh, self._precision)
+
+    @property
+    def extra_restore_state_data(self) -> _CumulativeDailyEnergyData:
+        """Persist raw precision and the last observed lifetime total."""
+        return self._energy_data
+
+    @property
+    def extra_state_attributes(self):
+        """Expose reset metadata useful when diagnosing daily totals."""
+        return {
+            "reset_date": self._energy_data.reset_date,
+            "source": self._source_key,
+        }
+
+    @property
+    def device_info(self):
+        """Return device information."""
+        return self.coordinator.battery_device_info
 
 
 @dataclass

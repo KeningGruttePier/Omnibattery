@@ -12,9 +12,11 @@ A Home Assistant sensor that measures power exchange with the grid (in **W** or 
 !!! warning "Update frequency"
     The sensor should update as fast as possible. The controller is **event-driven** — it recalculates each time this sensor publishes a new value — so the sensor's update rate *is* the control rate: a faster sensor means a faster, more accurate response. (A 2-second watchdog still runs the cycle if the sensor goes quiet.)
 
-    Home consumption can vary by several kilowatts in fractions of a second (appliance start-ups, oven, washing machine…). A sensor that reports every 10 seconds or more introduces a lag that causes the controller to react to a situation that no longer exists, leading to overshoot or unnecessary corrections.
+    Home consumption can vary by several kilowatts in fractions of a second (appliance start-ups, oven, washing machine…). Slow sensors are supported, but their delay means that the controller may react to a situation that has already changed, reducing regulation quality.
 
     **Recommended: 1–2 second update interval.** Devices like Shelly EM/EM3 support this natively.
+
+    Omnibattery always follows the latest published value until it is more than **65 seconds old**, regardless of the sensor's polling rate. Sensors that repeatedly update every 10 seconds or more trigger one Home Assistant Repairs warning per integration run; no recurring log warning is emitted. If the sensor is fast after the next restart, the persisted Repair is cleared after three updates.
 
 ### Automatic kW detection
 

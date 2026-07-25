@@ -64,7 +64,9 @@ async def async_setup_entry(
         if controller:
             entities.append(BatteryAllowChargeSwitch(hass, entry, controller, coordinator))
             entities.append(BatteryAllowDischargeSwitch(hass, entry, controller, coordinator))
-            if coordinator.brand != "zendure":
+            # Marstek-only cell maintenance: voltage taper + active balance need
+            # per-cell voltages Anker/Zendure do not expose the same way.
+            if coordinator.brand not in ("zendure", "anker"):
                 entities.append(BatteryFullChargeVoltageTaperSwitch(hass, entry, controller, coordinator))
                 entities.append(BatteryActiveBalanceModeSwitch(hass, entry, controller, coordinator))
 
@@ -151,6 +153,8 @@ async def async_setup_entry(
     for index in range(len(excluded_devices)):
         entities.append(ExcludedDeviceEnabledSwitch(hass, entry, index))
         entities.append(ExcludedDeviceSolarSurplusSwitch(hass, entry, index))
+        if not excluded_devices[index].get("ev_charger_no_telemetry", False):
+            entities.append(ExcludedDeviceDynamicPowerControlSwitch(hass, entry, index))
         entities.append(ExcludedDeviceCoverHomeSwitch(hass, entry, index))
 
     async_add_entities(entities)
@@ -961,6 +965,12 @@ class WeeklyFullChargeDelaySwitch(SwitchEntity):
         }
 
 
+def _excluded_device_friendly_name(device: dict) -> str:
+    """Derive a readable name from either excluded-device sensor field."""
+    sensor_id = device.get("power_sensor") or device.get("activity_sensor") or "device"
+    return sensor_id.split(".", 1)[-1].replace("_", " ").title()
+
+
 class ExcludedDeviceEnabledSwitch(SwitchEntity):
     """Switch to enable/disable an individual excluded device at runtime.
 
@@ -975,8 +985,7 @@ class ExcludedDeviceEnabledSwitch(SwitchEntity):
         self._device_index = index
 
         device = entry.data.get("excluded_devices", [])[index]
-        sensor_id = device.get("power_sensor", "")
-        friendly = sensor_id.replace("sensor.", "").replace("_", " ").title()
+        friendly = _excluded_device_friendly_name(device)
 
         self._attr_has_entity_name = True
         self._attr_translation_key = "excluded_device_enabled"
@@ -1057,9 +1066,8 @@ class ExcludedDeviceSolarSurplusSwitch(SwitchEntity):
         self._device_index = index
 
         device = entry.data.get("excluded_devices", [])[index]
-        sensor_id = device.get("power_sensor", "")
-        # Derive a friendly name from the sensor entity ID
-        friendly = sensor_id.replace("sensor.", "").replace("_", " ").title()
+        # Derive a friendly name from the configured sensor entity ID.
+        friendly = _excluded_device_friendly_name(device)
 
         self._attr_has_entity_name = True
         self._attr_translation_key = "excluded_device_solar_surplus"
@@ -1125,6 +1133,83 @@ class ExcludedDeviceSolarSurplusSwitch(SwitchEntity):
         }
 
 
+class ExcludedDeviceDynamicPowerControlSwitch(SwitchEntity):
+    """Give a telemetry excluded device first claim on changing solar surplus."""
+
+    def __init__(self, hass: HomeAssistant, entry: ConfigEntry, index: int) -> None:
+        """Initialize the dynamic power-control switch."""
+        self.hass = hass
+        self.entry = entry
+        self._device_index = index
+
+        device = entry.data.get("excluded_devices", [])[index]
+        friendly = _excluded_device_friendly_name(device)
+
+        self._attr_has_entity_name = True
+        self._attr_translation_key = "excluded_device_dynamic_power_control"
+        self._attr_translation_placeholders = {"device": friendly}
+        self._attr_unique_id = f"{SYSTEM_UNIQUE_ID_PREFIX}dynamic_power_control_{index}"
+        self.entity_id = system_entity_id("switch", f"dynamic_power_control_{index}")
+        self._attr_icon = "mdi:ev-station"
+        self._attr_should_poll = False
+
+    @property
+    def is_on(self) -> bool:
+        """Return True if dynamic power control is enabled for this device."""
+        devices = self.entry.data.get("excluded_devices", [])
+        if self._device_index < len(devices):
+            return devices[self._device_index].get("dynamic_power_control", False)
+        return False
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        """Return the feature prerequisites for troubleshooting."""
+        devices = self.entry.data.get("excluded_devices", [])
+        if self._device_index >= len(devices):
+            return {}
+        device = devices[self._device_index]
+        return {
+            "power_sensor": device.get("power_sensor", ""),
+            "activity_sensor": device.get("activity_sensor", ""),
+            "allow_solar_surplus": device.get("allow_solar_surplus", False),
+            "included_in_consumption": device.get("included_in_consumption", True),
+        }
+
+    async def _update_dynamic_power_control(self, enabled: bool) -> None:
+        """Persist dynamic_power_control in config_entry.data."""
+        new_data = dict(self.entry.data)
+        devices = [dict(d) for d in new_data.get("excluded_devices", [])]
+        if self._device_index < len(devices):
+            devices[self._device_index]["dynamic_power_control"] = enabled
+            new_data["excluded_devices"] = devices
+            self.hass.config_entries.async_update_entry(self.entry, data=new_data)
+            _LOGGER.info(
+                "Dynamic power control for device %d (%s) %s",
+                self._device_index + 1,
+                devices[self._device_index].get("power_sensor", ""),
+                "enabled" if enabled else "disabled",
+            )
+        self.async_write_ha_state()
+
+    async def async_turn_on(self, **kwargs) -> None:
+        """Enable dynamic power control for this device."""
+        await self._update_dynamic_power_control(True)
+
+    async def async_turn_off(self, **kwargs) -> None:
+        """Disable dynamic power control for this device."""
+        await self._update_dynamic_power_control(False)
+
+    @property
+    def device_info(self):
+        """Return device information for the system."""
+        return {
+            "identifiers": {(DOMAIN, "marstek_venus_system")},
+            "name": "Omnibattery System",
+            "manufacturer": "Omnibattery",
+            "model": "Multi-Battery System",
+        }
+
+
 class ExcludedDeviceCoverHomeSwitch(SwitchEntity):
     """Toggle "battery covers home deficit while this device is active" (#42).
 
@@ -1143,8 +1228,7 @@ class ExcludedDeviceCoverHomeSwitch(SwitchEntity):
         self._device_index = index
 
         device = entry.data.get("excluded_devices", [])[index]
-        sensor_id = device.get("power_sensor", "")
-        friendly = sensor_id.replace("sensor.", "").replace("_", " ").title()
+        friendly = _excluded_device_friendly_name(device)
 
         self._attr_has_entity_name = True
         self._attr_translation_key = "excluded_device_cover_home"
@@ -1241,6 +1325,12 @@ class ManualModeSwitch(SwitchEntity):
         # Set all batteries to 0W (idle state) when entering manual mode
         for coordinator in self.controller.coordinators:
             try:
+                # A persisted Charge/Discharge choice from an earlier manual
+                # session must not be reasserted by the next control cycle.
+                coordinator.manual_force_mode = "None"
+                coordinator.commanded_charge_power = 0
+                coordinator.commanded_discharge_power = 0
+                coordinator.persist_battery_config("manual_force_mode", "None")
                 await coordinator.apply_power(0, read_back=False)
                 await coordinator.async_request_refresh()
                 _LOGGER.info("Set %s to 0W (idle) for manual mode", coordinator.name)
@@ -1256,7 +1346,10 @@ class ManualModeSwitch(SwitchEntity):
                     "Automatic charge/discharge control is paused. "
                     "All batteries have been set to idle (0W). "
                     "You can now manually control each battery using the "
-                    "'Set Forcible Charge/Discharge Power' controls.\n\n"
+                    "'Set Forcible Charge/Discharge Power' controls, or — "
+                    "for Anker — select another operating mode in the "
+                    "official Anker Solix integration without OmniBattery "
+                    "reverting it.\n\n"
                     "Turn off Manual Mode to resume automatic control."
                 ),
                 "notification_id": f"{NOTIFICATION_ID_PREFIX}manual_mode_active",

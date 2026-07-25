@@ -1,6 +1,6 @@
 ![Omnibattery](assets/logo-github.png){ width="420" }
 
-**Omnibattery** es una integración personalizada para Home Assistant que monitoriza y controla baterías solares enchufables — Marstek Venus (series E v2/v3, Venus A y Venus D) y Zendure SolarFlow (2400 AC+ / AC Pro) — mediante Modbus TCP o HTTP local.
+**Omnibattery** es una integración personalizada para Home Assistant que monitoriza y controla baterías solares enchufables — Marstek Venus (series E v2/v3, Venus A y Venus D), Zendure SolarFlow (2400 AC+ / AC Pro) y Anker SOLIX Solarbank Max AC / 4 E5000 Pro — mediante Modbus TCP o HTTP local.
 
 <div class="grid cards" markdown>
 
@@ -28,7 +28,7 @@
 - **Modo de seguimiento directo sin PD** (opt-in): la batería sigue el sensor de consumo 1:1 en cada ciclo — sin integral, derivada, suavizado ni limitador de rampa — para instalaciones que prefieren seguimiento directo al controlador PD.
 - **Carga predictiva**: tres modos (franja horaria, precio dinámico, precio en tiempo real — incluyendo Tibber) que cargan desde la red solo cuando el balance energético lo requiere. Utiliza una media móvil de 7 días del consumo real del hogar para decidir si es necesario cargar desde la red.
 - **Gestión multi-batería**: selección inteligente con prioridades de SOC, histéresis de energía y eficiencia por zona de operación.
-- **Franjas de descarga**: define ventanas horarias y niveles objetivo de red por franja.
+- **Franjas horarias**: controlan de forma independiente las ventanas de carga y descarga, con parámetros de SOC y potencia por franja.
 - **Peak shaving**: reserva capacidad de la batería para satisfacer picos de demanda que superen un umbral de potencia configurable.
 - **Carga semanal completa**: carga al 100% una vez por semana para equilibrar celdas.
 - **Monitor de equilibrio de celdas**: mide la diferencia de tensión entre la celda más y menos cargada después de cada carga completa; hace seguimiento de la tendencia de desequilibrio a lo largo del tiempo, envía alertas ante desequilibrios moderados o altos y bloquea la descarga durante el periodo de reposo en circuito abierto.

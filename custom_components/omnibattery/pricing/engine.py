@@ -20,11 +20,13 @@ from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, Optional
 
 from ..const import (
+    PRICE_INTEGRATION_NORDPOOL,
     PRICE_INTEGRATION_PVPC,
     PRICE_INTEGRATION_CKW,
     PRICE_INTEGRATION_EPEX,
     PRICE_INTEGRATION_ENTSOE,
     PRICE_INTEGRATION_TIBBER,
+    NORDPOOL_REFRESH_MINUTES,
     TIBBER_REFRESH_MINUTES,
     PREDICTIVE_MODE_DYNAMIC_PRICING,
     PREDICTIVE_MODE_REALTIME_PRICE,
@@ -37,6 +39,12 @@ from ..const import (
     FLOOR_HYSTERESIS_PCT,
 )
 from . import PriceSlot, DynamicPricingSchedule, calculations, notifications
+from .nordpool import (
+    NORDPOOL_DOMAIN,
+    NORDPOOL_GET_PRICES_SERVICE,
+    OfficialNordPoolSource,
+    resolve_official_nordpool_source,
+)
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -103,6 +111,22 @@ class PricingManager:
         """Return the price unit label for the configured integration."""
         if self._controller.price_integration_type == PRICE_INTEGRATION_CKW:
             return "CHF/kWh"
+        states = getattr(self._hass, "states", None)
+        if states is not None and self._controller.price_sensor:
+            state = states.get(self._controller.price_sensor)
+            if state is not None:
+                if (
+                    self._controller.price_integration_type
+                    == PRICE_INTEGRATION_NORDPOOL
+                    and "raw_today" in state.attributes
+                ):
+                    # HACS may expose cents and/or MWh/Wh, but its parser
+                    # normalizes every price to major currency/kWh.
+                    currency = state.attributes.get("currency", "EUR")
+                    return f"{currency}/kWh".replace("EUR/", "€/")
+                unit = state.attributes.get("unit_of_measurement")
+                if unit:
+                    return str(unit).replace("EUR/", "€/")
         return "€/kWh"
 
     def _get_current_price(self) -> Optional[float]:
@@ -114,6 +138,15 @@ class PricingManager:
                 if slot.start <= now < slot.end:
                     return slot.price
             return None
+
+        # The official Nord Pool service cache and sensor use the same
+        # currency/kWh scale. Prefer the interval data so any official Nord Pool
+        # price entity can be used to identify the desired market area.
+        if self._official_nordpool_source() is not None:
+            now = datetime.now()
+            for slot in self._controller._nordpool_price_slots:
+                if slot.start <= now < slot.end:
+                    return slot.price
 
         if not self._controller.price_sensor:
             return None
@@ -141,9 +174,36 @@ class PricingManager:
                     return slot.price
 
         try:
+            if self._controller.price_integration_type == PRICE_INTEGRATION_NORDPOOL:
+                return calculations.normalize_nordpool_hacs_price(
+                    price_state.state,
+                    price_state.attributes,
+                )
             return float(price_state.state)
         except (ValueError, TypeError):
             return None
+
+    def _official_nordpool_source(self) -> OfficialNordPoolSource | None:
+        """Return source metadata when the selected sensor is official Nord Pool."""
+        if self._controller.price_integration_type != PRICE_INTEGRATION_NORDPOOL:
+            return None
+        if not self._controller.price_sensor:
+            return None
+
+        state = self._hass.states.get(self._controller.price_sensor)
+        attributes = state.attributes if state is not None else None
+        if attributes is not None and "raw_today" in attributes:
+            return None
+        services = getattr(self._hass, "services", None)
+        if services is None or not services.has_service(
+            NORDPOOL_DOMAIN,
+            NORDPOOL_GET_PRICES_SERVICE,
+        ):
+            return None
+        return resolve_official_nordpool_source(
+            self._hass,
+            self._controller.price_sensor,
+        )
 
     async def _maybe_refresh_tibber_prices(self, *, force: bool = False) -> None:
         """Poll ``tibber.get_prices`` and cache the slots when stale.
@@ -196,6 +256,80 @@ class PricingManager:
         else:
             _LOGGER.warning("Dynamic pricing: tibber.get_prices returned no usable slots")
 
+    async def _maybe_refresh_nordpool_prices(self, *, force: bool = False) -> None:
+        """Poll the official Nord Pool service for today's prices when stale.
+
+        HACS Nordpool sensors keep using ``raw_today`` / ``raw_tomorrow`` and
+        never enter this path. The official integration's entities only expose
+        scalar prices, so their selected entity supplies the config entry and
+        market area for ``nordpool.get_prices_for_date``.
+        """
+        source = self._official_nordpool_source()
+        if source is None:
+            return
+
+        from homeassistant.util import dt as dt_util
+
+        now = datetime.now()
+        service_date = dt_util.now().date()
+        source_key = (source.config_entry_id, source.area, service_date)
+        fetched = self._controller._nordpool_prices_fetched_at
+        cached_source_key = getattr(
+            self._controller,
+            "_nordpool_price_source_key",
+            None,
+        )
+        if (
+            not force
+            and self._controller._nordpool_price_slots
+            and cached_source_key == source_key
+            and fetched is not None
+            and (now - fetched) < timedelta(minutes=NORDPOOL_REFRESH_MINUTES)
+        ):
+            return
+
+        service_data: dict[str, Any] = {
+            "config_entry": source.config_entry_id,
+            "date": service_date,
+        }
+        if source.area:
+            service_data["areas"] = [source.area]
+
+        try:
+            response = await self._hass.services.async_call(
+                NORDPOOL_DOMAIN,
+                NORDPOOL_GET_PRICES_SERVICE,
+                service_data,
+                blocking=True,
+                return_response=True,
+            )
+        except Exception as exc:
+            _LOGGER.warning(
+                "Dynamic pricing: nordpool.get_prices_for_date call failed: %s",
+                exc,
+            )
+            return
+
+        slots = calculations.parse_nordpool_service_prices(response or {}, source.area)
+        if slots:
+            self._controller._nordpool_price_slots = slots
+            self._controller._nordpool_prices_fetched_at = now
+            self._controller._nordpool_price_source_key = source_key
+            _LOGGER.info(
+                "Dynamic pricing: refreshed %d official Nord Pool price slots for %s",
+                len(slots),
+                source.area or "the configured area",
+            )
+        else:
+            _LOGGER.warning(
+                "Dynamic pricing: nordpool.get_prices_for_date returned no usable slots"
+            )
+
+    async def _maybe_refresh_service_prices(self, *, force: bool = False) -> None:
+        """Refresh whichever service-based price provider is configured."""
+        await self._maybe_refresh_tibber_prices(force=force)
+        await self._maybe_refresh_nordpool_prices(force=force)
+
     def get_future_price_slots(self, horizon_end=None) -> list:
         """Public accessor for parsed future PriceSlots (today, future-only).
 
@@ -214,7 +348,16 @@ class PricingManager:
         debug so high-frequency callers do not spam the log.
         """
         _warn = _LOGGER.debug if quiet else _LOGGER.warning
-        if self._controller.price_integration_type == PRICE_INTEGRATION_TIBBER:
+        official_nordpool = self._official_nordpool_source()
+        if official_nordpool is not None:
+            # Official integration: use the service cache refreshed by
+            # _maybe_refresh_nordpool_prices. HACS remains in the sensor branch.
+            raw_slots = list(self._controller._nordpool_price_slots)
+            if not raw_slots:
+                _warn("Dynamic pricing: no official Nord Pool price data cached")
+                self._controller._price_data_status = "no_slots"
+                return []
+        elif self._controller.price_integration_type == PRICE_INTEGRATION_TIBBER:
             # Service-based: use the cached slots refreshed by _maybe_refresh_tibber_prices.
             raw_slots = list(self._controller._tibber_price_slots)
             if not raw_slots:
@@ -288,8 +431,12 @@ class PricingManager:
 
         _LOGGER.info("Dynamic pricing: running evaluation at %s", now.strftime("%H:%M"))
 
-        # Ensure Tibber slots are current before evaluating (no-op otherwise)
-        await self._maybe_refresh_tibber_prices(force=True)
+        # Cleared up front: the early returns below can still send a notification,
+        # and a ceiling from a previous evaluation must not be reported as today's.
+        self._controller._dp_arbitrage_ceiling = None
+
+        # Ensure service-based provider slots are current before evaluating.
+        await self._maybe_refresh_service_prices(force=True)
 
         # Step 1: Energy balance
         decision_data = await self._controller._should_activate_grid_charging()
@@ -342,7 +489,21 @@ class PricingManager:
             hours_needed = calculations.calculate_charging_hours_needed(
                 decision_data["avg_consumption_kwh"], self._controller.max_contracted_power, self._controller.max_charge_capacity
             )
-        selected = calculations.select_cheapest_hours(slots, hours_needed, self._controller.max_price_threshold)
+        # One instant, one computation. `ceiling` is what actually filters;
+        # `arb_ceiling` is kept only so the notification can name the cause.
+        eval_now = datetime.now()
+        ceiling, arb_ceiling = calculations.effective_charge_ceiling(
+            slots,
+            hours_needed,
+            self._controller.max_price_threshold,
+            self._controller.min_arbitrage_margin,
+            self._controller.round_trip_efficiency,
+            now=eval_now,
+        )
+        self._controller._dp_arbitrage_ceiling = arb_ceiling
+        selected = calculations.select_cheapest_hours(
+            slots, hours_needed, ceiling, now=eval_now
+        )
 
         if not selected:
             self._controller._dynamic_pricing_schedule = None
@@ -392,6 +553,7 @@ class PricingManager:
             unit=self._get_price_unit(),
             max_price_threshold=self._controller.max_price_threshold,
             discharge_price_threshold=self._controller.discharge_price_threshold,
+            arbitrage_ceiling=self._controller._dp_arbitrage_ceiling,
             max_contracted_power=self._controller.max_contracted_power,
             max_charge_capacity=self._controller.max_charge_capacity,
         )
@@ -618,8 +780,8 @@ class PricingManager:
 
         _LOGGER.info("Dynamic pricing: running evening re-evaluation at %s", now.strftime("%H:%M"))
 
-        # Ensure Tibber slots are current (tomorrow's appear after ~13:00; no-op otherwise)
-        await self._maybe_refresh_tibber_prices(force=True)
+        # Ensure service-based provider slots are current.
+        await self._maybe_refresh_service_prices(force=True)
 
         # --- Battery state ---
         coordinators_with_data = [c for c in self._controller.coordinators if c.data]
@@ -743,7 +905,14 @@ class PricingManager:
             self._controller.max_contracted_power,
             self._controller.max_charge_capacity,
         )
-        selected = calculations.select_cheapest_hours(slots, hours_needed, self._controller.max_price_threshold)
+        # Deliberately no arbitrage gate here. This is a deficit-driven safety
+        # recharge after a bad solar day, not an arbitrage trade, and the horizon
+        # is truncated: late in the evening only cheap night slots remain, so the
+        # expected discharge price collapses toward the charge price and the gate
+        # would refuse every recharge it exists to perform.
+        selected = calculations.select_cheapest_hours(
+            slots, hours_needed, self._controller.max_price_threshold
+        )
 
         if not selected:
             _LOGGER.warning("Evening recharge: no slots below price threshold")
@@ -822,8 +991,8 @@ class PricingManager:
         """Handle predictive charging in dynamic pricing mode (called every 2.5s)."""
         now = datetime.now()
 
-        # Phase 0: Keep the Tibber cache fresh (no-op for sensor-based providers)
-        await self._maybe_refresh_tibber_prices()
+        # Phase 0: Keep service-based provider caches fresh.
+        await self._maybe_refresh_service_prices()
 
         # Phase 2: Retry if prices weren't available at 00:05 (e.g. sensor update delay)
         if (
@@ -865,6 +1034,7 @@ class PricingManager:
                 self._controller._dp_eval_retry_count = 0
                 self._controller._dp_pre_evaluated_slots = {}
                 self._controller._dp_daily_avg_price = None
+                self._controller._dp_arbitrage_ceiling = None
                 self._controller._dp_evening_reevaluated_date = None
                 self._controller._dp_last_eval_soc = None
 

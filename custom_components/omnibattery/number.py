@@ -16,6 +16,11 @@ from .const import (
     CONF_ENABLE_SYSTEM_POWER_LIMITS,
     CONF_MAX_PRICE_THRESHOLD,
     CONF_DISCHARGE_PRICE_THRESHOLD,
+    CONF_MIN_ARBITRAGE_MARGIN,
+    CONF_ROUND_TRIP_EFFICIENCY,
+    DEFAULT_ROUND_TRIP_EFFICIENCY,
+    MIN_ROUND_TRIP_EFFICIENCY,
+    MAX_ROUND_TRIP_EFFICIENCY,
     CONF_ENABLE_TEMP_CHARGE_LIMIT,
     CONF_TEMP_CHARGE_LIMIT_C,
     DEFAULT_TEMP_CHARGE_LIMIT_C,
@@ -70,10 +75,13 @@ async def async_setup_entry(
             entities.append(MarstekManualSetPowerNumber(coordinator, "charge"))
             entities.append(MarstekManualSetPowerNumber(coordinator, "discharge"))
 
-        # Drivers whose max_charge_power is a read-only device cap (Zendure) get
-        # a software charge-power ceiling instead of the writable register entity.
+        # Drivers whose max_charge_power is not a writable register (Zendure
+        # chargeMaxLimit telemetry, Anker 10036 read-only sensor) get a software
+        # charge-power ceiling under the device/hardware cap.
         if coordinator.needs_software_max_charge:
             entities.append(MarstekSoftMaxChargeNumber(coordinator))
+        if coordinator.needs_software_max_discharge:
+            entities.append(MarstekSoftMaxDischargeNumber(coordinator))
 
     # Add config numbers (system-level, PD parameters). Conditional entities are
     # gated on their feature key being present (enabled OR disabled) — the panel
@@ -99,6 +107,8 @@ async def async_setup_entry(
     ):
         entities.append(MarstekPriceThresholdNumber(hass, entry, "charge"))
         entities.append(MarstekPriceThresholdNumber(hass, entry, "discharge"))
+        entities.append(MarstekArbitrageNumber(hass, entry, "margin"))
+        entities.append(MarstekArbitrageNumber(hass, entry, "efficiency"))
 
     # Temperature charge limit sliders (system-level, when the feature is configured)
     if CONF_ENABLE_TEMP_CHARGE_LIMIT in entry.data:
@@ -265,6 +275,83 @@ class MarstekConfigNumberEntity(NumberEntity):
             controller.update_pd_parameters()
 
         _LOGGER.info("Config parameter %s updated to %s", self._key, value)
+        self.async_write_ha_state()
+
+    @property
+    def device_info(self):
+        """Return device information for the system."""
+        return {
+            "identifiers": {(DOMAIN, "marstek_venus_system")},
+            "name": "Omnibattery System",
+            "manufacturer": "Omnibattery",
+            "model": "Multi-Battery System",
+        }
+
+
+class MarstekArbitrageNumber(NumberEntity):
+    """Minimum arbitrage margin and round-trip efficiency for the charge gate.
+
+    The margin is unset by default, which leaves grid-charge slot selection
+    exactly as it was: a static ceiling only. Setting it makes the ceiling move
+    with the day's spread, so charging is skipped when the expensive hours are
+    not far enough above the cheap ones to repay conversion losses. Setting it
+    back to 0 turns the gate off again, since a NumberEntity cannot be cleared
+    to "unset" from the UI.
+
+    Both values live in ``config_entry.data`` and are re-read by
+    ``update_pd_parameters`` on every entry update, the same hot-reload path the
+    existing price thresholds use.
+    """
+
+    _attr_has_entity_name = True
+    _attr_mode = NumberMode.BOX
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_should_poll = False
+
+    def __init__(self, hass: HomeAssistant, entry: ConfigEntry, kind: str) -> None:
+        """kind = 'margin' (currency/kWh, 0 or unset = disabled) or 'efficiency' (ratio)."""
+        self.hass = hass
+        self.entry = entry
+        self._kind = kind
+        is_margin = kind == "margin"
+        key = CONF_MIN_ARBITRAGE_MARGIN if is_margin else CONF_ROUND_TRIP_EFFICIENCY
+        self._conf_key = key
+        self._attr_translation_key = key
+        self._attr_unique_id = f"{SYSTEM_UNIQUE_ID_PREFIX}{key}"
+        self.entity_id = system_entity_id("number", key)
+        self._attr_icon = "mdi:scale-balance" if is_margin else "mdi:battery-sync"
+
+        if is_margin:
+            self._attr_native_min_value = 0.0
+            self._attr_native_max_value = 0.5
+            self._attr_native_step = 0.001
+            is_chf = entry.data.get(CONF_PRICE_INTEGRATION_TYPE) == PRICE_INTEGRATION_CKW
+            self._attr_native_unit_of_measurement = "CHF/kWh" if is_chf else "\u20ac/kWh"
+        else:
+            self._attr_native_min_value = MIN_ROUND_TRIP_EFFICIENCY
+            self._attr_native_max_value = MAX_ROUND_TRIP_EFFICIENCY
+            self._attr_native_step = 0.01
+
+    async def async_added_to_hass(self) -> None:
+        """Refresh state when config_entry.data changes (options flow / sibling write)."""
+        self.async_on_remove(self.entry.add_update_listener(self._handle_entry_update))
+
+    async def _handle_entry_update(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
+        self.async_write_ha_state()
+
+    @property
+    def native_value(self):
+        """Margin is None until set (gate disabled); efficiency falls back to the default."""
+        if self._kind == "margin":
+            return self.entry.data.get(self._conf_key)
+        return self.entry.data.get(self._conf_key, DEFAULT_ROUND_TRIP_EFFICIENCY)
+
+    async def async_set_native_value(self, value: float) -> None:
+        """Persist to config_entry.data; the controller re-reads on the update listener."""
+        new_data = dict(self.entry.data)
+        new_data[self._conf_key] = value
+        self.hass.config_entries.async_update_entry(self.entry, data=new_data)
+        _LOGGER.info("Dynamic pricing %s updated to %s", self._conf_key, value)
         self.async_write_ha_state()
 
     @property
@@ -587,7 +674,7 @@ class MarstekBackupThresholdNumber(CoordinatorEntity, NumberEntity):
         self._attr_icon = "mdi:transmission-tower-off"
         self._attr_native_unit_of_measurement = "W"
         self._attr_native_min_value = 0
-        self._attr_native_max_value = 500
+        self._attr_native_max_value = 2500
         self._attr_native_step = 10
         self._attr_should_poll = False
 
@@ -688,8 +775,8 @@ class MarstekManualSetPowerNumber(CoordinatorEntity, NumberEntity):
 
 
 class MarstekSoftMaxChargeNumber(CoordinatorEntity, NumberEntity):
-    """Software charge-power ceiling for drivers whose reported max_charge_power
-    is a read-only device cap (Zendure chargeMaxLimit).
+    """Software charge-power ceiling when max_charge_power is not writable
+    (Zendure chargeMaxLimit telemetry, Anker input 10036 sensor).
 
     Stores a user limit on the coordinator; the poll loop applies
     min(device_cap, user limit) to coordinator.max_charge_power, which the PD
@@ -729,6 +816,50 @@ class MarstekSoftMaxChargeNumber(CoordinatorEntity, NumberEntity):
             min(int(device_cap), new_value) if device_cap is not None else new_value
         )
         _LOGGER.info("%s: user_max_charge_power → %dW", self.coordinator.name, new_value)
+        self.async_write_ha_state()
+
+    @property
+    def device_info(self):
+        """Return device information."""
+        return self.coordinator.battery_device_info
+
+
+class MarstekSoftMaxDischargeNumber(CoordinatorEntity, NumberEntity):
+    """Software discharge-power ceiling when max_discharge_power has no writable
+    register (Anker input 10038 sensor, or other telemetry-only drivers).
+    """
+
+    def __init__(self, coordinator: MarstekVenusDataUpdateCoordinator) -> None:
+        """Initialize the soft max-discharge entity."""
+        super().__init__(coordinator)
+        self._attr_has_entity_name = True
+        self._attr_translation_key = "max_discharge_power"
+        self._attr_unique_id = f"{coordinator.device_key}_max_discharge_power"
+        self.entity_id = english_entity_id("number", coordinator.name, "max_discharge_power")
+        self._attr_icon = "mdi:battery-arrow-down-outline"
+        self._attr_native_unit_of_measurement = "W"
+        self._attr_native_min_value = 0
+        self._attr_native_max_value = coordinator.capabilities.max_discharge_power_w
+        self._attr_native_step = 10
+        self._attr_should_poll = False
+
+    @property
+    def native_value(self) -> float:
+        """Return the user-set discharge ceiling."""
+        return float(self.coordinator.user_max_discharge_power)
+
+    async def async_set_native_value(self, value: float) -> None:
+        """Store the ceiling, persist it, and apply it against the device cap now."""
+        new_value = int(value)
+        self.coordinator.user_max_discharge_power = new_value
+        self.coordinator.persist_battery_config("user_max_discharge_power", new_value)
+        device_cap = None
+        if self.coordinator.data is not None:
+            device_cap = self.coordinator.data.get("max_discharge_power")
+        self.coordinator.max_discharge_power = (
+            min(int(device_cap), new_value) if device_cap is not None else new_value
+        )
+        _LOGGER.info("%s: user_max_discharge_power → %dW", self.coordinator.name, new_value)
         self.async_write_ha_state()
 
     @property

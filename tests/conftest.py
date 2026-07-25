@@ -127,7 +127,6 @@ class FakeCoordinator:
         "max_soc": 80,
         "min_soc": 10,
         "commanded_charge_power": 0,
-        "queued_gateway_compatibility": False,
         "rs485_user_disabled": False,
         "balance_hold": False,
         "apply_power": None,

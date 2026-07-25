@@ -1,4 +1,10 @@
 {
+  "issues": {
+    "slow_main_sensor": {
+      "title": "Der Netzleistungssensor aktualisiert zu langsam",
+      "description": "Der konfigurierte Netzsensor {sensor} aktualisiert ungefähr alle {observed_interval} Sekunden. Intervalle von {warning_interval} Sekunden oder mehr sind langsamer als empfohlen und können die Regelqualität verringern. Omnibattery folgt dem letzten Messwert, bis er älter als {stale_limit} Sekunden ist. Verwenden Sie einen schnelleren Sensor, wenn Sie eine präzisere Echtzeitregelung benötigen."
+    }
+  },
   "config": {
     "step": {
       "migrate_legacy": {
@@ -16,7 +22,7 @@
           "max_contracted_power": "Maximale Vertragsleistung (W)"
         },
         "data_description": {
-          "consumption_sensor": "Sensor, der importierte (+) oder exportierte (-) Leistung ins Netz anzeigt. Der Controller passt die Batterien an, um diesen Wert nahe 0W zu halten.",
+          "consumption_sensor": "Echtzeitsensor für importierte (+) oder exportierte (-) Netzleistung. Aktualisierungen alle 1-2 Sekunden werden empfohlen. Langsamere Sensoren werden akzeptiert, verzögerte Messwerte verringern jedoch die Regelqualität; dem letzten Messwert wird bis zu 65 Sekunden lang gefolgt.",
           "solar_forecast_sensor": "Sensor, der die Solarproduktionsprognose in kWh liefert (z.B. Solcast). Wenn hier konfiguriert, wird er automatisch für prädiktive Ladung und Solarladungsverzögerung verwendet.",
           "solar_production_sensor": "Echtzeit-PV-Produktionsleistungssensor (W/kW) von einem externen Wechselrichter, der nicht über die MPPT-Eingänge der Batterie geführt wird. Wird verwendet, um den Solar-Knoten im Energiefluss-Diagramm des Dashboards anzuzeigen. Leer lassen, wenn deine Module direkt den MPPT der Batterie speisen.",
           "meter_inverted": "Aktivieren Sie diese Option, wenn Ihr Zähler die umgekehrte Konvention verwendet: positiv = Export, negativ = Import. Die Einheit (W/kW) wird automatisch erkannt.",
@@ -37,7 +43,7 @@
           "brand": "Batteriemarke"
         },
         "data_description": {
-          "brand": "Wählen Sie den Hersteller der Batterie. Marstek Venus verwendet Modbus TCP. Zendure SolarFlow verwendet lokales HTTP (erfordert HEMS in der Zendure-App aktiviert)."
+          "brand": "Marstek Venus: Modbus TCP. Zendure SolarFlow: local HTTP (enable HEMS in the Zendure app first). Anker SOLIX Solarbank Max AC / 4 E5000 Pro: Modbus TCP (enable Modbus TCP under Third-Party Control in the Anker app; only one Modbus client at a time)."
         }
       },
       "battery_connection": {
@@ -49,8 +55,7 @@
           "port": "Modbus-Port",
           "battery_version": "Batteriemodell",
           "slave_id": "Modbus-Slave-ID",
-          "serial_port": "Serieller Port (Modbus RTU)",
-          "queued_gateway_compatibility": "Legacy-MVEM-Modbus-Kompatibilität (experimentell)"
+          "serial_port": "Serieller Port (Modbus RTU)"
         },
         "data_description": {
           "name": "Beschreibender Name zur Identifizierung dieser Batterie",
@@ -58,8 +63,7 @@
           "port": "Modbus-Port (normalerweise 502)",
           "battery_version": "Wählen Sie die Modellversion Ihrer Batterie. Ev2 für ältere Modelle, Ev3 für neuere Modelle mit aktualisierter Registerkarte, A (Venus A) oder D (Venus D) für Hybrid-Wechselrichter-Modelle",
           "slave_id": "Modbus Slave-/Unit-ID (Standard 1). Nur ändern, wenn ein Modbus-Proxy mehrere Batterien über dieselbe IP:Port mit unterschiedlichen Slave-IDs abbildet.",
-          "serial_port": "Pfad des USB-RS485-Adapters, z. B. /dev/ttyUSB0 oder COM3. Statt der IP-Adresse ausfüllen, um Modbus RTU über die serielle Schnittstelle zu nutzen; für TCP leer lassen.",
-          "queued_gateway_compatibility": "Nur für Venus v2 über Modbus TCP. Für Gateways, die Anfragen in eine Warteschlange stellen und verzögert antworten: sendet jede Anfrage einmal mit einem größeren Antwortfenster (kein erneutes Senden mit neuer Transaktions-ID) und setzt den Sollwert in jedem Regelzyklus erneut, sodass sich ein verlorener Schreibvorgang selbst behebt. Für Direktverbindungen, Elfin EW11, serielles RTU und normale Gateways deaktiviert lassen."
+          "serial_port": "Pfad des USB-RS485-Adapters, z. B. /dev/ttyUSB0 oder COM3. Statt der IP-Adresse ausfüllen, um Modbus RTU über die serielle Schnittstelle zu nutzen; für TCP leer lassen."
         }
       },
       "battery_connection_zendure": {
@@ -113,8 +117,8 @@
         }
       },
       "time_slots": {
-        "title": "Entladungs-Zeitfenster",
-        "description": "Möchten Sie Zeitfenster konfigurieren? Wenn konfiguriert, entladen sich die Batterien NUR während dieser Zeitfenster. Ohne Zeitfenster arbeiten sie jederzeit.",
+        "title": "Zeitfenster",
+        "description": "Möchten Sie Zeitfenster konfigurieren? Jedes Zeitfenster kann unabhängig steuern, wann Batterien laden oder entladen dürfen. Ohne Zeitfenster arbeiten sie jederzeit.",
         "data": {
           "configure_time_slots": "Zeitfenster konfigurieren"
         }
@@ -199,16 +203,22 @@
         "title": "Spezielles Gerät {device_num}",
         "description": "Konfigurieren Sie, wie die Batterie dieses Gerät verwalten soll.",
         "data": {
-          "power_sensor": "Gerätesensor",
+          "power_sensor": "Geräte-Leistungssensor",
+          "activity_sensor": "Gerät aktiv / EV-Ladestatussensor",
           "included_in_consumption": "Verbrauch ist im Hausverbrauchssensor enthalten",
           "allow_solar_surplus": "Solarüberschuss nutzen erlauben (Batterie nicht laden)",
+          "dynamic_power_control": "Gerät hat dynamische Leistungsregelung",
+          "cover_home_when_active": "Hausverbrauch decken, während das Gerät aktiv ist",
           "ev_charger_no_telemetry": "EV-Ladestation ohne Leistungstelemetrie"
         },
         "data_description": {
-          "power_sensor": "Leistungssensor (W) des Geräts. Für EV-Ladestationen ohne Leistungstelemetrie den Statussensor auswählen, der 'Charging' anzeigt, wenn das Fahrzeug lädt.",
+          "power_sensor": "Numerischer Leistungssensor (W) des Geräts. Für EV-Ladestationen ohne Leistungstelemetrie optional; bestehende Konfigurationen mit dem Statussensor in diesem Feld bleiben kompatibel.",
+          "activity_sensor": "Status- oder Binärsensor, der 'on' oder einen Ladestatus meldet, wenn das Gerät Leistung anfordert. Für die dynamische Leistungsregelung und neue EV-Ladestationen ohne Telemetrie erforderlich.",
           "included_in_consumption": "✓ AKTIVIERT = Haussensor enthält dieses Gerät BEREITS → Batterie wird es NICHT versorgen (ausgeschlossen). ✗ DEAKTIVIERT = Haussensor sieht es nicht → Batterie wird es versorgen (zusätzlich)",
           "allow_solar_surplus": "Wenn aktiviert, kann das Gerät Energie direkt von den Solarmodulen (Überschuss) verbrauchen, ohne dass die Batterie versucht zu kompensieren. Empfohlen für Geräte mit hohem Verbrauch wie EV-Ladestationen.",
-          "ev_charger_no_telemetry": "✓ AKTIVIERT = Der ausgewählte Sensor meldet den Ladezustand ('Charging'). Wenn ein EV-Ladevorgang erkannt wird, hält die Batterie 5 Minuten an, damit das Fahrzeug volle Leistung beziehen kann; danach darf die Batterie nur mit Solarüberschuss laden und entlädt sich nie, solange das EV lädt."
+          "dynamic_power_control": "Für Geräte aktivieren, die ihren Bedarf über den Netzzähler automatisch regeln. Mit Aktivitätssensor gibt Omnibattery Vorrang, bevor Leistung erscheint; andernfalls reagiert es auf den Leistungssensor. Danach wird nur der tatsächlich verbleibende Überschuss genutzt.",
+          "cover_home_when_active": "Erfordert Solarüberschuss und einen Solarleistungssensor. Die Batterie darf den eigenen Hausverbrauch decken, während dieses Gerät aktiv ist; nur der Netzanteil des Geräts bleibt ausgeschlossen.",
+          "ev_charger_no_telemetry": "✓ AKTIVIERT = Nutzt den Sensor Gerät aktiv / EV-Ladestatus statt numerischer Telemetrie. Bestehende Konfigurationen mit diesem Sensor im Leistungsfeld funktionieren weiter. Bei erkanntem Laden pausiert die Batterie 5 Minuten; danach lädt sie nur mit Solarüberschuss und entlädt nie für das EV."
         }
       },
       "add_more_excluded_devices": {
@@ -277,9 +287,9 @@
         "data_description": {
           "price_integration_type": "Wählen Sie die Heimautomatisierungsintegration, die Strompreisdaten liefert",
           "price_sensor": "Sensor, der stündliche Strompreise enthält (z.B. sensor.nordpool_kwh_de_eur_3_10_025)",
-          "max_price_threshold": "Stunden über diesem Preis werden nicht ausgewählt. Wenn die preisbasierte Entladesteuerung aktiviert ist, wird dieser Wert auch als Entladeschwellenwert verwendet. Gleiche Einheit wie der Sensor verwenden: €/kWh für Nordpool/PVPC, CHF/kWh für CKW. Leer lassen, um alle Stunden zu verwenden und den Tagesdurchschnitt als Entladeschwellenwert zu nutzen. Sofern unten keine separate Entlade-Preisuntergrenze festgelegt ist.",
+          "max_price_threshold": "Stunden über diesem Preis werden nicht ausgewählt. Wenn die preisbasierte Entladesteuerung aktiviert ist, wird dieser Wert auch als Entladeschwellenwert verwendet. Hauptwährung/kWh verwenden: €/kWh für Nordpool/PVPC, CHF/kWh für CKW. In Cent konfigurierte HACS-Nordpool-Preise werden automatisch umgerechnet. Leer lassen, um alle Stunden zu verwenden und den Tagesdurchschnitt als Entladeschwellenwert zu nutzen. Sofern unten keine separate Entlade-Preisuntergrenze festgelegt ist.",
           "discharge_price_threshold": "Optionale separate Untergrenze für die preisgesteuerte Entladung. Die Entladung wird blockiert, solange der Preis kleiner oder gleich diesem Wert ist, wodurch ein neutrales Band zwischen der oberen Ladegrenze und dieser Untergrenze entsteht: In diesem Band lädt die Batterie weder aus dem Netz noch entlädt sie (Laden aus Solarüberschuss funktioniert weiterhin). Leer lassen, um die maximale Preisgrenze für beides zu verwenden (bisheriges Verhalten mit einem Schwellenwert).",
-          "dp_price_discharge_control": "Wenn aktiviert, entlädt die Batterie nur, wenn der aktuelle Strompreis den konfigurierten maximalen Preisschwellenwert übersteigt. Wenn kein Schwellenwert konfiguriert ist, wird der automatisch aus dem Preissensor berechnete Tagesdurchschnitt verwendet. Falls Entladezeitfenster konfiguriert sind, müssen beide Bedingungen erfüllt sein.",
+          "dp_price_discharge_control": "Wenn aktiviert, entlädt die Batterie nur, wenn der aktuelle Strompreis den konfigurierten maximalen Preisschwellenwert übersteigt. Wenn kein Schwellenwert konfiguriert ist, wird der automatisch aus dem Preissensor berechnete Tagesdurchschnitt verwendet. Falls Zeitfenster die Entladung einschränken, müssen beide Bedingungen erfüllt sein.",
           "solar_forecast_sensor": "Sensor, der die Solarproduktionsprognose in kWh liefert (z.B. Solcast). Mit Solaranlage: konfigurieren — das System lädt nur dann aus dem Netz, wenn die Solarprognose unzureichend ist. Ohne Solaranlage: leer lassen — das System lädt, wenn die Batterieenergie für den Tag nicht ausreicht. Nicht erforderlich, wenn dieser Sensor bereits im ersten Schritt konfiguriert wurde — er wird automatisch verwendet.",
           "predictive_safety_margin_kwh": "Zusätzlicher Energiepuffer, der der Verbrauchsprognose hinzugefügt wird. Nützlich, wenn die Solarprognose zu optimistisch ist. Auf 0 setzen zum Deaktivieren (Standard). Begrenzt auf Gesamtbatteriekapazität.",
           "predictive_grid_charge_margin_pct": "Zusätzlicher Prozentsatz, der über das Solar-Defizit hinaus aus dem Netz geladen wird, um optimistische Solarprognosen abzufedern. Z. B. lädt ein Netzbedarf von 2 kWh bei 50% 3 kWh. 0 zum Deaktivieren (Standard). Auf die Lücke bis zum max. SOC begrenzt."
@@ -299,9 +309,9 @@
         },
         "data_description": {
           "price_sensor": "Sensor, dessen Zustand der aktuelle Strompreis ist. Jeder Sensor, der den aktuellen Periodenpreis als Zustand anzeigt, funktioniert.",
-          "max_price_threshold": "Laden wird aktiviert, wenn der aktuelle Preis diesen Wert nicht übersteigt. Gleiche Einheit wie der Sensor verwenden. Leer lassen, wenn der Tagesdurchschnittssensor verwendet wird.",
+          "max_price_threshold": "Laden wird aktiviert, wenn der aktuelle Preis diesen Wert nicht übersteigt. Hauptwährung/kWh verwenden; in Cent konfigurierte HACS-Nordpool-Preise werden automatisch umgerechnet. Leer lassen, wenn der Tagesdurchschnittssensor verwendet wird.",
           "average_price_sensor": "Wenn angegeben, wird dieser Wert als Schwellenwert anstelle des fixen Wertes verwendet. Leer lassen für den fixen Schwellenwert.",
-          "rt_price_discharge_control": "Wenn aktiviert, entlädt die Batterie nur, wenn der aktuelle Strompreis den Schwellenwert übersteigt. Falls Entladezeitfenster konfiguriert sind, müssen beide Bedingungen erfüllt sein.",
+          "rt_price_discharge_control": "Wenn aktiviert, entlädt die Batterie nur, wenn der aktuelle Strompreis den Schwellenwert übersteigt. Falls Zeitfenster die Entladung einschränken, müssen beide Bedingungen erfüllt sein.",
           "solar_forecast_sensor": "Sensor, der die Solarproduktionsprognose in kWh liefert. Nicht erforderlich, wenn dieser Sensor bereits im ersten Schritt konfiguriert wurde — er wird automatisch verwendet.",
           "predictive_safety_margin_kwh": "Zusätzlicher Energiepuffer, der der Verbrauchsprognose hinzugefügt wird. Nützlich, wenn die Solarprognose zu optimistisch ist. Auf 0 setzen zum Deaktivieren (Standard). Begrenzt auf Gesamtbatteriekapazität.",
           "predictive_grid_charge_margin_pct": "Zusätzlicher Prozentsatz, der über das Solar-Defizit hinaus aus dem Netz geladen wird, um optimistische Solarprognosen abzufedern. Z. B. lädt ein Netzbedarf von 2 kWh bei 50% 3 kWh. 0 zum Deaktivieren (Standard). Auf die Lücke bis zum max. SOC begrenzt."
@@ -458,8 +468,7 @@
           "port": "Modbus-Port",
           "battery_version": "Batteriemodell",
           "slave_id": "Modbus-Slave-ID",
-          "serial_port": "Serieller Port (Modbus RTU)",
-          "queued_gateway_compatibility": "Legacy-MVEM-Modbus-Kompatibilität (experimentell)"
+          "serial_port": "Serieller Port (Modbus RTU)"
         },
         "data_description": {
           "name": "Beschreibender Name zur Identifikation dieser Batterie",
@@ -467,8 +476,7 @@
           "port": "Modbus-Port (normalerweise 502)",
           "battery_version": "Wählen Sie Ihre Batteriemodellversion",
           "slave_id": "Modbus Slave-/Unit-ID (Standard 1). Nur ändern, wenn ein Modbus-Proxy mehrere Batterien über dieselbe IP:Port mit unterschiedlichen Slave-IDs abbildet.",
-          "serial_port": "Pfad des USB-RS485-Adapters, z. B. /dev/ttyUSB0 oder COM3. Statt der IP-Adresse ausfüllen, um Modbus RTU über die serielle Schnittstelle zu nutzen; für TCP leer lassen.",
-          "queued_gateway_compatibility": "Nur für Venus v2 über Modbus TCP. Für Gateways, die Anfragen in eine Warteschlange stellen und verzögert antworten: sendet jede Anfrage einmal mit einem größeren Antwortfenster (kein erneutes Senden mit neuer Transaktions-ID) und setzt den Sollwert in jedem Regelzyklus erneut, sodass sich ein verlorener Schreibvorgang selbst behebt. Für Direktverbindungen, Elfin EW11, serielles RTU und normale Gateways deaktiviert lassen."
+          "serial_port": "Pfad des USB-RS485-Adapters, z. B. /dev/ttyUSB0 oder COM3. Statt der IP-Adresse ausfüllen, um Modbus RTU über die serielle Schnittstelle zu nutzen; für TCP leer lassen."
         }
       },
       "reconfigure_battery_zendure": {
@@ -483,6 +491,22 @@
           "name": "Beschreibender Name zur Identifikation dieser Batterie",
           "host": "Neue IP-Adresse des Zendure SolarFlow im lokalen Netzwerk",
           "port": "HTTP-Port (Standard 80)"
+        }
+      },
+      "reconfigure_battery_anker": {
+        "title": "Reconfigure battery {battery_num} — Connection (Anker)",
+        "description": "Update connection details for Anker SOLIX Solarbank Max AC / 4 E5000 Pro battery {battery_num}. All other settings are preserved.",
+        "data": {
+          "name": "Name",
+          "host": "IP Address",
+          "port": "Modbus Port",
+          "slave_id": "Modbus Slave ID"
+        },
+        "data_description": {
+          "name": "Descriptive name to identify this battery",
+          "host": "New IP address shown in the Anker app under Third-Party Control",
+          "port": "Modbus TCP port (default 502)",
+          "slave_id": "Modbus slave/unit id (default 1)"
         }
       },
       "reconfigure_battery_esphome": {
@@ -503,6 +527,22 @@
         "data": {
           "restore": "Vorherige Konfiguration wiederherstellen"
         }
+      },
+      "battery_connection_anker": {
+        "title": "Configure battery {battery_num} — Connection (Anker)",
+        "description": "Enter connection details for Anker SOLIX Solarbank Max AC / 4 E5000 Pro battery {battery_num}. Enable Modbus TCP under Third-Party Control in the Anker app first. Only one Modbus client can connect at a time.",
+        "data": {
+          "name": "Name",
+          "host": "IP Address",
+          "port": "Modbus Port",
+          "slave_id": "Modbus Slave ID"
+        },
+        "data_description": {
+          "name": "Descriptive name to identify this battery",
+          "host": "IP address shown in the Anker app under Third-Party Control",
+          "port": "Modbus TCP port (default 502)",
+          "slave_id": "Modbus slave/unit id (default 1)"
+        }
       }
     },
     "error": {
@@ -515,10 +555,12 @@
       "midnight_crossing": "Die Startzeit muss vor der Endzeit liegen. Für Nachtperioden erstellen Sie zwei separate Zeitfenster (z.B. 22:00-23:59 und 00:00-06:00).",
       "slot_does_nothing": "Das Zeitfenster muss mindestens eine Richtung erlauben (Laden oder Entladen).",
       "manual_requires_power": "Manueller Modus benötigt aktivierte Leistungssteuerung.",
-      "no_price_data": "Keine Preisdaten vom Sensor verfügbar. Nordpool: benötigt `raw_today`. PVPC: benötigt `price_00h` … `price_23h`. CKW: benötigt das Attribut `prices` mit einer Slot-Liste. EPEX: benötigt das Attribut `data` mit einer Slot-Liste. ENTSO-e: benötigt das Attribut `prices_today` mit einer Slot-Liste.",
+      "no_price_data": "Der ausgewählte Sensor ist keine unterstützte Preisquelle. Nord Pool: Wähle eine Entität der offiziellen Integration oder einen HACS-Sensor mit `raw_today`. PVPC benötigt `price_00h` … `price_23h`, CKW eine `prices`-Liste, EPEX eine `data`-Liste und ENTSO-e eine `prices_today`-Liste.",
       "tibber_unavailable": "Die Tibber-Integration ist nicht installiert oder ihr Dienst `tibber.get_prices` ist nicht verfügbar. Installiere und konfiguriere zuerst Tibber.",
       "discharge_below_charge": "Die Entlade-Preisuntergrenze darf nicht unter dem maximalen (Lade-)Preis liegen. Setze sie gleich oder höher oder lass sie leer, um den Ladeschwellenwert wiederzuverwenden.",
-      "host_or_serial_required": "Gib entweder eine IP-Adresse (TCP) oder einen seriellen Port-Pfad (Modbus RTU) ein."
+      "host_or_serial_required": "Gib entweder eine IP-Adresse (TCP) oder einen seriellen Port-Pfad (Modbus RTU) ein.",
+      "missing_power_sensor": "Wähle einen Geräte-Leistungssensor oder aktiviere EV-Ladestation ohne Telemetrie und wähle einen Aktivitätssensor.",
+      "missing_activity_sensor": "Wähle für die dynamische Leistungsregelung oder eine EV-Ladestation ohne Telemetrie einen Sensor Gerät aktiv / EV-Ladestatus."
     },
     "abort": {
       "already_configured": "Diese Integration ist bereits konfiguriert.",
@@ -536,7 +578,7 @@
         "menu_options": {
           "sensors": "Sensoren",
           "batteries": "Batterien",
-          "time_slots": "Entladungs-Zeitfenster",
+          "time_slots": "Zeitfenster",
           "excluded_devices": "Ausgeschlossene Geräte",
           "predictive_charging": "Prädiktive Ladung",
           "weekly_full_charge": "Wöchentliche Vollladung",
@@ -558,7 +600,7 @@
           "max_contracted_power": "Maximale Vertragsleistung (W)"
         },
         "data_description": {
-          "consumption_sensor": "Sensor, der importierte (+) oder exportierte (-) Leistung ins Netz anzeigt.",
+          "consumption_sensor": "Echtzeitsensor für importierte (+) oder exportierte (-) Netzleistung. Aktualisierungen alle 1-2 Sekunden werden empfohlen. Langsamere Sensoren werden akzeptiert, verzögerte Messwerte verringern jedoch die Regelqualität; dem letzten Messwert wird bis zu 65 Sekunden lang gefolgt.",
           "solar_forecast_sensor": "Sensor, der die Solarproduktionsprognose in kWh liefert (z.B. Solcast). Wenn hier konfiguriert, wird er automatisch für prädiktive Ladung und Solarladungsverzögerung verwendet.",
           "solar_production_sensor": "Echtzeit-PV-Produktionsleistungssensor (W/kW) von einem externen Wechselrichter, der nicht über die MPPT-Eingänge der Batterie geführt wird. Wird verwendet, um den Solar-Knoten im Energiefluss-Diagramm des Dashboards anzuzeigen. Leer lassen, wenn deine Module direkt den MPPT der Batterie speisen.",
           "meter_inverted": "Aktivieren Sie diese Option, wenn Ihr Zähler die umgekehrte Konvention verwendet: positiv = Export, negativ = Import. Die Einheit (W/kW) wird automatisch erkannt.",
@@ -579,7 +621,7 @@
           "brand": "Batteriemarke"
         },
         "data_description": {
-          "brand": "Wählen Sie den Hersteller der Batterie. Marstek Venus verwendet Modbus TCP. Zendure SolarFlow verwendet lokales HTTP (erfordert HEMS in der Zendure-App aktiviert)."
+          "brand": "Marstek Venus: Modbus TCP. Zendure SolarFlow: local HTTP (enable HEMS in the Zendure app first). Anker SOLIX Solarbank Max AC / 4 E5000 Pro: Modbus TCP (enable Modbus TCP under Third-Party Control in the Anker app; only one Modbus client at a time)."
         }
       },
       "battery_connection": {
@@ -591,8 +633,7 @@
           "port": "Modbus-Port",
           "battery_version": "Batteriemodell",
           "slave_id": "Modbus-Slave-ID",
-          "serial_port": "Serieller Port (Modbus RTU)",
-          "queued_gateway_compatibility": "Legacy-MVEM-Modbus-Kompatibilität (experimentell)"
+          "serial_port": "Serieller Port (Modbus RTU)"
         },
         "data_description": {
           "name": "Beschreibender Name zur Identifizierung dieser Batterie",
@@ -600,8 +641,7 @@
           "port": "Modbus-Port (normalerweise 502)",
           "battery_version": "Wählen Sie die Modellversion Ihrer Batterie. Ev2 für ältere Modelle, Ev3 für neuere Modelle mit aktualisierter Registerkarte, A (Venus A) oder D (Venus D) für Hybrid-Wechselrichter-Modelle",
           "slave_id": "Modbus Slave-/Unit-ID (Standard 1). Nur ändern, wenn ein Modbus-Proxy mehrere Batterien über dieselbe IP:Port mit unterschiedlichen Slave-IDs abbildet.",
-          "serial_port": "Pfad des USB-RS485-Adapters, z. B. /dev/ttyUSB0 oder COM3. Statt der IP-Adresse ausfüllen, um Modbus RTU über die serielle Schnittstelle zu nutzen; für TCP leer lassen.",
-          "queued_gateway_compatibility": "Nur für Venus v2 über Modbus TCP. Für Gateways, die Anfragen in eine Warteschlange stellen und verzögert antworten: sendet jede Anfrage einmal mit einem größeren Antwortfenster (kein erneutes Senden mit neuer Transaktions-ID) und setzt den Sollwert in jedem Regelzyklus erneut, sodass sich ein verlorener Schreibvorgang selbst behebt. Für Direktverbindungen, Elfin EW11, serielles RTU und normale Gateways deaktiviert lassen."
+          "serial_port": "Pfad des USB-RS485-Adapters, z. B. /dev/ttyUSB0 oder COM3. Statt der IP-Adresse ausfüllen, um Modbus RTU über die serielle Schnittstelle zu nutzen; für TCP leer lassen."
         }
       },
       "battery_connection_zendure": {
@@ -655,8 +695,8 @@
         }
       },
       "time_slots": {
-        "title": "Entladungs-Zeitfenster",
-        "description": "Möchten Sie Zeitfenster neu konfigurieren? Wenn deaktiviert, werden alle Zeitfenster entfernt (Batterien arbeiten jederzeit).",
+        "title": "Zeitfenster",
+        "description": "Möchten Sie Zeitfenster neu konfigurieren? Jedes Zeitfenster kann Laden und Entladen unabhängig steuern. Wenn deaktiviert, werden alle Zeitfenster entfernt (Batterien arbeiten jederzeit).",
         "data": {
           "configure_time_slots": "Zeitfenster konfigurieren"
         }
@@ -741,16 +781,22 @@
         "title": "Spezielles Gerät {device_num}",
         "description": "Konfigurieren Sie, wie die Batterie dieses Gerät verwalten soll.",
         "data": {
-          "power_sensor": "Gerätesensor",
+          "power_sensor": "Geräte-Leistungssensor",
+          "activity_sensor": "Gerät aktiv / EV-Ladestatussensor",
           "included_in_consumption": "Verbrauch ist im Hausverbrauchssensor enthalten",
           "allow_solar_surplus": "Solarüberschuss nutzen erlauben (Batterie nicht laden)",
+          "dynamic_power_control": "Gerät hat dynamische Leistungsregelung",
+          "cover_home_when_active": "Hausverbrauch decken, während das Gerät aktiv ist",
           "ev_charger_no_telemetry": "EV-Ladestation ohne Leistungstelemetrie"
         },
         "data_description": {
-          "power_sensor": "Leistungssensor (W) des Geräts. Für EV-Ladestationen ohne Leistungstelemetrie den Statussensor auswählen, der 'Charging' anzeigt, wenn das Fahrzeug lädt.",
+          "power_sensor": "Numerischer Leistungssensor (W) des Geräts. Für EV-Ladestationen ohne Leistungstelemetrie optional; bestehende Konfigurationen mit dem Statussensor in diesem Feld bleiben kompatibel.",
+          "activity_sensor": "Status- oder Binärsensor, der 'on' oder einen Ladestatus meldet, wenn das Gerät Leistung anfordert. Für die dynamische Leistungsregelung und neue EV-Ladestationen ohne Telemetrie erforderlich.",
           "included_in_consumption": "✓ AKTIVIERT = Haussensor enthält dieses Gerät BEREITS → Batterie wird es NICHT versorgen (ausgeschlossen). ✗ DEAKTIVIERT = Haussensor sieht es nicht → Batterie wird es versorgen (zusätzlich)",
           "allow_solar_surplus": "Wenn aktiviert, kann das Gerät Energie direkt von den Solarmodulen (Überschuss) verbrauchen, ohne dass die Batterie versucht zu kompensieren. Empfohlen für Geräte mit hohem Verbrauch wie EV-Ladestationen.",
-          "ev_charger_no_telemetry": "✓ AKTIVIERT = Der ausgewählte Sensor meldet den Ladezustand ('Charging'). Wenn ein EV-Ladevorgang erkannt wird, hält die Batterie 5 Minuten an, damit das Fahrzeug volle Leistung beziehen kann; danach darf die Batterie nur mit Solarüberschuss laden und entlädt sich nie, solange das EV lädt."
+          "dynamic_power_control": "Für Geräte aktivieren, die ihren Bedarf über den Netzzähler automatisch regeln. Mit Aktivitätssensor gibt Omnibattery Vorrang, bevor Leistung erscheint; andernfalls reagiert es auf den Leistungssensor. Danach wird nur der tatsächlich verbleibende Überschuss genutzt.",
+          "cover_home_when_active": "Erfordert Solarüberschuss und einen Solarleistungssensor. Die Batterie darf den eigenen Hausverbrauch decken, während dieses Gerät aktiv ist; nur der Netzanteil des Geräts bleibt ausgeschlossen.",
+          "ev_charger_no_telemetry": "✓ AKTIVIERT = Nutzt den Sensor Gerät aktiv / EV-Ladestatus statt numerischer Telemetrie. Bestehende Konfigurationen mit diesem Sensor im Leistungsfeld funktionieren weiter. Bei erkanntem Laden pausiert die Batterie 5 Minuten; danach lädt sie nur mit Solarüberschuss und entlädt nie für das EV."
         }
       },
       "add_more_excluded_devices": {
@@ -819,9 +865,9 @@
         "data_description": {
           "price_integration_type": "Wählen Sie die Heimautomatisierungsintegration, die Strompreisdaten liefert",
           "price_sensor": "Sensor, der stündliche Strompreise enthält (z.B. sensor.nordpool_kwh_de_eur_3_10_025)",
-          "max_price_threshold": "Stunden über diesem Preis werden nicht ausgewählt. Wenn die preisbasierte Entladesteuerung aktiviert ist, wird dieser Wert auch als Entladeschwellenwert verwendet. Gleiche Einheit wie der Sensor verwenden: €/kWh für Nordpool/PVPC, CHF/kWh für CKW. Leer lassen, um alle Stunden zu verwenden und den Tagesdurchschnitt als Entladeschwellenwert zu nutzen. Sofern unten keine separate Entlade-Preisuntergrenze festgelegt ist.",
+          "max_price_threshold": "Stunden über diesem Preis werden nicht ausgewählt. Wenn die preisbasierte Entladesteuerung aktiviert ist, wird dieser Wert auch als Entladeschwellenwert verwendet. Hauptwährung/kWh verwenden: €/kWh für Nordpool/PVPC, CHF/kWh für CKW. In Cent konfigurierte HACS-Nordpool-Preise werden automatisch umgerechnet. Leer lassen, um alle Stunden zu verwenden und den Tagesdurchschnitt als Entladeschwellenwert zu nutzen. Sofern unten keine separate Entlade-Preisuntergrenze festgelegt ist.",
           "discharge_price_threshold": "Optionale separate Untergrenze für die preisgesteuerte Entladung. Die Entladung wird blockiert, solange der Preis kleiner oder gleich diesem Wert ist, wodurch ein neutrales Band zwischen der oberen Ladegrenze und dieser Untergrenze entsteht: In diesem Band lädt die Batterie weder aus dem Netz noch entlädt sie (Laden aus Solarüberschuss funktioniert weiterhin). Leer lassen, um die maximale Preisgrenze für beides zu verwenden (bisheriges Verhalten mit einem Schwellenwert).",
-          "dp_price_discharge_control": "Wenn aktiviert, entlädt die Batterie nur, wenn der aktuelle Strompreis den konfigurierten maximalen Preisschwellenwert übersteigt. Wenn kein Schwellenwert konfiguriert ist, wird der automatisch aus dem Preissensor berechnete Tagesdurchschnitt verwendet. Falls Entladezeitfenster konfiguriert sind, müssen beide Bedingungen erfüllt sein.",
+          "dp_price_discharge_control": "Wenn aktiviert, entlädt die Batterie nur, wenn der aktuelle Strompreis den konfigurierten maximalen Preisschwellenwert übersteigt. Wenn kein Schwellenwert konfiguriert ist, wird der automatisch aus dem Preissensor berechnete Tagesdurchschnitt verwendet. Falls Zeitfenster die Entladung einschränken, müssen beide Bedingungen erfüllt sein.",
           "solar_forecast_sensor": "Sensor, der die Solarproduktionsprognose in kWh liefert (z.B. Solcast). Mit Solaranlage: konfigurieren — das System lädt nur dann aus dem Netz, wenn die Solarprognose unzureichend ist. Ohne Solaranlage: leer lassen — das System lädt, wenn die Batterieenergie für den Tag nicht ausreicht. Nicht erforderlich, wenn dieser Sensor bereits im ersten Schritt konfiguriert wurde — er wird automatisch verwendet.",
           "predictive_safety_margin_kwh": "Zusätzlicher Energiepuffer, der der Verbrauchsprognose hinzugefügt wird. Nützlich, wenn die Solarprognose zu optimistisch ist. Auf 0 setzen zum Deaktivieren (Standard). Begrenzt auf Gesamtbatteriekapazität.",
           "predictive_grid_charge_margin_pct": "Zusätzlicher Prozentsatz, der über das Solar-Defizit hinaus aus dem Netz geladen wird, um optimistische Solarprognosen abzufedern. Z. B. lädt ein Netzbedarf von 2 kWh bei 50% 3 kWh. 0 zum Deaktivieren (Standard). Auf die Lücke bis zum max. SOC begrenzt."
@@ -841,9 +887,9 @@
         },
         "data_description": {
           "price_sensor": "Sensor, dessen Zustand der aktuelle Strompreis ist. Jeder Sensor, der den aktuellen Periodenpreis als Zustand anzeigt, funktioniert.",
-          "max_price_threshold": "Laden wird aktiviert, wenn der aktuelle Preis diesen Wert nicht übersteigt. Gleiche Einheit wie der Sensor verwenden. Leer lassen, wenn der Tagesdurchschnittssensor verwendet wird.",
+          "max_price_threshold": "Laden wird aktiviert, wenn der aktuelle Preis diesen Wert nicht übersteigt. Hauptwährung/kWh verwenden; in Cent konfigurierte HACS-Nordpool-Preise werden automatisch umgerechnet. Leer lassen, wenn der Tagesdurchschnittssensor verwendet wird.",
           "average_price_sensor": "Wenn angegeben, wird dieser Wert als Schwellenwert anstelle des fixen Wertes verwendet. Leer lassen für den fixen Schwellenwert.",
-          "rt_price_discharge_control": "Wenn aktiviert, entlädt die Batterie nur, wenn der aktuelle Strompreis den Schwellenwert übersteigt. Falls Entladezeitfenster konfiguriert sind, müssen beide Bedingungen erfüllt sein.",
+          "rt_price_discharge_control": "Wenn aktiviert, entlädt die Batterie nur, wenn der aktuelle Strompreis den Schwellenwert übersteigt. Falls Zeitfenster die Entladung einschränken, müssen beide Bedingungen erfüllt sein.",
           "solar_forecast_sensor": "Sensor, der die Solarproduktionsprognose in kWh liefert. Nicht erforderlich, wenn dieser Sensor bereits im ersten Schritt konfiguriert wurde — er wird automatisch verwendet.",
           "predictive_safety_margin_kwh": "Zusätzlicher Energiepuffer, der der Verbrauchsprognose hinzugefügt wird. Nützlich, wenn die Solarprognose zu optimistisch ist. Auf 0 setzen zum Deaktivieren (Standard). Begrenzt auf Gesamtbatteriekapazität.",
           "predictive_grid_charge_margin_pct": "Zusätzlicher Prozentsatz, der über das Solar-Defizit hinaus aus dem Netz geladen wird, um optimistische Solarprognosen abzufedern. Z. B. lädt ein Netzbedarf von 2 kWh bei 50% 3 kWh. 0 zum Deaktivieren (Standard). Auf die Lücke bis zum max. SOC begrenzt."
@@ -990,6 +1036,22 @@
           "hourly_balance_deadband_wh": "Toleranzband um den Zielwert. Keine Korrektur, wenn die Nettobilanz innerhalb von ±N kWh liegt. 0 = exakte Korrektur.",
           "hourly_balance_hysteresis_w": "Minimale Änderung des Versatzes, bevor eine neue Korrektur angewendet wird. Verhindert Mikro-Anpassungen jeden Zyklus. 0 = immer anwenden. Standard: 15 W."
         }
+      },
+      "battery_connection_anker": {
+        "title": "Configure battery {battery_num} — Connection (Anker)",
+        "description": "Modify connection details for Anker SOLIX Solarbank Max AC / 4 E5000 Pro battery {battery_num}. Enable Modbus TCP under Third-Party Control in the Anker app first. Only one Modbus client can connect at a time.",
+        "data": {
+          "name": "Name",
+          "host": "IP Address",
+          "port": "Modbus Port",
+          "slave_id": "Modbus Slave ID"
+        },
+        "data_description": {
+          "name": "Descriptive name to identify this battery",
+          "host": "IP address shown in the Anker app under Third-Party Control",
+          "port": "Modbus TCP port (default 502)",
+          "slave_id": "Modbus slave/unit id (default 1)"
+        }
       }
     },
     "error": {
@@ -1002,10 +1064,12 @@
       "midnight_crossing": "Die Startzeit muss vor der Endzeit liegen. Für Nachtperioden erstellen Sie zwei separate Zeitfenster (z.B. 22:00-23:59 und 00:00-06:00).",
       "slot_does_nothing": "Das Zeitfenster muss mindestens eine Richtung erlauben (Laden oder Entladen).",
       "manual_requires_power": "Manueller Modus benötigt aktivierte Leistungssteuerung.",
-      "no_price_data": "Keine Preisdaten vom Sensor verfügbar. Nordpool: benötigt `raw_today`. PVPC: benötigt `price_00h` … `price_23h`. CKW: benötigt das Attribut `prices` mit einer Slot-Liste. EPEX: benötigt das Attribut `data` mit einer Slot-Liste. ENTSO-e: benötigt das Attribut `prices_today` mit einer Slot-Liste.",
+      "no_price_data": "Der ausgewählte Sensor ist keine unterstützte Preisquelle. Nord Pool: Wähle eine Entität der offiziellen Integration oder einen HACS-Sensor mit `raw_today`. PVPC benötigt `price_00h` … `price_23h`, CKW eine `prices`-Liste, EPEX eine `data`-Liste und ENTSO-e eine `prices_today`-Liste.",
       "tibber_unavailable": "Die Tibber-Integration ist nicht installiert oder ihr Dienst `tibber.get_prices` ist nicht verfügbar. Installiere und konfiguriere zuerst Tibber.",
       "discharge_below_charge": "Die Entlade-Preisuntergrenze darf nicht unter dem maximalen (Lade-)Preis liegen. Setze sie gleich oder höher oder lass sie leer, um den Ladeschwellenwert wiederzuverwenden.",
-      "host_or_serial_required": "Gib entweder eine IP-Adresse (TCP) oder einen seriellen Port-Pfad (Modbus RTU) ein."
+      "host_or_serial_required": "Gib entweder eine IP-Adresse (TCP) oder einen seriellen Port-Pfad (Modbus RTU) ein.",
+      "missing_power_sensor": "Wähle einen Geräte-Leistungssensor oder aktiviere EV-Ladestation ohne Telemetrie und wähle einen Aktivitätssensor.",
+      "missing_activity_sensor": "Wähle für die dynamische Leistungsregelung oder eine EV-Ladestation ohne Telemetrie einen Sensor Gerät aktiv / EV-Ladestatus."
     }
   },
   "selector": {
@@ -1110,6 +1174,9 @@
       },
       "excluded_device_solar_surplus": {
         "name": "{device} – Solarüberschuss"
+      },
+      "excluded_device_dynamic_power_control": {
+        "name": "{device} – Dynamische Leistungsregelung"
       },
       "excluded_device_cover_home": {
         "name": "{device} – Haus decken"
@@ -1250,6 +1317,12 @@
       "battery_power": {
         "name": "Batterieleistung"
       },
+      "max_charge_power": {
+        "name": "Max. Ladeleistung"
+      },
+      "max_discharge_power": {
+        "name": "Max. Entladeleistung"
+      },
       "internal_temperature": {
         "name": "Innentemperatur"
       },
@@ -1270,6 +1343,12 @@
       },
       "inverter_state": {
         "name": "Wechselrichterstatus"
+      },
+      "battery_status": {
+        "name": "Batteriestatus"
+      },
+      "operating_mode": {
+        "name": "Betriebsmodus"
       },
       "battery_voltage": {
         "name": "Batteriespannung"
@@ -1633,6 +1712,12 @@
       },
       "discharge_price_threshold": {
         "name": "Entlade-Preisuntergrenze"
+      },
+      "min_arbitrage_margin": {
+        "name": "Minimale Arbitragemarge"
+      },
+      "round_trip_efficiency": {
+        "name": "Round-Trip-Wirkungsgrad"
       }
     },
     "button": {

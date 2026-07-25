@@ -1,4 +1,10 @@
 {
+  "issues": {
+    "slow_main_sensor": {
+      "title": "Le capteur de puissance réseau se met à jour trop lentement",
+      "description": "Le capteur réseau configuré {sensor} se met à jour environ toutes les {observed_interval} secondes. Des intervalles de {warning_interval} secondes ou plus sont plus lents que recommandé et peuvent réduire la qualité de régulation. Omnibattery suit la dernière mesure jusqu'à ce qu'elle date de plus de {stale_limit} secondes. Utilisez un capteur plus rapide si vous avez besoin d'un contrôle temps réel plus précis."
+    }
+  },
   "config": {
     "step": {
       "migrate_legacy": {
@@ -16,7 +22,7 @@
           "max_contracted_power": "Puissance maximale souscrite (W)"
         },
         "data_description": {
-          "consumption_sensor": "Capteur qui indique la puissance importée (+) ou exportée (-) vers le réseau. Le contrôleur ajustera les batteries pour maintenir cette valeur proche de 0W.",
+          "consumption_sensor": "Capteur temps réel de puissance importée (+) ou exportée (-) vers le réseau. Des mises à jour toutes les 1-2 secondes sont recommandées. Les capteurs plus lents sont acceptés, mais les mesures retardées réduisent la qualité de régulation ; la dernière mesure est suivie pendant 65 secondes au maximum.",
           "solar_forecast_sensor": "Capteur fournissant la prévision de production solaire en kWh (ex : Solcast). S'il est configuré ici, il sera utilisé automatiquement pour la charge prédictive et le retard de charge solaire.",
           "solar_production_sensor": "Capteur de puissance de production photovoltaïque en temps réel (W/kW) d'un onduleur externe non raccordé aux entrées MPPT de la batterie. Utilisé pour afficher le nœud Solaire dans le diagramme de flux d'énergie du tableau de bord. Laissez vide si vos panneaux alimentent directement le MPPT de la batterie.",
           "meter_inverted": "Activez cette option si votre compteur utilise la convention opposée : positif = exportation, négatif = importation. L'unité (W/kW) est détectée automatiquement.",
@@ -37,7 +43,7 @@
           "brand": "Marque de la batterie"
         },
         "data_description": {
-          "brand": "Sélectionnez le fabricant de la batterie. Marstek Venus utilise Modbus TCP. Zendure SolarFlow utilise HTTP local (nécessite HEMS activé dans l'application Zendure)."
+          "brand": "Marstek Venus: Modbus TCP. Zendure SolarFlow: local HTTP (enable HEMS in the Zendure app first). Anker SOLIX Solarbank Max AC / 4 E5000 Pro: Modbus TCP (enable Modbus TCP under Third-Party Control in the Anker app; only one Modbus client at a time)."
         }
       },
       "battery_connection": {
@@ -49,8 +55,7 @@
           "port": "Port Modbus",
           "battery_version": "Modèle de batterie",
           "slave_id": "ID d'esclave Modbus",
-          "serial_port": "Port série (Modbus RTU)",
-          "queued_gateway_compatibility": "Compatibilité Modbus MVEM historique (expérimental)"
+          "serial_port": "Port série (Modbus RTU)"
         },
         "data_description": {
           "name": "Nom descriptif pour identifier cette batterie",
@@ -58,8 +63,7 @@
           "port": "Port Modbus (généralement 502)",
           "battery_version": "Sélectionnez la version du modèle de votre batterie. Ev2 pour les anciens modèles, Ev3 pour les nouveaux modèles avec cartographie mise à jour, A (Venus A) ou D (Venus D) pour les onduleurs hybrides",
           "slave_id": "ID d'esclave/unité Modbus (par défaut 1). À modifier uniquement lorsqu'un proxy Modbus expose plusieurs batteries sur une même IP:port avec des ID d'esclave distincts.",
-          "serial_port": "Chemin de l'adaptateur USB-RS485, p. ex. /dev/ttyUSB0 ou COM3. Renseignez-le à la place de l'adresse IP pour utiliser Modbus RTU en série ; laissez vide pour le TCP.",
-          "queued_gateway_compatibility": "Uniquement pour Venus v2 via Modbus TCP. Pour les passerelles qui mettent les requêtes en file d'attente et répondent tardivement : envoie chaque requête une seule fois avec une fenêtre de réponse élargie (pas de renvoi avec un nouvel identifiant de transaction) et réaffirme la consigne à chaque cycle de contrôle afin qu'une écriture perdue se rétablisse d'elle-même. Laissez désactivé pour les connexions directes, Elfin EW11, RTU série et les passerelles normales."
+          "serial_port": "Chemin de l'adaptateur USB-RS485, p. ex. /dev/ttyUSB0 ou COM3. Renseignez-le à la place de l'adresse IP pour utiliser Modbus RTU en série ; laissez vide pour le TCP."
         }
       },
       "battery_connection_zendure": {
@@ -113,8 +117,8 @@
         }
       },
       "time_slots": {
-        "title": "Plages horaires de décharge",
-        "description": "Voulez-vous configurer des plages horaires ? Si configurées, les batteries ne se déchargeront QUE pendant ces plages. Sans plages configurées, elles fonctionnent en permanence.",
+        "title": "Plages horaires",
+        "description": "Voulez-vous configurer des plages horaires ? Chaque plage peut contrôler indépendamment quand les batteries peuvent se charger ou se décharger. Sans plages configurées, elles fonctionnent en permanence.",
         "data": {
           "configure_time_slots": "Configurer les plages horaires"
         }
@@ -199,16 +203,22 @@
         "title": "Appareil spécial {device_num}",
         "description": "Configurez comment la batterie doit gérer cet appareil.",
         "data": {
-          "power_sensor": "Capteur de l'appareil",
+          "power_sensor": "Capteur de puissance de l'appareil",
+          "activity_sensor": "Capteur appareil actif / charge VE",
           "included_in_consumption": "La consommation est incluse dans le capteur de consommation domestique",
           "allow_solar_surplus": "Autoriser l'utilisation du surplus solaire (ne pas charger la batterie)",
+          "dynamic_power_control": "L'appareil a un contrôle dynamique de puissance",
+          "cover_home_when_active": "Couvrir la maison pendant que l'appareil est actif",
           "ev_charger_no_telemetry": "Chargeur VE sans télémétrie de puissance"
         },
         "data_description": {
-          "power_sensor": "Capteur de puissance (W) de l'appareil. Pour les chargeurs VE sans télémétrie de puissance, sélectionnez le capteur d'état qui indique 'Charging' lorsque le véhicule charge.",
+          "power_sensor": "Capteur numérique de puissance (W) de l'appareil. Facultatif pour les chargeurs VE sans télémétrie ; les configurations existantes ayant enregistré ici le capteur d'état restent compatibles.",
+          "activity_sensor": "Capteur d'état ou binaire qui passe à 'on' ou indique la charge lorsque l'appareil demande de la puissance. Requis pour le contrôle dynamique et pour un nouveau chargeur VE sans télémétrie.",
           "included_in_consumption": "✓ COCHÉ = Le capteur domestique INCLUT déjà cet appareil → La batterie ne l'alimentera PAS (exclu). ✗ DÉCOCHÉ = Le capteur domestique ne le voit pas → La batterie l'alimentera (additionnel)",
           "allow_solar_surplus": "Si coché, l'appareil pourra consommer l'énergie directement des panneaux solaires (surplus) sans que la batterie essaie de compenser. Recommandé pour les appareils à forte consommation comme les chargeurs de VE.",
-          "ev_charger_no_telemetry": "✓ COCHÉ = Le capteur sélectionné indique l'état de charge ('Charging'). Lorsqu'une charge VE est détectée, la batterie s'arrête 5 minutes afin que le véhicule puisse tirer toute la puissance disponible ; ensuite la batterie ne peut charger qu'avec le surplus solaire et ne se déchargera jamais pendant que le VE charge."
+          "dynamic_power_control": "À activer pour les appareils qui ajustent automatiquement leur demande à partir du compteur réseau. Avec un capteur d'activité, Omnibattery cède avant l'apparition de puissance ; sinon il réagit au capteur de puissance. Il utilise ensuite uniquement le surplus réellement restant.",
+          "cover_home_when_active": "Nécessite Surplus Solaire et un capteur de production solaire. La batterie peut couvrir la consommation propre de la maison pendant que cet appareil est actif ; seule la part réseau de l'appareil reste exclue.",
+          "ev_charger_no_telemetry": "✓ COCHÉ = Utilise le capteur appareil actif / charge VE au lieu d'une télémétrie numérique. Les configurations existantes ayant placé ce capteur dans le champ de puissance continuent de fonctionner. À la détection de charge, la batterie s'arrête 5 minutes ; ensuite elle charge seulement avec le surplus solaire et ne se décharge jamais pour le VE."
         }
       },
       "add_more_excluded_devices": {
@@ -277,9 +287,9 @@
         "data_description": {
           "price_integration_type": "Sélectionnez l'intégration domotique qui fournit les données de prix de l'électricité",
           "price_sensor": "Capteur contenant les prix horaires de l'électricité (ex : sensor.nordpool_kwh_fr_eur_3_10_025)",
-          "max_price_threshold": "Les créneaux au-dessus de ce prix ne seront pas sélectionnés. Quand le contrôle de décharge par prix est activé, cette valeur sert aussi de seuil de décharge. Utiliser la même unité que le capteur : €/kWh pour Nordpool/PVPC, CHF/kWh pour CKW. Laisser vide pour utiliser tous les créneaux et utiliser la moyenne journalière comme seuil de décharge. Sauf si un prix plancher de décharge distinct est défini ci-dessous.",
+          "max_price_threshold": "Les créneaux au-dessus de ce prix ne seront pas sélectionnés. Quand le contrôle de décharge par prix est activé, cette valeur sert aussi de seuil de décharge. Utiliser la devise principale/kWh : €/kWh pour Nordpool/PVPC, CHF/kWh pour CKW. Les prix Nordpool HACS configurés en centimes sont convertis automatiquement. Laisser vide pour utiliser tous les créneaux et utiliser la moyenne journalière comme seuil de décharge. Sauf si un prix plancher de décharge distinct est défini ci-dessous.",
           "discharge_price_threshold": "Seuil distinct optionnel pour la décharge pilotée par le prix. La décharge est bloquée tant que le prix est inférieur ou égal à cette valeur, ouvrant une bande neutre entre le prix maximal de charge (au-dessus) et ce plancher : dans cette bande, la batterie ne se charge pas depuis le réseau et ne se décharge pas (la charge par surplus solaire fonctionne toujours). Laissez vide pour réutiliser le prix maximal pour les deux (comportement actuel à seuil unique).",
-          "dp_price_discharge_control": "Si activé, la batterie ne se décharge que lorsque le prix actuel dépasse le seuil de prix maximum configuré. Si aucun seuil n'est configuré, la moyenne journalière calculée automatiquement depuis le capteur de prix est utilisée. Si des plages horaires de décharge sont configurées, les deux conditions doivent être remplies.",
+          "dp_price_discharge_control": "Si activé, la batterie ne se décharge que lorsque le prix actuel dépasse le seuil de prix maximum configuré. Si aucun seuil n'est configuré, la moyenne journalière calculée automatiquement depuis le capteur de prix est utilisée. Si les plages horaires limitent la décharge, les deux conditions doivent être remplies.",
           "solar_forecast_sensor": "Capteur fournissant la prévision de production solaire en kWh (ex : Solcast). Avec panneaux solaires : configurez ce capteur — le système ne chargera depuis le réseau que si la prévision est insuffisante. Sans panneaux solaires : laissez vide — le système chargera quand l'énergie de la batterie est insuffisante pour la journée. Non requis si ce capteur a déjà été configuré à l'étape initiale — il sera utilisé automatiquement.",
           "predictive_safety_margin_kwh": "Tampon d'énergie supplémentaire ajouté à la prévision de consommation. Utile si la prévision solaire est trop optimiste. Mettre à 0 pour désactiver (défaut). Limité à la capacité totale de la batterie.",
           "predictive_grid_charge_margin_pct": "Pourcentage supplémentaire chargé depuis le réseau au-dessus du déficit solaire, pour couvrir des prévisions solaires optimistes. Ex. : un besoin réseau de 2 kWh à 50% charge 3 kWh. 0 pour désactiver (défaut). Plafonné à l'écart jusqu'au SOC max."
@@ -299,9 +309,9 @@
         },
         "data_description": {
           "price_sensor": "Capteur dont l'état est le prix actuel de l'électricité. Tout capteur qui expose le prix de la période courante comme son état fonctionne.",
-          "max_price_threshold": "La charge s'active quand le prix actuel est inférieur ou égal à cette valeur. Utilisez la même unité que votre capteur. Laissez vide si vous utilisez le capteur de prix moyen.",
+          "max_price_threshold": "La charge s'active quand le prix actuel est inférieur ou égal à cette valeur. Utilisez la devise principale/kWh ; les prix Nordpool HACS configurés en centimes sont convertis automatiquement. Laissez vide si vous utilisez le capteur de prix moyen.",
           "average_price_sensor": "Si renseigné, sa valeur est utilisée comme seuil à la place de la valeur fixe — utile si votre intégration de prix expose déjà un prix moyen journalier. Laissez vide pour utiliser le seuil fixe.",
-          "rt_price_discharge_control": "Si activé, la batterie ne se décharge que lorsque le prix actuel dépasse le seuil. Si des plages horaires de décharge sont configurées, les deux conditions doivent être remplies.",
+          "rt_price_discharge_control": "Si activé, la batterie ne se décharge que lorsque le prix actuel dépasse le seuil. Si les plages horaires limitent la décharge, les deux conditions doivent être remplies.",
           "solar_forecast_sensor": "Capteur fournissant les prévisions de production solaire en kWh. Non requis si vous avez déjà configuré ce capteur à l'étape initiale — il sera utilisé automatiquement.",
           "predictive_safety_margin_kwh": "Tampon d'énergie supplémentaire ajouté à la prévision de consommation. Utile si la prévision solaire est trop optimiste. Mettre à 0 pour désactiver (défaut). Limité à la capacité totale de la batterie.",
           "predictive_grid_charge_margin_pct": "Pourcentage supplémentaire chargé depuis le réseau au-dessus du déficit solaire, pour couvrir des prévisions solaires optimistes. Ex. : un besoin réseau de 2 kWh à 50% charge 3 kWh. 0 pour désactiver (défaut). Plafonné à l'écart jusqu'au SOC max."
@@ -458,8 +468,7 @@
           "port": "Port Modbus",
           "battery_version": "Modèle de batterie",
           "slave_id": "ID d'esclave Modbus",
-          "serial_port": "Port série (Modbus RTU)",
-          "queued_gateway_compatibility": "Compatibilité Modbus MVEM historique (expérimental)"
+          "serial_port": "Port série (Modbus RTU)"
         },
         "data_description": {
           "name": "Nom descriptif pour identifier cette batterie",
@@ -467,8 +476,7 @@
           "port": "Port Modbus (généralement 502)",
           "battery_version": "Sélectionnez la version de votre modèle de batterie",
           "slave_id": "ID d'esclave/unité Modbus (par défaut 1). À modifier uniquement lorsqu'un proxy Modbus expose plusieurs batteries sur une même IP:port avec des ID d'esclave distincts.",
-          "serial_port": "Chemin de l'adaptateur USB-RS485, p. ex. /dev/ttyUSB0 ou COM3. Renseignez-le à la place de l'adresse IP pour utiliser Modbus RTU en série ; laissez vide pour le TCP.",
-          "queued_gateway_compatibility": "Uniquement pour Venus v2 via Modbus TCP. Pour les passerelles qui mettent les requêtes en file d'attente et répondent tardivement : envoie chaque requête une seule fois avec une fenêtre de réponse élargie (pas de renvoi avec un nouvel identifiant de transaction) et réaffirme la consigne à chaque cycle de contrôle afin qu'une écriture perdue se rétablisse d'elle-même. Laissez désactivé pour les connexions directes, Elfin EW11, RTU série et les passerelles normales."
+          "serial_port": "Chemin de l'adaptateur USB-RS485, p. ex. /dev/ttyUSB0 ou COM3. Renseignez-le à la place de l'adresse IP pour utiliser Modbus RTU en série ; laissez vide pour le TCP."
         }
       },
       "reconfigure_battery_zendure": {
@@ -483,6 +491,22 @@
           "name": "Nom descriptif pour identifier cette batterie",
           "host": "Nouvelle adresse IP du Zendure SolarFlow sur le réseau local",
           "port": "Port HTTP (par défaut 80)"
+        }
+      },
+      "reconfigure_battery_anker": {
+        "title": "Reconfigure battery {battery_num} — Connection (Anker)",
+        "description": "Update connection details for Anker SOLIX Solarbank Max AC / 4 E5000 Pro battery {battery_num}. All other settings are preserved.",
+        "data": {
+          "name": "Name",
+          "host": "IP Address",
+          "port": "Modbus Port",
+          "slave_id": "Modbus Slave ID"
+        },
+        "data_description": {
+          "name": "Descriptive name to identify this battery",
+          "host": "New IP address shown in the Anker app under Third-Party Control",
+          "port": "Modbus TCP port (default 502)",
+          "slave_id": "Modbus slave/unit id (default 1)"
         }
       },
       "reconfigure_battery_esphome": {
@@ -503,6 +527,22 @@
         "data": {
           "restore": "Restaurer la configuration précédente"
         }
+      },
+      "battery_connection_anker": {
+        "title": "Configure battery {battery_num} — Connection (Anker)",
+        "description": "Enter connection details for Anker SOLIX Solarbank Max AC / 4 E5000 Pro battery {battery_num}. Enable Modbus TCP under Third-Party Control in the Anker app first. Only one Modbus client can connect at a time.",
+        "data": {
+          "name": "Name",
+          "host": "IP Address",
+          "port": "Modbus Port",
+          "slave_id": "Modbus Slave ID"
+        },
+        "data_description": {
+          "name": "Descriptive name to identify this battery",
+          "host": "IP address shown in the Anker app under Third-Party Control",
+          "port": "Modbus TCP port (default 502)",
+          "slave_id": "Modbus slave/unit id (default 1)"
+        }
       }
     },
     "error": {
@@ -515,10 +555,12 @@
       "midnight_crossing": "L'heure de début doit être antérieure à l'heure de fin. Pour les périodes nocturnes, créez deux créneaux séparés (ex: 22:00-23:59 et 00:00-06:00).",
       "slot_does_nothing": "Le créneau doit autoriser au moins une direction (charge ou décharge).",
       "manual_requires_power": "Le mode manuel nécessite l'activation du contrôle de puissance.",
-      "no_price_data": "Le capteur sélectionné ne possède pas les attributs de prix attendus. Nordpool : nécessite `raw_today`. PVPC : nécessite `price_00h` … `price_23h`. CKW : nécessite l'attribut `prices` avec une liste de créneaux. EPEX : nécessite l'attribut `data` avec une liste de créneaux. ENTSO-e : nécessite l'attribut `prices_today` avec une liste de créneaux.",
+      "no_price_data": "Le capteur sélectionné n'est pas une source de prix compatible. Nord Pool : sélectionnez une entité de l'intégration officielle ou un capteur HACS avec `raw_today`. PVPC nécessite `price_00h` … `price_23h`, CKW une liste `prices`, EPEX une liste `data` et ENTSO-e une liste `prices_today`.",
       "tibber_unavailable": "L'intégration Tibber n'est pas installée, ou son service `tibber.get_prices` est indisponible. Installez et configurez d'abord Tibber.",
       "discharge_below_charge": "Le prix plancher de décharge ne peut pas être inférieur au prix maximal (de charge). Définissez-le égal ou supérieur, ou laissez-le vide pour réutiliser le seuil de charge.",
-      "host_or_serial_required": "Saisissez soit une adresse IP (TCP), soit le chemin d'un port série (Modbus RTU)."
+      "host_or_serial_required": "Saisissez soit une adresse IP (TCP), soit le chemin d'un port série (Modbus RTU).",
+      "missing_power_sensor": "Sélectionnez un capteur de puissance, ou activez Chargeur VE sans télémétrie et sélectionnez un capteur d'activité.",
+      "missing_activity_sensor": "Sélectionnez un capteur appareil actif / charge VE pour le contrôle dynamique ou un chargeur sans télémétrie."
     },
     "abort": {
       "already_configured": "Cette intégration est déjà configurée.",
@@ -536,7 +578,7 @@
         "menu_options": {
           "sensors": "Capteurs",
           "batteries": "Batteries",
-          "time_slots": "Plages horaires de décharge",
+          "time_slots": "Plages horaires",
           "excluded_devices": "Appareils exclus",
           "predictive_charging": "Charge prédictive",
           "weekly_full_charge": "Charge complète hebdomadaire",
@@ -558,7 +600,7 @@
           "max_contracted_power": "Puissance maximale souscrite (W)"
         },
         "data_description": {
-          "consumption_sensor": "Capteur qui indique la puissance importée (+) ou exportée (-) vers le réseau.",
+          "consumption_sensor": "Capteur temps réel de puissance importée (+) ou exportée (-) vers le réseau. Des mises à jour toutes les 1-2 secondes sont recommandées. Les capteurs plus lents sont acceptés, mais les mesures retardées réduisent la qualité de régulation ; la dernière mesure est suivie pendant 65 secondes au maximum.",
           "solar_forecast_sensor": "Capteur fournissant la prévision de production solaire en kWh (ex : Solcast). S'il est configuré ici, il sera utilisé automatiquement pour la charge prédictive et le retard de charge solaire.",
           "solar_production_sensor": "Capteur de puissance de production photovoltaïque en temps réel (W/kW) d'un onduleur externe non raccordé aux entrées MPPT de la batterie. Utilisé pour afficher le nœud Solaire dans le diagramme de flux d'énergie du tableau de bord. Laissez vide si vos panneaux alimentent directement le MPPT de la batterie.",
           "meter_inverted": "Activez cette option si votre compteur utilise la convention opposée : positif = exportation, négatif = importation. L'unité (W/kW) est détectée automatiquement.",
@@ -579,7 +621,7 @@
           "brand": "Marque de la batterie"
         },
         "data_description": {
-          "brand": "Sélectionnez le fabricant de la batterie. Marstek Venus utilise Modbus TCP. Zendure SolarFlow utilise HTTP local (nécessite HEMS activé dans l'application Zendure)."
+          "brand": "Marstek Venus: Modbus TCP. Zendure SolarFlow: local HTTP (enable HEMS in the Zendure app first). Anker SOLIX Solarbank Max AC / 4 E5000 Pro: Modbus TCP (enable Modbus TCP under Third-Party Control in the Anker app; only one Modbus client at a time)."
         }
       },
       "battery_connection": {
@@ -591,8 +633,7 @@
           "port": "Port Modbus",
           "battery_version": "Modèle de batterie",
           "slave_id": "ID d'esclave Modbus",
-          "serial_port": "Port série (Modbus RTU)",
-          "queued_gateway_compatibility": "Compatibilité Modbus MVEM historique (expérimental)"
+          "serial_port": "Port série (Modbus RTU)"
         },
         "data_description": {
           "name": "Nom descriptif pour identifier cette batterie",
@@ -600,8 +641,7 @@
           "port": "Port Modbus (généralement 502)",
           "battery_version": "Sélectionnez la version du modèle de votre batterie. Ev2 pour les anciens modèles, Ev3 pour les nouveaux modèles avec cartographie mise à jour, A (Venus A) ou D (Venus D) pour les onduleurs hybrides",
           "slave_id": "ID d'esclave/unité Modbus (par défaut 1). À modifier uniquement lorsqu'un proxy Modbus expose plusieurs batteries sur une même IP:port avec des ID d'esclave distincts.",
-          "serial_port": "Chemin de l'adaptateur USB-RS485, p. ex. /dev/ttyUSB0 ou COM3. Renseignez-le à la place de l'adresse IP pour utiliser Modbus RTU en série ; laissez vide pour le TCP.",
-          "queued_gateway_compatibility": "Uniquement pour Venus v2 via Modbus TCP. Pour les passerelles qui mettent les requêtes en file d'attente et répondent tardivement : envoie chaque requête une seule fois avec une fenêtre de réponse élargie (pas de renvoi avec un nouvel identifiant de transaction) et réaffirme la consigne à chaque cycle de contrôle afin qu'une écriture perdue se rétablisse d'elle-même. Laissez désactivé pour les connexions directes, Elfin EW11, RTU série et les passerelles normales."
+          "serial_port": "Chemin de l'adaptateur USB-RS485, p. ex. /dev/ttyUSB0 ou COM3. Renseignez-le à la place de l'adresse IP pour utiliser Modbus RTU en série ; laissez vide pour le TCP."
         }
       },
       "battery_connection_zendure": {
@@ -655,8 +695,8 @@
         }
       },
       "time_slots": {
-        "title": "Plages horaires de décharge",
-        "description": "Voulez-vous reconfigurer les plages horaires ? Si décoché, toutes les plages seront supprimées (les batteries fonctionneront en permanence).",
+        "title": "Plages horaires",
+        "description": "Voulez-vous reconfigurer les plages horaires ? Chaque plage peut contrôler indépendamment la charge et la décharge. Si décoché, toutes les plages seront supprimées (les batteries fonctionneront en permanence).",
         "data": {
           "configure_time_slots": "Configurer les plages horaires"
         }
@@ -741,16 +781,22 @@
         "title": "Appareil spécial {device_num}",
         "description": "Configurez comment la batterie doit gérer cet appareil.",
         "data": {
-          "power_sensor": "Capteur de l'appareil",
+          "power_sensor": "Capteur de puissance de l'appareil",
+          "activity_sensor": "Capteur appareil actif / charge VE",
           "included_in_consumption": "La consommation est incluse dans le capteur de consommation domestique",
           "allow_solar_surplus": "Autoriser l'utilisation du surplus solaire (ne pas charger la batterie)",
+          "dynamic_power_control": "L'appareil a un contrôle dynamique de puissance",
+          "cover_home_when_active": "Couvrir la maison pendant que l'appareil est actif",
           "ev_charger_no_telemetry": "Chargeur VE sans télémétrie de puissance"
         },
         "data_description": {
-          "power_sensor": "Capteur de puissance (W) de l'appareil. Pour les chargeurs VE sans télémétrie de puissance, sélectionnez le capteur d'état qui indique 'Charging' lorsque le véhicule charge.",
+          "power_sensor": "Capteur numérique de puissance (W) de l'appareil. Facultatif pour les chargeurs VE sans télémétrie ; les configurations existantes ayant enregistré ici le capteur d'état restent compatibles.",
+          "activity_sensor": "Capteur d'état ou binaire qui passe à 'on' ou indique la charge lorsque l'appareil demande de la puissance. Requis pour le contrôle dynamique et pour un nouveau chargeur VE sans télémétrie.",
           "included_in_consumption": "✓ COCHÉ = Le capteur domestique INCLUT déjà cet appareil → La batterie ne l'alimentera PAS (exclu). ✗ DÉCOCHÉ = Le capteur domestique ne le voit pas → La batterie l'alimentera (additionnel)",
           "allow_solar_surplus": "Si coché, l'appareil pourra consommer l'énergie directement des panneaux solaires (surplus) sans que la batterie essaie de compenser. Recommandé pour les appareils à forte consommation comme les chargeurs de VE.",
-          "ev_charger_no_telemetry": "✓ COCHÉ = Le capteur sélectionné indique l'état de charge ('Charging'). Lorsqu'une charge VE est détectée, la batterie s'arrête 5 minutes afin que le véhicule puisse tirer toute la puissance disponible ; ensuite la batterie ne peut charger qu'avec le surplus solaire et ne se déchargera jamais pendant que le VE charge."
+          "dynamic_power_control": "À activer pour les appareils qui ajustent automatiquement leur demande à partir du compteur réseau. Avec un capteur d'activité, Omnibattery cède avant l'apparition de puissance ; sinon il réagit au capteur de puissance. Il utilise ensuite uniquement le surplus réellement restant.",
+          "cover_home_when_active": "Nécessite Surplus Solaire et un capteur de production solaire. La batterie peut couvrir la consommation propre de la maison pendant que cet appareil est actif ; seule la part réseau de l'appareil reste exclue.",
+          "ev_charger_no_telemetry": "✓ COCHÉ = Utilise le capteur appareil actif / charge VE au lieu d'une télémétrie numérique. Les configurations existantes ayant placé ce capteur dans le champ de puissance continuent de fonctionner. À la détection de charge, la batterie s'arrête 5 minutes ; ensuite elle charge seulement avec le surplus solaire et ne se décharge jamais pour le VE."
         }
       },
       "add_more_excluded_devices": {
@@ -819,9 +865,9 @@
         "data_description": {
           "price_integration_type": "Sélectionnez l'intégration domotique qui fournit les données de prix de l'électricité",
           "price_sensor": "Capteur contenant les prix horaires de l'électricité (ex : sensor.nordpool_kwh_fr_eur_3_10_025)",
-          "max_price_threshold": "Les créneaux au-dessus de ce prix ne seront pas sélectionnés. Quand le contrôle de décharge par prix est activé, cette valeur sert aussi de seuil de décharge. Utiliser la même unité que le capteur : €/kWh pour Nordpool/PVPC, CHF/kWh pour CKW. Laisser vide pour utiliser tous les créneaux et utiliser la moyenne journalière comme seuil de décharge. Sauf si un prix plancher de décharge distinct est défini ci-dessous.",
+          "max_price_threshold": "Les créneaux au-dessus de ce prix ne seront pas sélectionnés. Quand le contrôle de décharge par prix est activé, cette valeur sert aussi de seuil de décharge. Utiliser la devise principale/kWh : €/kWh pour Nordpool/PVPC, CHF/kWh pour CKW. Les prix Nordpool HACS configurés en centimes sont convertis automatiquement. Laisser vide pour utiliser tous les créneaux et utiliser la moyenne journalière comme seuil de décharge. Sauf si un prix plancher de décharge distinct est défini ci-dessous.",
           "discharge_price_threshold": "Seuil distinct optionnel pour la décharge pilotée par le prix. La décharge est bloquée tant que le prix est inférieur ou égal à cette valeur, ouvrant une bande neutre entre le prix maximal de charge (au-dessus) et ce plancher : dans cette bande, la batterie ne se charge pas depuis le réseau et ne se décharge pas (la charge par surplus solaire fonctionne toujours). Laissez vide pour réutiliser le prix maximal pour les deux (comportement actuel à seuil unique).",
-          "dp_price_discharge_control": "Si activé, la batterie ne se décharge que lorsque le prix actuel dépasse le seuil de prix maximum configuré. Si aucun seuil n'est configuré, la moyenne journalière calculée automatiquement depuis le capteur de prix est utilisée. Si des plages horaires de décharge sont configurées, les deux conditions doivent être remplies.",
+          "dp_price_discharge_control": "Si activé, la batterie ne se décharge que lorsque le prix actuel dépasse le seuil de prix maximum configuré. Si aucun seuil n'est configuré, la moyenne journalière calculée automatiquement depuis le capteur de prix est utilisée. Si les plages horaires limitent la décharge, les deux conditions doivent être remplies.",
           "solar_forecast_sensor": "Capteur fournissant la prévision de production solaire en kWh (ex : Solcast). Avec panneaux solaires : configurez ce capteur — le système ne chargera depuis le réseau que si la prévision est insuffisante. Sans panneaux solaires : laissez vide — le système chargera quand l'énergie de la batterie est insuffisante pour la journée. Non requis si ce capteur a déjà été configuré à l'étape initiale — il sera utilisé automatiquement.",
           "predictive_safety_margin_kwh": "Tampon d'énergie supplémentaire ajouté à la prévision de consommation. Utile si la prévision solaire est trop optimiste. Mettre à 0 pour désactiver (défaut). Limité à la capacité totale de la batterie.",
           "predictive_grid_charge_margin_pct": "Pourcentage supplémentaire chargé depuis le réseau au-dessus du déficit solaire, pour couvrir des prévisions solaires optimistes. Ex. : un besoin réseau de 2 kWh à 50% charge 3 kWh. 0 pour désactiver (défaut). Plafonné à l'écart jusqu'au SOC max."
@@ -841,9 +887,9 @@
         },
         "data_description": {
           "price_sensor": "Capteur dont l'état est le prix actuel de l'électricité. Tout capteur qui expose le prix de la période courante comme son état fonctionne.",
-          "max_price_threshold": "La charge s'active quand le prix actuel est inférieur ou égal à cette valeur. Utilisez la même unité que votre capteur. Laissez vide si vous utilisez le capteur de prix moyen.",
+          "max_price_threshold": "La charge s'active quand le prix actuel est inférieur ou égal à cette valeur. Utilisez la devise principale/kWh ; les prix Nordpool HACS configurés en centimes sont convertis automatiquement. Laissez vide si vous utilisez le capteur de prix moyen.",
           "average_price_sensor": "Si renseigné, sa valeur est utilisée comme seuil à la place de la valeur fixe — utile si votre intégration de prix expose déjà un prix moyen journalier. Laissez vide pour utiliser le seuil fixe.",
-          "rt_price_discharge_control": "Si activé, la batterie ne se décharge que lorsque le prix actuel dépasse le seuil. Si des plages horaires de décharge sont configurées, les deux conditions doivent être remplies.",
+          "rt_price_discharge_control": "Si activé, la batterie ne se décharge que lorsque le prix actuel dépasse le seuil. Si les plages horaires limitent la décharge, les deux conditions doivent être remplies.",
           "solar_forecast_sensor": "Capteur fournissant les prévisions de production solaire en kWh. Non requis si vous avez déjà configuré ce capteur à l'étape initiale — il sera utilisé automatiquement.",
           "predictive_safety_margin_kwh": "Tampon d'énergie supplémentaire ajouté à la prévision de consommation. Utile si la prévision solaire est trop optimiste. Mettre à 0 pour désactiver (défaut). Limité à la capacité totale de la batterie.",
           "predictive_grid_charge_margin_pct": "Pourcentage supplémentaire chargé depuis le réseau au-dessus du déficit solaire, pour couvrir des prévisions solaires optimistes. Ex. : un besoin réseau de 2 kWh à 50% charge 3 kWh. 0 pour désactiver (défaut). Plafonné à l'écart jusqu'au SOC max."
@@ -990,6 +1036,22 @@
           "hourly_balance_deadband_wh": "Bande de tolérance autour de l objectif. Aucune correction si le bilan net est dans ±N kWh de l objectif. 0 = correction exacte.",
           "hourly_balance_hysteresis_w": "Variation minimale du décalage nécessaire pour appliquer une nouvelle correction. Évite les micro-ajustements à chaque cycle. 0 = appliquer toujours. Par défaut : 15 W."
         }
+      },
+      "battery_connection_anker": {
+        "title": "Configure battery {battery_num} — Connection (Anker)",
+        "description": "Modify connection details for Anker SOLIX Solarbank Max AC / 4 E5000 Pro battery {battery_num}. Enable Modbus TCP under Third-Party Control in the Anker app first. Only one Modbus client can connect at a time.",
+        "data": {
+          "name": "Name",
+          "host": "IP Address",
+          "port": "Modbus Port",
+          "slave_id": "Modbus Slave ID"
+        },
+        "data_description": {
+          "name": "Descriptive name to identify this battery",
+          "host": "IP address shown in the Anker app under Third-Party Control",
+          "port": "Modbus TCP port (default 502)",
+          "slave_id": "Modbus slave/unit id (default 1)"
+        }
       }
     },
     "error": {
@@ -1002,10 +1064,12 @@
       "midnight_crossing": "L'heure de début doit être antérieure à l'heure de fin. Pour les périodes nocturnes, créez deux créneaux séparés (ex: 22:00-23:59 et 00:00-06:00).",
       "slot_does_nothing": "Le créneau doit autoriser au moins une direction (charge ou décharge).",
       "manual_requires_power": "Le mode manuel nécessite l'activation du contrôle de puissance.",
-      "no_price_data": "Le capteur sélectionné ne possède pas les attributs de prix attendus. Nordpool : nécessite `raw_today`. PVPC : nécessite `price_00h` … `price_23h`. CKW : nécessite l'attribut `prices` avec une liste de créneaux. EPEX : nécessite l'attribut `data` avec une liste de créneaux. ENTSO-e : nécessite l'attribut `prices_today` avec une liste de créneaux.",
+      "no_price_data": "Le capteur sélectionné n'est pas une source de prix compatible. Nord Pool : sélectionnez une entité de l'intégration officielle ou un capteur HACS avec `raw_today`. PVPC nécessite `price_00h` … `price_23h`, CKW une liste `prices`, EPEX une liste `data` et ENTSO-e une liste `prices_today`.",
       "tibber_unavailable": "L'intégration Tibber n'est pas installée, ou son service `tibber.get_prices` est indisponible. Installez et configurez d'abord Tibber.",
       "discharge_below_charge": "Le prix plancher de décharge ne peut pas être inférieur au prix maximal (de charge). Définissez-le égal ou supérieur, ou laissez-le vide pour réutiliser le seuil de charge.",
-      "host_or_serial_required": "Saisissez soit une adresse IP (TCP), soit le chemin d'un port série (Modbus RTU)."
+      "host_or_serial_required": "Saisissez soit une adresse IP (TCP), soit le chemin d'un port série (Modbus RTU).",
+      "missing_power_sensor": "Sélectionnez un capteur de puissance, ou activez Chargeur VE sans télémétrie et sélectionnez un capteur d'activité.",
+      "missing_activity_sensor": "Sélectionnez un capteur appareil actif / charge VE pour le contrôle dynamique ou un chargeur sans télémétrie."
     }
   },
   "selector": {
@@ -1110,6 +1174,9 @@
       },
       "excluded_device_solar_surplus": {
         "name": "{device} – Surplus Solaire"
+      },
+      "excluded_device_dynamic_power_control": {
+        "name": "{device} – Contrôle Dynamique de Puissance"
       },
       "excluded_device_cover_home": {
         "name": "{device} – Couvrir Maison"
@@ -1250,6 +1317,12 @@
       "battery_power": {
         "name": "Puissance Batterie"
       },
+      "max_charge_power": {
+        "name": "Puissance max. charge"
+      },
+      "max_discharge_power": {
+        "name": "Puissance max. décharge"
+      },
       "internal_temperature": {
         "name": "Température Interne"
       },
@@ -1270,6 +1343,12 @@
       },
       "inverter_state": {
         "name": "État de l'Onduleur"
+      },
+      "battery_status": {
+        "name": "État de la Batterie"
+      },
+      "operating_mode": {
+        "name": "Mode de Fonctionnement"
       },
       "battery_voltage": {
         "name": "Tension Batterie"
@@ -1633,6 +1712,12 @@
       },
       "discharge_price_threshold": {
         "name": "Prix plancher de décharge"
+      },
+      "min_arbitrage_margin": {
+        "name": "Marge d'arbitrage minimale"
+      },
+      "round_trip_efficiency": {
+        "name": "Rendement aller-retour"
       }
     },
     "button": {

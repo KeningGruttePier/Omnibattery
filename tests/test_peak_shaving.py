@@ -1,10 +1,4 @@
-"""Regression tests for peak-shaving conservation decisions.
-
-When SOC is below the peak-shaving threshold, a below-limit household load
-must leave the battery idle. The old logic stopped an existing discharge but
-kept an existing charge command alive by moving the target to the current grid
-reading, producing a zero PD error that latched the charge indefinitely.
-"""
+"""Regression tests for peak-shaving conservation decisions."""
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -33,7 +27,6 @@ def _controller(*, previous_power: float):
 @pytest.mark.parametrize("previous_power", [10.1, -500.0])
 def test_conserving_stops_any_existing_battery_command(previous_power):
     ctrl = _controller(previous_power=previous_power)
-    # Keep the reconstructed household load at 321.4 W for either command sign.
     grid_power = 321.4 + previous_power
 
     target, sensor = ctrl._apply_capacity_protection(grid_power, active_target=0.0)
@@ -55,7 +48,6 @@ def test_conserving_idle_does_not_request_redundant_stop():
 
 def test_solar_surplus_charge_remains_allowed():
     ctrl = _controller(previous_power=10.1)
-    # Grid - battery charge = -100 W: genuine surplus remains after serving the house.
     grid_power = -89.9
 
     target, sensor = ctrl._apply_capacity_protection(grid_power, active_target=0.0)

@@ -54,8 +54,6 @@ class _Coord:
         self.max_soc = max_soc
         self.max_charge_power = max_charge_power
         self.active_balance_mode_enabled = active_balance_mode_enabled
-        # Live commanded set-point: the BMS-cutoff signature only counts when we
-        # actually asked this battery to charge and it refused.
         self.commanded_charge_power = commanded_charge_power
         setattr(self, CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED, taper_enabled)
 
@@ -293,8 +291,7 @@ def test_refresh_blocks_pause_releases_after_soc_drop_margin():
 
 
 def test_refresh_blocks_latches_on_bms_cutoff_signature_below_pause_voltage():
-    # vmax below the 3.58 pause voltage but in the taper zone, a commanded charge
-    # collapsed to <=10 W with the inverter in standby (raw state 1) -> BMS cut.
+    # A commanded charge collapsed to <=10 W with the inverter in standby.
     c = _Coord(
         data={
             "max_cell_voltage": 3.50,
@@ -312,9 +309,6 @@ def test_refresh_blocks_latches_on_bms_cutoff_signature_below_pause_voltage():
 
 
 def test_refresh_blocks_does_not_latch_pause_on_idle_battery():
-    # Same telemetry as a BMS cut (<=10 W + Standby) but nobody asked this battery
-    # to charge (solar lull / PD serving another one). Not a cutoff: an idle
-    # battery in the taper zone must not latch the pause below the top voltage.
     c = _Coord(
         data={
             "max_cell_voltage": 3.50,
@@ -381,10 +375,7 @@ def test_recal_override_cutoff_counter_resets_when_charge_resumes():
 
 
 def test_recal_override_never_latches_on_idle_battery():
-    """The reported bug: a battery nobody asked to charge reads ≤10 W + Standby,
-    identical to a BMS cut. Without the commanded gate it latched recal off and
-    the top-of-charge pause stuck at 92% SOC / 3.58 V for the rest of the day."""
-    c = _recal_coord(power=0, inv=1, commanded=0)  # idle, not commanded
+    c = _recal_coord(power=0, inv=1, commanded=0)
     ctrl = _controller([c])
     m = _mgr(ctrl)
 
@@ -396,21 +387,18 @@ def test_recal_override_never_latches_on_idle_battery():
 
 
 def test_recal_override_counter_freezes_while_idle():
-    """An idle cycle must freeze the counter, not reset it: a confirmed cutoff
-    stops the battery being commanded, which would otherwise wipe the very count
-    that is about to latch it."""
-    c = _recal_coord(power=5, inv=1)  # commanded + refusing
+    c = _recal_coord(power=5, inv=1)
     ctrl = _controller([c])
     m = _mgr(ctrl)
     for _ in range(NORMAL_BALANCE_RECAL_CUTOFF_CYCLES - 1):
         m._compute_recal_override(c, 3.55, 95)
     assert ctrl._normal_balance_recal_cutoff_count[c] == NORMAL_BALANCE_RECAL_CUTOFF_CYCLES - 1
 
-    c.commanded_charge_power = 0  # idle cycle: freeze, neither count nor reset
+    c.commanded_charge_power = 0
     assert m._compute_recal_override(c, 3.55, 95) is True
     assert ctrl._normal_balance_recal_cutoff_count[c] == NORMAL_BALANCE_RECAL_CUTOFF_CYCLES - 1
 
-    c.commanded_charge_power = 200  # commanded again, still refusing -> latches
+    c.commanded_charge_power = 200
     assert m._compute_recal_override(c, 3.55, 95) is False
     assert ctrl._normal_balance_recal_latched.get(c) is True
 

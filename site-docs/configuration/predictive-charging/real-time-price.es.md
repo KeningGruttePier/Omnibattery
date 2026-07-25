@@ -59,10 +59,10 @@ La lógica inversa a la de carga: se carga cuando el precio es bajo, se descarga
 
 ### Interacción con franjas horarias
 
-Si tienes franjas de descarga configuradas, **ambas condiciones deben cumplirse**:
+Si las franjas horarias están configuradas para restringir la descarga, **ambas condiciones deben cumplirse**:
 
 ```
-Descarga permitida = dentro_de_franja_horaria AND precio_actual > umbral
+Descarga permitida = dentro_de_franja_horaria_de_descarga AND precio_actual > umbral
 ```
 
 ### Efecto en el controlador PD
