@@ -1,5 +1,5 @@
 blueprint:
-  name: "Marstek Venus - Peak Shaving Recharge To SOC"
+  name: "Omnibattery - Peak Shaving Recharge To SOC"
   description: >
     While Peak Shaving (Capacity Protection) is active and the system SOC drops
     below a configured floor, this automation moves the PD Target Grid Power to a
@@ -14,13 +14,13 @@ blueprint:
     The idle value is only restored when the current target still matches the
     recharge value, so manual or other-automation changes are left untouched.
   domain: automation
-  source_url: "https://github.com/ffunes/Marstek-Venus-Energy-Manager/blob/main/blueprints/peak_shaving_recharge_blueprint.yaml"
+  source_url: "https://github.com/ffunes/omnibattery/blob/main/blueprints/peak_shaving_recharge_blueprint.yaml"
 
   input:
     soc_sensor:
       name: "System SOC Sensor"
-      description: "Marstek Venus system SOC sensor."
-      default: sensor.marstek_venus_system_system_soc
+      description: "Omnibattery system SOC sensor."
+      default: sensor.omnibattery_system_soc
       selector:
         entity:
           filter:
@@ -29,9 +29,9 @@ blueprint:
     status_sensor:
       name: "Integration Status Sensor"
       description: >
-        Marstek Venus integration status sensor. Used to detect that Peak Shaving
+        Omnibattery integration status sensor. Used to detect that Peak Shaving
         (Capacity Protection) is active.
-      default: sensor.marstek_venus_system_integration_status
+      default: sensor.omnibattery_integration_status
       selector:
         entity:
           filter:
@@ -39,8 +39,8 @@ blueprint:
 
     target_grid_power_number:
       name: "PD Target Grid Power Number"
-      description: "Marstek Venus PD Target Grid Power number entity (the offset to move)."
-      default: number.marstek_venus_system_pd_target_grid_power
+      description: "Omnibattery PD Target Grid Power number entity (the offset to move)."
+      default: number.omnibattery_pd_target_grid_power
       selector:
         entity:
           filter:

@@ -12,15 +12,15 @@ blueprint:
       when the remaining solar forecast can refill the reserve.
     - If the forecast is not enough, stop discharge at the reserve SOC.
 
-    This blueprint controls the Marstek Venus Allow Discharge switches only. It
+    This blueprint controls the Omnibattery Allow Discharge switches only. It
     does not write battery Modbus registers or force charge/discharge modes.
   domain: automation
-  source_url: "https://github.com/ffunes/Marstek-Venus-Energy-Manager/blob/main/blueprints/solar_forecast_reserve_discharge_blueprint.yaml"
+  source_url: "https://github.com/ffunes/omnibattery/blob/main/blueprints/solar_forecast_reserve_discharge_blueprint.yaml"
 
   input:
     allow_discharge_switches:
       name: "Allow Discharge Switches"
-      description: "Select all Marstek Venus battery Allow Discharge switches that should be controlled."
+      description: "Select all Omnibattery Allow Discharge switches that should be controlled."
       selector:
         entity:
           domain: switch
@@ -28,8 +28,8 @@ blueprint:
 
     system_soc_sensor:
       name: "System SOC Sensor"
-      description: "Marstek Venus system SOC sensor."
-      default: sensor.marstek_venus_system_system_soc
+      description: "Omnibattery system SOC sensor."
+      default: sensor.omnibattery_system_soc
       selector:
         entity:
           filter:
@@ -37,8 +37,8 @@ blueprint:
 
     system_total_energy_sensor:
       name: "System Total Energy Sensor"
-      description: "Marstek Venus system total battery capacity sensor in kWh."
-      default: sensor.marstek_venus_system_system_total_energy
+      description: "Omnibattery system total battery capacity sensor in kWh."
+      default: sensor.omnibattery_system_total_energy
       selector:
         entity:
           filter:
@@ -58,7 +58,7 @@ blueprint:
     minimum_soc_numbers:
       name: "Minimum SOC Number Entities"
       description: >
-        Select the Marstek Venus Minimum SOC number entities for the controlled
+        Select the Omnibattery Minimum SOC number entities for the controlled
         batteries. If multiple entities are selected, the highest configured
         minimum SOC is used as the safe lower limit.
       selector:

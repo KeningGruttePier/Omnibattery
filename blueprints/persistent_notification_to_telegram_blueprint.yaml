@@ -1,5 +1,5 @@
 blueprint:
-  name: "Marstek Venus - Forward Persistent Notifications To Telegram"
+  name: "Omnibattery - Forward Persistent Notifications To Telegram"
   description: >
     Forwards Home Assistant persistent notifications to a Telegram chat.
 
@@ -12,7 +12,7 @@ blueprint:
       "marstek_venus_"). Clear the prefix to forward every persistent
       notification, or set a different prefix.
   domain: automation
-  source_url: "https://github.com/ffunes/Marstek-Venus-Energy-Manager/blob/main/blueprints/persistent_notification_to_telegram_blueprint.yaml"
+  source_url: "https://github.com/ffunes/omnibattery/blob/main/blueprints/persistent_notification_to_telegram_blueprint.yaml"
 
   input:
     telegram_target:

@@ -1,7 +1,7 @@
 blueprint:
-  name: "Marstek Venus - Different Grid Target For Charge And Discharge"
+  name: "Omnibattery - Different Grid Target For Charge And Discharge"
   description: >
-    Automatically changes the Marstek Venus PD Target Grid Power depending on
+    Automatically changes the Omnibattery PD Target Grid Power depending on
     whether the system is charging or discharging.
 
     Default behavior:
@@ -9,13 +9,13 @@ blueprint:
     - While discharging: set grid target to +50 W, meaning import from grid.
     - While idle: leave the current target unchanged, unless idle reset is enabled.
   domain: automation
-  source_url: "https://github.com/ffunes/Marstek-Venus-Energy-Manager/blob/main/blueprints/different_grid_target_blueprint.yaml"
+  source_url: "https://github.com/ffunes/omnibattery/blob/main/blueprints/different_grid_target_blueprint.yaml"
 
   input:
     charge_power_sensor:
       name: "System Charge Power Sensor"
-      description: "Marstek Venus system charge power sensor."
-      default: sensor.marstek_venus_system_system_charge_power
+      description: "Omnibattery system charge power sensor."
+      default: sensor.omnibattery_system_charge_power
       selector:
         entity:
           filter:
@@ -23,8 +23,8 @@ blueprint:
 
     discharge_power_sensor:
       name: "System Discharge Power Sensor"
-      description: "Marstek Venus system discharge power sensor."
-      default: sensor.marstek_venus_system_system_discharge_power
+      description: "Omnibattery system discharge power sensor."
+      default: sensor.omnibattery_system_discharge_power
       selector:
         entity:
           filter:
@@ -32,8 +32,8 @@ blueprint:
 
     target_grid_power_number:
       name: "PD Target Grid Power Number"
-      description: "Marstek Venus PD Target Grid Power number entity."
-      default: number.marstek_venus_system_pd_target_grid_power
+      description: "Omnibattery PD Target Grid Power number entity."
+      default: number.omnibattery_pd_target_grid_power
       selector:
         entity:
           filter:
