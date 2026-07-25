@@ -103,10 +103,12 @@ from .drivers.esphome import EsphomeEntityDriver
 from .drivers.marstek import MarstekModbusDriver
 from .drivers.zendure import ZendureLocalDriver, detect_model as _detect_zendure_model
 from .drivers.anker import AnkerModbusDriver
+from .drivers.sessy import SessyLocalDriver
 from .pricing.nordpool import is_official_nordpool_sensor
 
 _ZENDURE_MAX_POWER_W = 2400
 _ANKER_MAX_POWER_W = 3500
+_SESSY_MAX_POWER_W = 2200
 
 
 def _anker_apply_probe_caps(battery_data: dict, caps: dict) -> None:
@@ -566,6 +568,8 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
         if brand == "zendure":
             _LOGGER.info("Probing Zendure device at %s:%s", host, port)
             result, _ = await ZendureLocalDriver.probe(host, port)
+        elif brand == "sessy":
+            result = await SessyLocalDriver.probe(host, port)
         elif brand == "anker":
             _LOGGER.info("Probing Anker Solarbank at %s:%s slave %s", host, port, slave_id)
             result, _ = await AnkerModbusDriver.probe(host, port, slave_id)
@@ -727,6 +731,8 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
                 return await self.async_step_battery_connection_esphome()
             if brand == "anker":
                 return await self.async_step_battery_connection_anker()
+            if brand == "sessy":
+                return await self.async_step_battery_connection_sessy()
             return await self.async_step_battery_connection()
 
         return self.async_show_form(
@@ -740,6 +746,7 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
                                 {"value": "zendure", "label": "Zendure SolarFlow"},
                                 {"value": "esphome", "label": "Marstek via LilyGo RS485 (ESPHome)"},
                                 {"value": "anker", "label": "Anker SOLIX Solarbank Max AC / 4 E5000 Pro"},
+                                {"value": "sessy", "label": "Sessy"},
                             ],
                             mode=SelectSelectorMode.DROPDOWN,
                         )),
@@ -896,6 +903,20 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
             description_placeholders=placeholders,
         )
 
+    async def async_step_battery_connection_sessy(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """Configure a Sessy through its local dongle HTTP API."""
+        errors = {}
+        if user_input is not None:
+            host, port = user_input[CONF_HOST], int(user_input.get(CONF_PORT, 80))
+            if await SessyLocalDriver.probe(host, port):
+                self._current_battery_data.update({CONF_NAME: user_input[CONF_NAME], CONF_HOST: host, CONF_PORT: port, "brand": "sessy"})
+                return await self.async_step_battery_limits()
+            errors["base"] = "cannot_connect"
+        return self.async_show_form(step_id="battery_connection_sessy", data_schema=vol.Schema({
+            vol.Required(CONF_NAME, default=f"Sessy {self.battery_index + 1}"): str,
+            vol.Required(CONF_HOST): str, vol.Optional(CONF_PORT, default=80): int,
+        }), errors=errors, description_placeholders={"battery_num": str(self.battery_index + 1)})
+
 
     async def async_step_battery_connection_anker(
         self, user_input: dict[str, Any] | None = None
@@ -952,6 +973,8 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
                 self._current_battery_data
             )
             max_power = max(max_charge_power, max_discharge_power)
+        elif brand == "sessy":
+            max_power = max_charge_power = max_discharge_power = _SESSY_MAX_POWER_W
         else:
             battery_version = self._current_battery_data.get(CONF_BATTERY_VERSION, DEFAULT_VERSION)
             max_power = MAX_POWER_BY_VERSION.get(battery_version, 2500)
@@ -987,7 +1010,7 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
             )
             merged["backup_offgrid_threshold"] = int(user_input.get("backup_offgrid_threshold", 50))
             merged[CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED] = (
-                False if brand in ("zendure", "anker")
+                False if brand in ("zendure", "anker", "sessy")
                 else user_input.get(CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED, DEFAULT_FULL_CHARGE_VOLTAGE_TAPER_ENABLED)
             )
             if brand == "zendure":
@@ -1026,7 +1049,7 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
             vol.Required("backup_offgrid_threshold", default=50):
                 NumberSelector(NumberSelectorConfig(min=0, max=2500, step=10, unit_of_measurement="W", mode=NumberSelectorMode.SLIDER)),
         })
-        if brand not in ("zendure", "anker"):
+        if brand not in ("zendure", "anker", "sessy"):
             _schema[vol.Required(CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED, default=DEFAULT_FULL_CHARGE_VOLTAGE_TAPER_ENABLED)] = bool
         if brand == "zendure":
             _schema[vol.Optional("battery_capacity_kwh", default=0.0)] = NumberSelector(
