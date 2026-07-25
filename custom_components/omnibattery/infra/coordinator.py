@@ -154,7 +154,7 @@ class MarstekVenusDataUpdateCoordinator(DataUpdateCoordinator):
         self.charge_hysteresis_percent = max(MIN_CHARGE_HYSTERESIS_PERCENT, int(charge_hysteresis_percent))
         self.backup_offgrid_threshold = backup_offgrid_threshold
         # User-set nominal capacity (kWh) for drivers that don't report it
-        # (has_energy_counters=False, e.g. Zendure). Injected into data as
+        # (has_nominal_capacity=False, e.g. Zendure and Sessy). Injected into data as
         # battery_total_energy each poll so stored_energy / predictive / pricing
         # math work. Set from battery_config after construction; 0 = not yet set.
         self.battery_capacity_kwh = 0.0
@@ -859,11 +859,15 @@ class MarstekVenusDataUpdateCoordinator(DataUpdateCoordinator):
         # Update the coordinator's data
         self.data.update(updated_data)
 
-        # Drivers without hardware energy counters (Zendure) don't report a
-        # nominal capacity; surface the user-set value as battery_total_energy so
-        # stored_energy, predictive charging and pricing math see it like a
-        # register-backed battery would.
-        if not self.capabilities.has_energy_counters and self.battery_capacity_kwh:
+        # Drivers without a hardware nominal-capacity value (Zendure and Sessy)
+        # need the configured value surfaced as battery_total_energy so stored
+        # energy, cycle, predictive charging and pricing math work uniformly.
+        # ``getattr`` keeps third-party driver capabilities from before this
+        # field compatible: they are assumed to report capacity.
+        if (
+            not getattr(self.capabilities, "has_nominal_capacity", True)
+            and self.battery_capacity_kwh
+        ):
             self.data["battery_total_energy"] = self.battery_capacity_kwh
 
         # Detect new alarm/fault bits and send HA notifications

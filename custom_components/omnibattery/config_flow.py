@@ -1013,7 +1013,7 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
                 False if brand in ("zendure", "anker", "sessy")
                 else user_input.get(CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED, DEFAULT_FULL_CHARGE_VOLTAGE_TAPER_ENABLED)
             )
-            if brand == "zendure":
+            if brand in ("zendure", "sessy"):
                 merged["battery_capacity_kwh"] = round(float(user_input.get("battery_capacity_kwh", 0.0)), 2)
             self.battery_configs.append(merged)
             self.battery_index += 1
@@ -1051,7 +1051,7 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
         })
         if brand not in ("zendure", "anker", "sessy"):
             _schema[vol.Required(CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED, default=DEFAULT_FULL_CHARGE_VOLTAGE_TAPER_ENABLED)] = bool
-        if brand == "zendure":
+        if brand in ("zendure", "sessy"):
             _schema[vol.Optional("battery_capacity_kwh", default=0.0)] = NumberSelector(
                 NumberSelectorConfig(min=0, max=100, step=0.01, unit_of_measurement="kWh", mode=NumberSelectorMode.BOX)
             )
@@ -2582,10 +2582,10 @@ class OptionsFlowHandler(OptionsFlow):
                 )
                 merged["backup_offgrid_threshold"] = int(user_input.get("backup_offgrid_threshold", 50))
                 merged[CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED] = (
-                    False if brand in ("zendure", "anker")
+                    False if brand in ("zendure", "anker", "sessy")
                     else user_input.get(CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED, DEFAULT_FULL_CHARGE_VOLTAGE_TAPER_ENABLED)
                 )
-                if brand == "zendure":
+                if brand in ("zendure", "sessy"):
                     merged["battery_capacity_kwh"] = round(float(user_input.get("battery_capacity_kwh", 0.0)), 2)
                 self.battery_configs.append(merged)
                 self.battery_index += 1
@@ -2659,9 +2659,9 @@ class OptionsFlowHandler(OptionsFlow):
             vol.Required("backup_offgrid_threshold", default=defaults["backup_offgrid_threshold"]):
                 NumberSelector(NumberSelectorConfig(min=0, max=2500, step=10, unit_of_measurement="W", mode=NumberSelectorMode.SLIDER)),
         })
-        if brand not in ("zendure", "anker"):
+        if brand not in ("zendure", "anker", "sessy"):
             _schema[vol.Required(CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED, default=defaults[CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED])] = bool
-        if brand == "zendure":
+        if brand in ("zendure", "sessy"):
             _schema[vol.Optional("battery_capacity_kwh", default=defaults["battery_capacity_kwh"])] = NumberSelector(
                 NumberSelectorConfig(min=0, max=100, step=0.01, unit_of_measurement="kWh", mode=NumberSelectorMode.BOX)
             )

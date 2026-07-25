@@ -43,6 +43,8 @@ class SessyLocalDriver(BatteryDriver):
         self._shutting_down = False
         self._capabilities = DriverCapabilities(False, False, False, max_charge_power_w,
             max_discharge_power_w, False, False, False, has_daily_energy_counters=False,
+            has_nominal_capacity=False,
+            cycles_from_discharge_only=True,
             actuator_latency_s=1.5)
         self._read_groups = [ReadGroup("high", tuple(d["key"] for d in SENSOR_DEFINITIONS))]
 
