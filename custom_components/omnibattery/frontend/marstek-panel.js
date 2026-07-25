@@ -1210,15 +1210,15 @@ class MarstekVenusPanel extends HTMLElement {
     this._powerSeries = null; // { t:[...], solar/home/grid/battery:[...] } kW, 24h
     this._weekly = null; // { days:[..7], charge/discharge/import/export:[..7] } kWh
     this._histTimer = null;
+    this._historyStarted = false;
   }
 
   // --- HA-injected properties ------------------------------------------------
   set hass(hass) {
-    const first = !this._hass;
     this._hass = hass;
     this._applyTheme();
     this._update();
-    if (first) this._startHistory();
+    this._ensureHistoryStarted();
   }
   get hass() {
     return this._hass;
@@ -1234,9 +1234,12 @@ class MarstekVenusPanel extends HTMLElement {
   connectedCallback() {
     this._injectFonts();
     this._update();
+    this._ensureHistoryStarted();
   }
   disconnectedCallback() {
     if (this._histTimer) clearInterval(this._histTimer);
+    this._histTimer = null;
+    this._historyStarted = false;
   }
 
   // --- config / theme --------------------------------------------------------
@@ -2976,6 +2979,15 @@ class MarstekVenusPanel extends HTMLElement {
     this._histTimer = setInterval(() => this._refreshHistory(), 5 * 60 * 1000);
   }
 
+  /** Start recorder queries only after the Resumen cards exist. HA can inject
+   *  `hass` before connecting this element, in which case a fast response used
+   *  to draw into no plot and left Potencias empty until a later UI repaint. */
+  _ensureHistoryStarted() {
+    if (this._historyStarted || !this._hass || !this._built || !this.isConnected) return;
+    this._historyStarted = true;
+    this._startHistory();
+  }
+
   _refreshHistory() {
     this._fetchHistory();
     this._fetchPowerHistory();
@@ -3198,6 +3210,31 @@ class MarstekVenusPanel extends HTMLElement {
     // grid import/export: per-day total = daily-reset sensor's max for that day
     const impTot = impIds.length ? dailyTotals(impIds) : null;
     const expTot = expIds.length ? dailyTotals(expIds) : null;
+
+    // The current day has an authoritative live value in hass.states. Prefer it
+    // over the historical maximum: a transient bad reading stored earlier today
+    // must not make the weekly bar disagree with the Energía hoy card.
+    const liveTotal = (entIds) => {
+      let total = 0;
+      let hasData = false;
+      for (const id of entIds) {
+        const value = this._num(this._hass.states[id]);
+        if (value != null) {
+          total += value;
+          hasData = true;
+        }
+      }
+      return hasData ? total : null;
+    };
+    const todayIndex = days - 1;
+    const liveCharge = liveTotal(chIds);
+    const liveDischarge = liveTotal(diIds);
+    const liveImport = liveTotal(impIds);
+    const liveExport = liveTotal(expIds);
+    if (liveCharge != null) charge[todayIndex] = liveCharge;
+    if (liveDischarge != null) discharge[todayIndex] = liveDischarge;
+    if (impTot && liveImport != null) impTot[todayIndex] = liveImport;
+    if (expTot && liveExport != null) expTot[todayIndex] = liveExport;
     const labels = [];
     for (let k = 0; k < days; k++) {
       const dd = new Date(startMs + k * 86400000);
