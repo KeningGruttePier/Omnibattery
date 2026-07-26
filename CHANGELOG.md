@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.0b1] - 2026-07-26
+
+### Changed
+- **Faster dashboard history charts**: the Power chart now reads compact five-minute Recorder statistics and Weekly Energy reads daily statistics, falling back to raw history only for entities without statistics. History refreshes are coalesced so a slow Recorder cannot overlap repeated requests, and the SOC sparkline loads after the visible charts.
+
+### Fixed
+- **Dashboard history charts could render before their cards existed**: Recorder requests now start only after the Summary cards are mounted, so a fast response cannot leave the Power chart blank until a later UI repaint.
+- **Weekly Energy could show massively inflated daily charge/discharge values**: daily counters reset at midnight, while Recorder normalizes their cumulative sum. The chart now uses each day's final counter state instead of that normalized change, preserving the real daily total.
+
 ## [1.1.0] - 2026-07-24
 
 ### Added
