@@ -10,8 +10,9 @@ blueprint:
   input:
     monthly_peak_sensor:
       name: "Monthly Peak Sensor"
-      description: "Sensor reporting the current monthly peak in kW."
-      default: sensor.energiemeting_huidige_maandpiek
+      description: >
+        Sensor reporting the current monthly peak. Values in kW and W are
+        supported and converted automatically.
       selector:
         entity:
           filter:
@@ -26,22 +27,9 @@ blueprint:
           filter:
             domain: number
 
-    fallback_peak_kw:
-      name: "Fallback Monthly Peak"
-      description: "Value used when the peak sensor does not report a valid number."
-      default: 2.5
-      selector:
-        number:
-          min: 0
-          max: 100
-          step: 0.1
-          unit_of_measurement: kW
-          mode: box
-
 variables:
   monthly_peak_sensor: !input monthly_peak_sensor
   capacity_protection_limit: !input capacity_protection_limit
-  fallback_peak_kw: !input fallback_peak_kw
 
 trigger:
   - platform: state
@@ -56,8 +44,12 @@ trigger:
 condition:
   - condition: template
     value_template: >
-      {% set target_w = (states(monthly_peak_sensor) | float(fallback_peak_kw) * 1000) | int(0) %}
-      {{ states(capacity_protection_limit) | int(0) != target_w }}
+      {% set unit = state_attr(monthly_peak_sensor, 'unit_of_measurement') %}
+      {% set peak = states(monthly_peak_sensor) | float(none) %}
+      {% set multiplier = 1000 if unit == 'kW' else 1 if unit == 'W' else none %}
+      {{ peak is not none
+         and multiplier is not none
+         and states(capacity_protection_limit) | int(0) != (peak * multiplier) | int(0) }}
 
 action:
   - service: number.set_value
@@ -65,6 +57,9 @@ action:
       entity_id: !input capacity_protection_limit
     data:
       value: >
-        {{ (states(monthly_peak_sensor) | float(fallback_peak_kw) * 1000) | int(0) }}
+        {% set unit = state_attr(monthly_peak_sensor, 'unit_of_measurement') %}
+        {% set peak = states(monthly_peak_sensor) | float(0) %}
+        {% set multiplier = 1000 if unit == 'kW' else 1 %}
+        {{ (peak * multiplier) | int(0) }}
 
 mode: single
