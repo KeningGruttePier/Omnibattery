@@ -1210,6 +1210,7 @@ class MarstekVenusPanel extends HTMLElement {
     this._powerSeries = null; // { t:[...], solar/home/grid/battery:[...] } kW, 24h
     this._weekly = null; // { days:[..7], charge/discharge/import/export:[..7] } kWh
     this._histTimer = null;
+    this._historyRefresh = null;
     this._historyStarted = false;
   }
 
@@ -2989,9 +2990,15 @@ class MarstekVenusPanel extends HTMLElement {
   }
 
   _refreshHistory() {
-    this._fetchHistory();
-    this._fetchPowerHistory();
-    this._fetchWeeklyEnergy();
+    // A slow recorder must not accumulate another three queries every five
+    // minutes.  Keep one refresh in flight and prioritize the two visible
+    // charts; the auxiliary SOC sparkline can follow afterwards.
+    if (this._historyRefresh) return this._historyRefresh;
+    this._historyRefresh = (async () => {
+      await Promise.all([this._fetchPowerHistory(), this._fetchWeeklyEnergy()]);
+      await this._fetchHistory();
+    })().finally(() => { this._historyRefresh = null; });
+    return this._historyRefresh;
   }
 
   async _fetchHistory() {
@@ -3086,6 +3093,57 @@ class MarstekVenusPanel extends HTMLElement {
     return out;
   }
 
+  /** Resample Recorder statistics onto a grid.  Statistics rows are already
+   *  condensed by Home Assistant, so using them avoids shipping every raw
+   *  state transition to the browser. */
+  _sampleStatisticsToGrid(res, id, grid, field = "mean") {
+    const arr = res && res[id];
+    if (!Array.isArray(arr) || !arr.length) return null;
+    const so = this._hass.states[id];
+    const unit = ((so && so.attributes.unit_of_measurement) || "").toLowerCase();
+    const toKw = unit === "kw" ? 1 : 0.001;
+    const pts = [];
+    for (const it of arr) {
+      const v = Number(it[field]);
+      // Statistics WebSocket timestamps are milliseconds since epoch.  Accept
+      // seconds too, so the panel remains tolerant of older HA responses.
+      const rawT = Number(it.start);
+      const t = rawT > 1e11 ? rawT / 1000 : rawT;
+      if (!Number.isFinite(t) || Number.isNaN(v)) continue;
+      pts.push([t, v * toKw]);
+    }
+    if (!pts.length) return null;
+    pts.sort((a, b) => a[0] - b[0]);
+    const out = [];
+    let j = 0, cur = null;
+    for (const gt of grid) {
+      while (j < pts.length && pts[j][0] <= gt) { cur = pts[j][1]; j++; }
+      out.push(cur);
+    }
+    return out;
+  }
+
+  /** Fetch a bounded Recorder statistics series.  The caller falls back to
+   *  raw history only for entities which do not publish statistics. */
+  async _fetchStatistics(ids, startISO, endISO, period, types) {
+    if (!ids.length || !this._hass || !this._hass.callWS) return null;
+    try {
+      return await this._hass.callWS({
+        type: "recorder/statistics_during_period",
+        start_time: startISO,
+        end_time: endISO,
+        statistic_ids: ids,
+        period,
+        types,
+      });
+    } catch (e) {
+      // Some externally configured sensors have no statistics metadata.  The
+      // regular history endpoint below preserves their charts.
+      console.debug("[mvem] statistics fetch failed; using history fallback", e);
+      return null;
+    }
+  }
+
   /** 24 h power history for the Potencias chart (Solar/Casa/Batería/Red, kW). */
   async _fetchPowerHistory() {
     if (!this._hass || !this._hass.callWS) return;
@@ -3108,36 +3166,43 @@ class MarstekVenusPanel extends HTMLElement {
     acIds.forEach((x) => x && ids.add(x));
     if (!ids.size) { this._powerSeries = null; this._drawPowerHistory(); return; }
     const { grid, startISO } = this._historyGrid();
-    let res;
-    try {
-      res = await this._hass.callWS({
-        type: "history/history_during_period",
-        start_time: startISO,
-        end_time: new Date().toISOString(),
-        entity_ids: [...ids],
-        minimal_response: true,
-        no_attributes: true,
-      });
-    } catch (e) {
-      console.debug("[mvem] power history fetch failed", e);
-      return;
+    const idList = [...ids];
+    const endISO = new Date().toISOString();
+    const statistics = await this._fetchStatistics(idList, startISO, endISO, "5minute", ["mean"]);
+    const hasStatistics = (id) => Array.isArray(statistics && statistics[id]) && statistics[id].length;
+    const fallbackIds = idList.filter((id) => !hasStatistics(id));
+    let history = null;
+    if (fallbackIds.length) {
+      try {
+        history = await this._hass.callWS({
+          type: "history/history_during_period",
+          start_time: startISO,
+          end_time: endISO,
+          entity_ids: fallbackIds,
+          minimal_response: true,
+          no_attributes: true,
+        });
+      } catch (e) {
+        console.debug("[mvem] power history fallback failed", e);
+      }
     }
-    if (!res) return;
-    const solar = cfg.solar_entity ? this._sampleToGrid(res, cfg.solar_entity, grid) : null;
-    const home = homeEid ? this._sampleToGrid(res, homeEid, grid) : null;
-    let gridS = cfg.grid_entity ? this._sampleToGrid(res, cfg.grid_entity, grid) : null;
+    const sample = (id) =>
+      this._sampleStatisticsToGrid(statistics, id, grid) || this._sampleToGrid(history, id, grid);
+    const solar = cfg.solar_entity ? sample(cfg.solar_entity) : null;
+    const home = homeEid ? sample(homeEid) : null;
+    let gridS = cfg.grid_entity ? sample(cfg.grid_entity) : null;
     // Match the integration's +import / -export convention for an inverted meter.
     if (gridS && cfg.grid_inverted) gridS = gridS.map((v) => (v == null ? v : -v));
     let battery = null;
     if (sysCh || sysDis) {
-      const ch = sysCh ? this._sampleToGrid(res, sysCh, grid) : null;
-      const di = sysDis ? this._sampleToGrid(res, sysDis, grid) : null;
+      const ch = sysCh ? sample(sysCh) : null;
+      const di = sysDis ? sample(sysDis) : null;
       if (ch || di) battery = grid.map((_, i) => ((ch && ch[i]) || 0) - ((di && di[i]) || 0));
     }
     // Fall back to per-battery ac_power when the system aggregate has no history
     // (sign in ac_power is - charge / + discharge, so negate to + charge / - discharge).
     if (battery == null && acIds.length) {
-      const samples = acIds.map((id) => this._sampleToGrid(res, id, grid)).filter(Boolean);
+      const samples = acIds.map(sample).filter(Boolean);
       if (samples.length) battery = grid.map((_, i) => -samples.reduce((a, s) => a + (s[i] || 0), 0));
     }
     this._powerSeries = { t: grid, solar, home, grid: gridS, battery };
@@ -3165,41 +3230,59 @@ class MarstekVenusPanel extends HTMLElement {
     start.setHours(0, 0, 0, 0);
     start.setDate(start.getDate() - (days - 1));
     const allIds = [...new Set([...chIds, ...diIds, ...impIds, ...expIds])];
-    let res;
-    try {
-      res = await this._hass.callWS({
-        type: "history/history_during_period",
-        start_time: start.toISOString(),
-        end_time: new Date().toISOString(),
-        entity_ids: allIds,
-        minimal_response: true,
-        no_attributes: true,
-      });
-    } catch (e) {
-      console.debug("[mvem] weekly fetch failed", e);
-      return;
+    const startISO = start.toISOString();
+    const endISO = new Date().toISOString();
+    const statistics = await this._fetchStatistics(allIds, startISO, endISO, "day", ["change"]);
+    const hasStatistics = (id) => Array.isArray(statistics && statistics[id]) && statistics[id].length;
+    const fallbackIds = allIds.filter((id) => !hasStatistics(id));
+    let history = null;
+    if (fallbackIds.length) {
+      try {
+        history = await this._hass.callWS({
+          type: "history/history_during_period",
+          start_time: startISO,
+          end_time: endISO,
+          entity_ids: fallbackIds,
+          minimal_response: true,
+          no_attributes: true,
+        });
+      } catch (e) {
+        console.debug("[mvem] weekly history fallback failed", e);
+      }
     }
-    if (!res) return;
+    if (!statistics && !history) return;
     const startMs = start.getTime();
     const dayIndex = (ms) => Math.floor((ms - startMs) / 86400000);
-    // per-id daily max, then sum across ids → daily total per day
+    // Prefer each entity's daily statistics change, then sum across ids.  Raw
+    // history fallbacks retain the former daily-maximum calculation.
     const dailyTotals = (entIds) => {
       const total = new Array(days).fill(null);
       for (const id of entIds) {
-        const arr = res[id];
-        if (!Array.isArray(arr)) continue;
         const perDay = new Array(days).fill(null);
-        for (const it of arr) {
-          const v = Number(it.s != null ? it.s : it.state);
-          const t =
-            it.lu != null ? it.lu * 1000
-              : it.last_updated ? Date.parse(it.last_updated)
-                : it.last_changed ? Date.parse(it.last_changed)
-                  : null;
-          if (t == null || Number.isNaN(v)) continue;
-          const k = dayIndex(t);
-          if (k < 0 || k >= days) continue;
-          if (perDay[k] == null || v > perDay[k]) perDay[k] = v;
+        const statRows = statistics && statistics[id];
+        if (Array.isArray(statRows) && statRows.length) {
+          for (const it of statRows) {
+            const v = Number(it.change);
+            const t = Number(it.start);
+            if (!Number.isFinite(t) || Number.isNaN(v)) continue;
+            const k = dayIndex(t);
+            if (k >= 0 && k < days) perDay[k] = v;
+          }
+        } else {
+          const arr = history && history[id];
+          if (!Array.isArray(arr)) continue;
+          for (const it of arr) {
+            const v = Number(it.s != null ? it.s : it.state);
+            const t =
+              it.lu != null ? it.lu * 1000
+                : it.last_updated ? Date.parse(it.last_updated)
+                  : it.last_changed ? Date.parse(it.last_changed)
+                    : null;
+            if (t == null || Number.isNaN(v)) continue;
+            const k = dayIndex(t);
+            if (k < 0 || k >= days) continue;
+            if (perDay[k] == null || v > perDay[k]) perDay[k] = v;
+          }
         }
         for (let k = 0; k < days; k++) if (perDay[k] != null) total[k] = (total[k] || 0) + perDay[k];
       }
