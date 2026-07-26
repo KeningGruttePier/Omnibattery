@@ -57,6 +57,14 @@ Forwards new or updated Home Assistant persistent notifications to a selected Te
 
 Choose a `telegram_bot` notify entity and, optionally, an ID-prefix filter. The default `marstek_venus_` preserves compatibility with notifications created by the earlier integration; clear the filter to forward every persistent notification, or replace it with another prefix. Existing notifications are not resent when Home Assistant restarts.
 
+## Dismiss predictive charging notifications
+
+[Import blueprint](https://raw.githubusercontent.com/ffunes/Omnibattery/main/blueprints/dismiss_predictive_charging_notifications_blueprint.yaml)
+
+Automatically dismisses persistent notifications about predictive grid charging, including evaluations, price-slot starts, and evening re-evaluations. It leaves battery alarms, cell-balance messages, and manual-mode notifications untouched.
+
+The notification may be visible briefly before Home Assistant executes the automation. Disable the automation at any time to receive predictive-charging notifications again.
+
 ## Solar forecast reserve discharge
 
 [Import blueprint](https://raw.githubusercontent.com/ffunes/Omnibattery/main/blueprints/solar_forecast_reserve_discharge_blueprint.yaml)

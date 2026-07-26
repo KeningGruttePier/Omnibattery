@@ -57,6 +57,14 @@ Reenvía notificaciones persistentes nuevas o actualizadas de Home Assistant a u
 
 Elige una entidad `notify` de `telegram_bot` y, opcionalmente, un filtro por prefijo de ID. El prefijo predeterminado `marstek_venus_` mantiene la compatibilidad con las notificaciones de la integración anterior; déjalo vacío para reenviar todas las notificaciones persistentes o sustitúyelo por otro prefijo. Las notificaciones ya existentes no se reenvían al reiniciar Home Assistant.
 
+## Descartar notificaciones de carga predictiva
+
+[Importar blueprint](https://raw.githubusercontent.com/ffunes/Omnibattery/main/blueprints/dismiss_predictive_charging_notifications_blueprint.yaml)
+
+Descarta automáticamente las notificaciones persistentes sobre carga de red predictiva, incluidas las evaluaciones, los inicios de slots de precio y las reevaluaciones nocturnas. No afecta a las alarmas de batería, los mensajes de equilibrio de celdas ni las notificaciones de modo manual.
+
+La notificación puede verse brevemente antes de que Home Assistant ejecute la automatización. Desactiva la automatización en cualquier momento para volver a recibir las notificaciones de carga predictiva.
+
 ## Reserva de descarga según previsión solar
 
 [Importar blueprint](https://raw.githubusercontent.com/ffunes/Omnibattery/main/blueprints/solar_forecast_reserve_discharge_blueprint.yaml)

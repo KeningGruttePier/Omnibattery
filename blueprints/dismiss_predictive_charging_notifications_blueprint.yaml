@@ -1,0 +1,32 @@
+blueprint:
+  name: "Omnibattery - Dismiss Predictive Charging Notifications"
+  description: >
+    Automatically dismisses Omnibattery persistent notifications related to
+    predictive grid charging, including evaluations, price slots, and evening
+    re-evaluations.
+
+    The notification can appear briefly before Home Assistant runs this
+    automation. Disable the created automation to receive the notifications
+    again.
+  domain: automation
+  source_url: "https://github.com/ffunes/omnibattery/blob/main/blueprints/dismiss_predictive_charging_notifications_blueprint.yaml"
+
+trigger:
+  - platform: persistent_notification
+    update_type:
+      - added
+      - updated
+
+condition:
+  - condition: template
+    value_template: >
+      {{ (trigger.notification.notification_id | string)
+         .startswith('marstek_venus_predictive_charging_') }}
+
+action:
+  - service: persistent_notification.dismiss
+    data:
+      notification_id: "{{ trigger.notification.notification_id }}"
+
+mode: queued
+max: 10
