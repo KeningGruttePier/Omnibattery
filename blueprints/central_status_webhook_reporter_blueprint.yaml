@@ -1,0 +1,95 @@
+blueprint:
+  name: "Omnibattery - Central Status Webhook Reporter"
+  description: >
+    Periodically sends selected Omnibattery and Home Assistant entity states to
+    a central HTTP endpoint. The endpoint is configured once as a
+    rest_command; this blueprint configures the site identifier, the entities
+    to report, and the interval.
+
+    Before using this blueprint, define the selected rest_command in
+    configuration.yaml with payload: "{{ report }}". The documentation gives
+    a complete example. Treat the endpoint URL as a secret.
+  domain: automation
+  source_url: "https://github.com/ffunes/omnibattery/blob/main/blueprints/central_status_webhook_reporter_blueprint.yaml"
+
+  input:
+    report_service:
+      name: "REST command service"
+      description: >
+        Name of the configured REST command, for example
+        rest_command.omnibattery_status_report. It must use the service
+        variable "report" as its JSON payload.
+      default: rest_command.omnibattery_status_report
+      selector:
+        text:
+
+    site_id:
+      name: "Site identifier"
+      description: "A unique, stable name for this Home Assistant installation."
+      selector:
+        text:
+
+    monitored_entities:
+      name: "Entities to report"
+      description: >
+        Select the system state and battery sensors to appear on the central
+        dashboard, for example battery SOC, battery power, grid power, and
+        Omnibattery control state.
+      selector:
+        entity:
+          multiple: true
+          filter:
+            - domain: sensor
+            - domain: binary_sensor
+
+    report_interval:
+      name: "Reporting interval"
+      description: "The report is also sent whenever Home Assistant starts."
+      default: "/5"
+      selector:
+        select:
+          options:
+            - label: "Every minute"
+              value: "/1"
+            - label: "Every 2 minutes"
+              value: "/2"
+            - label: "Every 5 minutes"
+              value: "/5"
+            - label: "Every 10 minutes"
+              value: "/10"
+            - label: "Every 15 minutes"
+              value: "/15"
+            - label: "Every 30 minutes"
+              value: "/30"
+
+variables:
+  site_id: !input site_id
+  monitored_entities: !input monitored_entities
+
+trigger:
+  - platform: homeassistant
+    event: start
+  - platform: time_pattern
+    minutes: !input report_interval
+
+action:
+  - service: !input report_service
+    data:
+      site_id: "{{ site_id }}"
+      report: >-
+        {
+          "site_id": {{ site_id | tojson }},
+          "sent_at": {{ now().isoformat() | tojson }},
+          "entities": {
+            {% for entity_id in monitored_entities %}
+              {{ entity_id | tojson }}: {
+                "state": {{ states(entity_id) | tojson }},
+                "name": {{ state_attr(entity_id, "friendly_name") | tojson }},
+                "unit": {{ state_attr(entity_id, "unit_of_measurement") | tojson }},
+                "device_class": {{ state_attr(entity_id, "device_class") | tojson }}
+              }{{ "," if not loop.last }}
+            {% endfor %}
+          }
+        }
+
+mode: single

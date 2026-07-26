@@ -80,6 +80,23 @@ config/blueprints/automation/omnibattery/
 3. En Home Assistant, ve a **Ajustes** → **Automatizaciones y escenas** → **Blueprints** y pulsa **Recargar blueprints**. Si no aparece la opción, reinicia Home Assistant.
 4. Crea una automatización nueva desde el blueprint instalado.
 
+### Reporte de estado a webhook central
+
+El blueprint **Central Status Webhook Reporter** envía periódicamente entidades seleccionadas de cada instalación de Home Assistant a un endpoint central. No modifica Omnibattery, pero Home Assistant necesita definir una vez el comando HTTP saliente en `configuration.yaml`:
+
+```yaml
+rest_command:
+  omnibattery_status_report:
+    url: !secret omnibattery_status_webhook_url
+    method: POST
+    content_type: application/json
+    payload: "{{ report }}"
+```
+
+Guarda la URL del endpoint en `secrets.yaml`, reinicia Home Assistant e importa [el blueprint](https://raw.githubusercontent.com/ffunes/Omnibattery/main/blueprints/central_status_webhook_reporter_blueprint.yaml). Indica un identificador único de instalación, selecciona los sensores de estado/SOC/potencia y elige el intervalo.
+
+El endpoint central recibe JSON con el identificador de instalación, la hora de envío y, de cada entidad, el estado, nombre, unidad y clase de dispositivo. Usa HTTPS y mantén privada la URL del webhook; normalmente un webhook de Home Assistant usa la propia URL no adivinable como credencial.
+
 ---
 
 ## Añadir la integración
