@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.0b1] - 2026-07-26
+
+### Added
+- **Sessy local API driver**: adds local HTTP support for Sessy batteries through the Sessy dongle, including battery and energy telemetry, signed power control with the required Sessy strategy selection, and integration with the standard Omnibattery setup flow, coordinator and dashboard entities.
+- **Configurable Sessy nominal capacity**: Sessy setup and options now collect the battery's nominal capacity, allowing Omnibattery to calculate stored energy and equivalent cycles from Sessy's lifetime energy counters.
+
 ## [1.1.0] - 2026-07-24
 
 ### Added
