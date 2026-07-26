@@ -1,0 +1,70 @@
+blueprint:
+  name: "Omnibattery - Peak Shaving Limit Sync"
+  description: >
+    Synchronizes Omnibattery's Capacity Protection Limit with the current
+    monthly peak measurement. The measured kW value is converted to W before
+    updating the number entity.
+  domain: automation
+  source_url: "https://github.com/ffunes/omnibattery/blob/main/blueprints/peak_shaving_limit_sync_blueprint.yaml"
+
+  input:
+    monthly_peak_sensor:
+      name: "Monthly Peak Sensor"
+      description: "Sensor reporting the current monthly peak in kW."
+      default: sensor.energiemeting_huidige_maandpiek
+      selector:
+        entity:
+          filter:
+            domain: sensor
+
+    capacity_protection_limit:
+      name: "Capacity Protection Limit"
+      description: "Omnibattery Capacity Protection Limit number entity, in W."
+      default: number.omnibattery_capacity_protection_limit
+      selector:
+        entity:
+          filter:
+            domain: number
+
+    fallback_peak_kw:
+      name: "Fallback Monthly Peak"
+      description: "Value used when the peak sensor does not report a valid number."
+      default: 2.5
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 0.1
+          unit_of_measurement: kW
+          mode: box
+
+variables:
+  monthly_peak_sensor: !input monthly_peak_sensor
+  capacity_protection_limit: !input capacity_protection_limit
+  fallback_peak_kw: !input fallback_peak_kw
+
+trigger:
+  - platform: state
+    entity_id: !input monthly_peak_sensor
+
+  - platform: state
+    entity_id: !input capacity_protection_limit
+
+  - platform: time_pattern
+    seconds: "/15"
+
+condition:
+  - condition: template
+    value_template: >
+      {% set target_w = (states(monthly_peak_sensor) | float(fallback_peak_kw) * 1000) | int(0) %}
+      {{ states(capacity_protection_limit) | int(0) != target_w }}
+
+action:
+  - service: number.set_value
+    target:
+      entity_id: !input capacity_protection_limit
+    data:
+      value: >
+        {{ (states(monthly_peak_sensor) | float(fallback_peak_kw) * 1000) | int(0) }}
+
+mode: single
