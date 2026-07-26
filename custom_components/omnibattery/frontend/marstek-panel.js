@@ -3232,8 +3232,14 @@ class MarstekVenusPanel extends HTMLElement {
     const allIds = [...new Set([...chIds, ...diIds, ...impIds, ...expIds])];
     const startISO = start.toISOString();
     const endISO = new Date().toISOString();
-    const statistics = await this._fetchStatistics(allIds, startISO, endISO, "day", ["change"]);
-    const hasStatistics = (id) => Array.isArray(statistics && statistics[id]) && statistics[id].length;
+    // These sources reset at midnight.  Their Recorder ``sum`` is a
+    // lifetime-normalized value, so its daily ``change`` can include reset
+    // corrections and wildly overstate the day's energy.  The final daily
+    // state is the counter's true total, matching the former history maximum.
+    const statistics = await this._fetchStatistics(allIds, startISO, endISO, "day", ["state"]);
+    const hasStatistics = (id) =>
+      Array.isArray(statistics && statistics[id]) &&
+      statistics[id].some((row) => Number.isFinite(Number(row.state)));
     const fallbackIds = allIds.filter((id) => !hasStatistics(id));
     let history = null;
     if (fallbackIds.length) {
@@ -3253,8 +3259,8 @@ class MarstekVenusPanel extends HTMLElement {
     if (!statistics && !history) return;
     const startMs = start.getTime();
     const dayIndex = (ms) => Math.floor((ms - startMs) / 86400000);
-    // Prefer each entity's daily statistics change, then sum across ids.  Raw
-    // history fallbacks retain the former daily-maximum calculation.
+    // Prefer each entity's final daily statistics state, then sum across ids.
+    // Raw history fallbacks retain the former daily-maximum calculation.
     const dailyTotals = (entIds) => {
       const total = new Array(days).fill(null);
       for (const id of entIds) {
@@ -3262,7 +3268,7 @@ class MarstekVenusPanel extends HTMLElement {
         const statRows = statistics && statistics[id];
         if (Array.isArray(statRows) && statRows.length) {
           for (const it of statRows) {
-            const v = Number(it.change);
+            const v = Number(it.state);
             const t = Number(it.start);
             if (!Number.isFinite(t) || Number.isNaN(v)) continue;
             const k = dayIndex(t);
