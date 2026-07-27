@@ -77,19 +77,18 @@ flowchart TD
 |---|---|
 | `max_cell_voltage` below 3.48 V | Normal configured charge limit |
 | `max_cell_voltage` at or above 3.48 V | Limit charge to 95 W |
-| `max_cell_voltage` reaches 3.58 V | Stop charging and **latch**; do not re-trickle when the cell relaxes |
-| SOC falls the resume margin (3%) below the latch SOC | Release the latch; normal charge logic applies again |
+| `max_cell_voltage` reaches 3.58 V | The configured charge hysteresis takes ownership of the stop/recharge threshold |
 | After the 60 s wait | Record `delta_mV = (Vmax - Vmin) * 1000` |
 
 Starting the taper is voltage based: SOC is deliberately not used to decide when tapering begins, because SOC can be less reliable near the top than the cell-voltage registers.
 
-Once the battery reaches 3.58 V the taper stops charging and **latches off**. It does *not* re-trickle when the cell voltage relaxes — re-pausing every cycle would pin the cell at the top voltage and can keep some v3 BMSs from leaving standby to discharge. The latch releases — letting a later top-up taper again — only after SOC has dropped a small margin (default 3%, `NORMAL_BALANCE_RESUME_SOC_DROP`) below the SOC at which it latched, i.e. the battery was actually discharged. The 60-second delta-V measurement still runs as a best-effort diagnostic; if it did not finish before completion, a one-shot snapshot is captured at completion time under phase `top_charge_taper_complete`.
+Once the battery reaches 3.58 V, the configured charge hysteresis prevents recharging until its SOC threshold is crossed. The 60-second delta-V measurement still runs as a best-effort diagnostic; if it did not finish before completion, a one-shot snapshot is captured at completion time under phase `top_charge_taper_complete`.
 
-In a multi-battery system, this is evaluated per battery. One battery can be limited or paused while another continues charging normally.
+In a multi-battery system, this is evaluated per battery. One battery can be limited by the taper while another continues charging normally.
 
 ### SOC recalibration on a stuck top voltage
 
-Some packs reach the 3.58 V pause point while the BMS still reports a SOC well below full (for example 60–70%). That gap is a sign the BMS coulomb counter has drifted: the cells are genuinely full but the reported SOC is wrong.
+Some packs reach the 3.58 V top-voltage threshold while the BMS still reports a SOC well below full (for example 60–70%). That gap is a sign the BMS coulomb counter has drifted: the cells are genuinely full but the reported SOC is wrong.
 
 When this happens, holding at 3.58 V never lets the BMS correct itself. So instead of pausing, the integration keeps charging at the 95 W tapered power until the BMS itself cuts off, *attempting* to make it recalibrate SOC to 100%.
 
@@ -98,17 +97,17 @@ This is a best-effort attempt, not a guaranteed fix. Whether a top-of-curve cuto
 The override triggers automatically whenever **all** of these are true:
 
 - the 100% voltage taper is active (so `max_cell_voltage` is in the top zone), and
-- `max_cell_voltage` has reached the 3.58 V pause point, and
+- `max_cell_voltage` has reached the 3.58 V top-voltage threshold, and
 - the BMS still reports SOC below 99%.
 
 It is self-limiting:
 
 - charging continues at 95 W only (the gentle taper power), not full power;
-- a BMS cutoff is detected when battery power collapses to ≤ 10 W and the inverter reports Standby for 5 consecutive cycles (~10 s). At that point the override latches off and the normal 3.58 V pause resumes, letting the SOC recalibrate;
+- a BMS cutoff is detected when battery power collapses to ≤ 10 W and the inverter reports Standby for 5 consecutive cycles (~10 s). At that point the override latches off and normal charge hysteresis resumes, letting the SOC recalibrate;
 - once the SOC reads 99% or more (after recalibration), the condition no longer matches, so the override does not fire again;
 - the latch only re-arms after the battery leaves the top zone (`max_cell_voltage` below 3.48 V), so a later full charge can recalibrate again if needed.
 
-Reaching the 3.58 V pause point normally only happens on a 100% charge, so this rarely affects daily cycling at a lower `max_soc`. It does **not** run during the [weekly full charge](weekly-full-charge.md) — there the 3.58 V pause is suppressed entirely and the BMS cutoff alone ends the cycle (see that page). It also does not run while [active balance mode](#active-balance-mode) owns the battery — that mode takes priority.
+Reaching the 3.58 V threshold normally only happens on a 100% charge, so this rarely affects daily cycling at a lower `max_soc`. It does **not** run during the [weekly full charge](weekly-full-charge.md) — there the normal charge hysteresis is suppressed and the BMS cutoff alone ends the cycle (see that page). It also does not run while [active balance mode](#active-balance-mode) owns the battery — that mode takes priority.
 
 !!! note "Cell imbalance"
     The override does not check the cell spread first. On a badly imbalanced pack the highest cell can hit the BMS over-voltage cutoff before the pack is full, so the recalibration is correct but balancing is left to later cycles. The BMS still protects each cell individually.
@@ -253,13 +252,11 @@ The **Integration Status** sensor exposes a `normal_balance_protection` attribut
 |---|---|
 | `enabled` | Whether 100% voltage taper is enabled for that battery |
 | `in_zone` | Whether `max_cell_voltage` is in the top-balance window |
-| `paused` | Whether charging is currently stopped by high cell voltage |
-| `pause_latched_soc` | SOC at which the pause latched; charging stays stopped until SOC drops the resume margin below this (empty when not latched) |
 | `max_cell_voltage` / `min_cell_voltage` | Current cell voltage extremes |
 | `delta_V` | Current voltage spread in volts |
 | `voltage_taper_latched` | Whether the 95 W taper is currently active |
 | `active_balance_phase` | Current 100% top-measurement phase, if any |
-| `soc_recal_active` | Whether the charge is being kept past the 3.58 V pause to recalibrate a low reported SOC |
+| `soc_recal_active` | Whether the charge is being kept past 3.58 V to recalibrate a low reported SOC |
 | `soc_recal_bms_cutoff` | Whether the BMS cutoff has been reached during recalibration (override latched off) |
 | `charge_limit_w` | Effective per-battery charge limit before allocation |
 

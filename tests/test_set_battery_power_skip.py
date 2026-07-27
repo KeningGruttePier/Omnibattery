@@ -445,8 +445,6 @@ async def test_high_soc_standby_after_taper_reaches_wake_and_exclusion():
     ctrl = _controller()
     ctrl._non_responsive = NonResponsiveTracker(fail_threshold=3)
     ctrl._attempt_wake = AsyncMock(return_value=True)
-    ctrl._normal_balance_pause_latch_soc = {coord: 99.0}
-
     for _ in range(3):
         await ctrl._check_non_delivery(coord, 600, 0, attempt=0)
 

@@ -11,6 +11,7 @@
 - **Faster dashboard history charts**: the Power chart now reads compact five-minute Recorder statistics and Weekly Energy reads daily statistics, falling back to raw history only for entities without statistics. History refreshes are coalesced so a slow Recorder cannot overlap repeated requests, and the SOC sparkline loads after the visible charts.
 
 ### Fixed
+- **Top-voltage charge control used two competing hysteresis margins**: reaching 3.58 V previously armed both the configurable charge hysteresis and a separate fixed 3% `normal_balance_pause`. The fixed pause has been removed, so the configured charge hysteresis is now the sole recharge threshold after a top-voltage stop.
 - **Marstek User Work Mode was not written to the battery**: changing Manual, Self Consumption or AI Optimization now writes Modbus register 43000 on Venus E v2/v3, Venus A and Venus D.
 - **Unusable price and solar-forecast data is now surfaced in Home Assistant Repairs** (#173): after two hours of sustained failure, Omnibattery warns when price slots cannot be parsed or a configured solar forecast is unavailable or invalid. The issue clears automatically when the feed recovers, preventing price-aware charging and solar-dependent decisions from failing silently.
 - **Dashboard history charts could render before their cards existed**: Recorder requests now start only after the Summary cards are mounted, so a fast response cannot leave the Power chart blank until a later UI repaint.
