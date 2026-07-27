@@ -1148,6 +1148,9 @@
       "capacity_protection": {
         "name": "Spitzenlastkappung"
       },
+      "capacity_protection_excluded_devices": {
+        "name": "Spitzenlastkappung für Ausgeschlossene Geräte"
+      },
       "backup_function": {
         "name": "Backup-Funktion"
       },

@@ -1148,6 +1148,9 @@
       "capacity_protection": {
         "name": "Écrêtement de Pointe"
       },
+      "capacity_protection_excluded_devices": {
+        "name": "Écrêtement des Pointes pour Appareils Exclus"
+      },
       "backup_function": {
         "name": "Fonction de Secours"
       },

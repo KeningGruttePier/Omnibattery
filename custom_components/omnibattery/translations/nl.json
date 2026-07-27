@@ -1148,6 +1148,9 @@
       "capacity_protection": {
         "name": "Piekbegrenzing"
       },
+      "capacity_protection_excluded_devices": {
+        "name": "Piekbegrenzing voor Uitgesloten Apparaten"
+      },
       "backup_function": {
         "name": "Back-upfunctie"
       },
