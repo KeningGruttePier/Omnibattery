@@ -60,6 +60,7 @@ from .const import (
     MAX_POWER_BY_VERSION,
     CONF_ENABLE_SYSTEM_POWER_LIMITS,
     CONF_CAPACITY_PROTECTION_ENABLED,
+    CONF_CAPACITY_PROTECTION_EXCLUDED_DEVICES,
     CONF_PREDICTIVE_CHARGING_MODE,
     CONF_PRICE_SENSOR,
     CONF_PRICE_INTEGRATION_TYPE,
@@ -1624,6 +1625,7 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
         self.config_data.setdefault(CONF_DELAY_SOC_SETPOINT_ENABLED, False)
         self.config_data.setdefault(CONF_ENABLE_TEMP_CHARGE_LIMIT, False)
         self.config_data.setdefault(CONF_CAPACITY_PROTECTION_ENABLED, False)
+        self.config_data.setdefault(CONF_CAPACITY_PROTECTION_EXCLUDED_DEVICES, False)
         self.config_data.setdefault(CONF_ENABLE_HOURLY_BALANCE, False)
         self.config_data.setdefault(CONF_ENABLE_SYSTEM_POWER_LIMITS, False)
         self.config_data[CONF_ENABLE_BALANCE_MONITOR] = True

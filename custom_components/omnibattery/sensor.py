@@ -37,6 +37,7 @@ from .const import (
     CONF_DELAY_SOC_SETPOINT_ENABLED,
     CONF_DELAY_SOC_SETPOINT,
     CONF_CAPACITY_PROTECTION_ENABLED,
+    CONF_CAPACITY_PROTECTION_EXCLUDED_DEVICES,
     CONF_CAPACITY_PROTECTION_SOC_THRESHOLD,
     CONF_CAPACITY_PROTECTION_LIMIT,
     CONF_PD_KP,
@@ -871,6 +872,9 @@ class ConfigurationSummarySensor(SensorEntity):
         cap_enabled = data.get(CONF_CAPACITY_PROTECTION_ENABLED, False)
         attrs["capacity_protection_enabled"] = cap_enabled
         if cap_enabled:
+            attrs["capacity_protection_excluded_devices"] = data.get(
+                CONF_CAPACITY_PROTECTION_EXCLUDED_DEVICES, False
+            )
             attrs["capacity_protection_soc_threshold"] = data.get(
                 CONF_CAPACITY_PROTECTION_SOC_THRESHOLD, DEFAULT_CAPACITY_PROTECTION_SOC
             )
@@ -1031,6 +1035,7 @@ class IntegrationStatusSensor(SensorEntity):
         action = c._capacity_protection_status.get("action")
         return {
             "shaving": "peak_shaving",
+            "shaving_excluded": "peak_shaving",
             "conserving": "capacity_conserving",
             "charging": "capacity_protection_charging",
         }.get(action, "capacity_protection")

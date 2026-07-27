@@ -1148,6 +1148,9 @@
       "capacity_protection": {
         "name": "Peak Shaving"
       },
+      "capacity_protection_excluded_devices": {
+        "name": "Peak Shaving for Excluded Devices"
+      },
       "backup_function": {
         "name": "Backup Function"
       },
