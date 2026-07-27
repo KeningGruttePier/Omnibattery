@@ -191,8 +191,6 @@ NORMAL_BALANCE_MEASURE_WAIT_SECONDS = 60
 # voltage and keep some v3 BMSs from leaving standby to discharge). The latch
 # releases — allowing a later top-up to taper again — only after the battery has
 # actually been discharged by this SOC margin from where it latched.
-NORMAL_BALANCE_RESUME_SOC_DROP = 3             # %: SOC must fall this far below the latch SOC before charging may resume
-
 # SOC recalibration on a stuck top voltage.
 # A pack that hits the top cell voltage (pause point) while the BMS reports a SOC
 # below full is miscalibrated: these BMSs do not correct the coulomb counter until

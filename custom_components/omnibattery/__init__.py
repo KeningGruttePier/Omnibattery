@@ -472,16 +472,11 @@ class ChargeDischargeController:
         # Normal high-SOC charge protection. These must exist before the first
         # capacity calculation because _battery_power_limit() reads them.
         self._normal_balance_date = dt_util.now().date()
-        self._normal_balance_charge_paused: dict[MarstekVenusDataUpdateCoordinator, bool] = {}
         self._normal_balance_voltage_tapered: dict[MarstekVenusDataUpdateCoordinator, bool] = {}
         self._normal_active_balance_phases: dict[MarstekVenusDataUpdateCoordinator, str] = {}
         self._normal_balance_measure_started: dict[MarstekVenusDataUpdateCoordinator, datetime] = {}
         self._normal_balance_last_delta_v: dict[MarstekVenusDataUpdateCoordinator, float] = {}
-        # SOC at which the taper pause latched. While set, charge stays stopped
-        # (no re-trickle); the latch clears once SOC falls NORMAL_BALANCE_RESUME_SOC_DROP
-        # below this value, i.e. the battery has actually been discharged.
-        self._normal_balance_pause_latch_soc: dict[MarstekVenusDataUpdateCoordinator, float] = {}
-        # SOC recalibration override: keep charging past the tapper pause when the
+        # SOC recalibration override: keep charging past the taper when the
         # BMS reports a low SOC at the top voltage, until the BMS itself cuts off.
         self._normal_balance_recal_override: dict[MarstekVenusDataUpdateCoordinator, bool] = {}
         self._normal_balance_recal_cutoff_count: dict[MarstekVenusDataUpdateCoordinator, int] = {}
