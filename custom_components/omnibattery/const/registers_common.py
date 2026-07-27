@@ -18,7 +18,7 @@ REGISTER_MAP = {
         "max_discharge_power": 44003,
         "battery_soc": 32104,
         "battery_power": 32102,
-        "user_work_mode": None,
+        "user_work_mode": 43000,
         "backup_function": 41200,
     },
     "v3": {
@@ -32,7 +32,7 @@ REGISTER_MAP = {
         "max_discharge_power": 44003,
         "battery_soc": 37005,
         "battery_power": 30001,
-        "user_work_mode": None,
+        "user_work_mode": 43000,
         "backup_function": 41200,
     },
     "vA": {
@@ -46,7 +46,7 @@ REGISTER_MAP = {
         "max_discharge_power": 44003,
         "battery_soc": 32104,
         "battery_power": 30001,
-        "user_work_mode": None,
+        "user_work_mode": 43000,
         "backup_function": 41200,
     },
     "vD": {
@@ -60,7 +60,7 @@ REGISTER_MAP = {
         "max_discharge_power": 44003,
         "battery_soc": 32104,
         "battery_power": 30001,
-        "user_work_mode": None,
+        "user_work_mode": 43000,
         "backup_function": 41200,
     },
 }

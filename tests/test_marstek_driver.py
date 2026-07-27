@@ -489,6 +489,18 @@ async def test_write_control_resolves_key_to_register():
     client.async_write_register.assert_awaited_once_with(reg, 2)
 
 
+@pytest.mark.parametrize("version", ["v2", "v3", "vA", "vD"])
+async def test_write_control_writes_user_work_mode(version):
+    """User work mode is a writable register on every supported model."""
+    client = _fake_client()
+    drv = _driver(version, client=client)
+
+    ok = await drv.write_control("user_work_mode", 1)
+
+    assert ok is True
+    client.async_write_register.assert_awaited_once_with(43000, 1)
+
+
 async def test_write_control_addresses_configured_slave():
     client = _fake_client()
     drv = _driver("v3", slave_id=7, client=client)
