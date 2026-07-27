@@ -25,6 +25,7 @@ from ..drivers.marstek import MarstekModbusDriver
 from ..drivers.zendure import ZendureLocalDriver, ZENDURE_MODEL_2400AC_PRO
 from ..drivers.anker import AnkerModbusDriver
 from ..drivers.sessy import SessyLocalDriver
+from ..drivers.hoymiles import HoymilesMqttDriver
 from ..drivers.base import SetpointResult
 from .alarm_notifier import AlarmNotifier
 
@@ -129,7 +130,7 @@ class MarstekVenusDataUpdateCoordinator(DataUpdateCoordinator):
         self.serial_port = serial_port
         self.consumption_sensor = consumption_sensor
         self.brand = brand
-        if self.brand in ("zendure", "anker"):
+        if self.brand in ("zendure", "anker", "hoymiles"):
             full_charge_voltage_taper_enabled = False
             active_balance_mode_enabled = False
 
@@ -282,6 +283,12 @@ class MarstekVenusDataUpdateCoordinator(DataUpdateCoordinator):
                 max_charge_power_w=self.max_charge_power,
                 max_discharge_power_w=self.max_discharge_power,
             )
+        elif self.brand == "hoymiles":
+            self.driver = HoymilesMqttDriver(
+                hass, self.host,
+                max_charge_power_w=self.max_charge_power,
+                max_discharge_power_w=self.max_discharge_power,
+            )
         else:
             self.driver = MarstekModbusDriver(
                 self.host, self.port, self.battery_version, self.slave_id,
@@ -408,12 +415,14 @@ class MarstekVenusDataUpdateCoordinator(DataUpdateCoordinator):
                 "Zendure" if self.brand == "zendure"
                 else "Anker" if self.brand == "anker"
                 else "Sessy" if self.brand == "sessy"
+                else "Hoymiles" if self.brand == "hoymiles"
                 else "Marstek"
             ),
             "model": self.driver.model_label or (
                 "Zendure" if self.brand == "zendure"
                 else "Solarbank Max AC" if self.brand == "anker"
                 else "Sessy" if self.brand == "sessy"
+                else "MS-A2" if self.brand == "hoymiles"
                 else "Venus"
             ),
         }

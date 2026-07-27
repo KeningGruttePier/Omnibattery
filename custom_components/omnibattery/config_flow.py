@@ -105,11 +105,26 @@ from .drivers.marstek import MarstekModbusDriver
 from .drivers.zendure import ZendureLocalDriver, detect_model as _detect_zendure_model
 from .drivers.anker import AnkerModbusDriver
 from .drivers.sessy import SessyLocalDriver
+from .drivers.hoymiles import HoymilesMqttDriver
 from .pricing.nordpool import is_official_nordpool_sensor
 
 _ZENDURE_MAX_POWER_W = 2400
 _ANKER_MAX_POWER_W = 3500
 _SESSY_MAX_POWER_W = 2200
+_HOYMILES_MAX_POWER_W = 2000
+_HOYMILES_DEFAULT_POWER_W = 1000
+
+
+def _hoymiles_apply_probe_caps(battery_data: dict, caps: dict) -> None:
+    for source, target in (("device_max_charge_power", "device_max_charge_power"),
+                           ("device_max_discharge_power", "device_max_discharge_power")):
+        if isinstance(caps.get(source), (int, float)) and caps[source] > 0:
+            battery_data[target] = min(_HOYMILES_MAX_POWER_W, int(caps[source]))
+
+
+def _hoymiles_power_ceilings(battery_data: dict) -> tuple[int, int]:
+    return tuple(max(100, min(_HOYMILES_MAX_POWER_W, int(battery_data.get(key) or _HOYMILES_DEFAULT_POWER_W)))
+                 for key in ("device_max_charge_power", "device_max_discharge_power"))
 
 
 def _anker_apply_probe_caps(battery_data: dict, caps: dict) -> None:
@@ -732,6 +747,8 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
                 return await self.async_step_battery_connection_esphome()
             if brand == "anker":
                 return await self.async_step_battery_connection_anker()
+            if brand == "hoymiles":
+                return await self.async_step_battery_connection_hoymiles()
             if brand == "sessy":
                 return await self.async_step_battery_connection_sessy()
             return await self.async_step_battery_connection()
@@ -748,6 +765,7 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
                                 {"value": "esphome", "label": "Marstek via LilyGo RS485 (ESPHome)"},
                                 {"value": "anker", "label": "Anker SOLIX Solarbank Max AC / 4 E5000 Pro"},
                                 {"value": "sessy", "label": "Sessy"},
+                                {"value": "hoymiles", "label": "Hoymiles MS-A2"},
                             ],
                             mode=SelectSelectorMode.DROPDOWN,
                         )),
@@ -918,6 +936,24 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
             vol.Required(CONF_HOST): str, vol.Optional(CONF_PORT, default=80): int,
         }), errors=errors, description_placeholders={"battery_num": str(self.battery_index + 1)})
 
+    async def async_step_battery_connection_hoymiles(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """Configure an MS-A2 through Home Assistant's configured MQTT broker."""
+        errors = {}
+        if user_input is not None:
+            device_id = user_input["device_id"].strip()
+            ok, caps = await HoymilesMqttDriver.probe(self.hass, device_id)
+            if not ok:
+                errors["base"] = "cannot_connect"
+            else:
+                self._current_battery_data.update({CONF_NAME: user_input[CONF_NAME], CONF_HOST: device_id,
+                    CONF_PORT: 0, "device_id": device_id, "brand": "hoymiles"})
+                _hoymiles_apply_probe_caps(self._current_battery_data, caps)
+                return await self.async_step_battery_limits()
+        return self.async_show_form(step_id="battery_connection_hoymiles", data_schema=vol.Schema({
+            vol.Required(CONF_NAME, default=f"Hoymiles MS-A2 {self.battery_index + 1}"): str,
+            vol.Required("device_id"): str,
+        }), errors=errors, description_placeholders={"battery_num": str(self.battery_index + 1)})
+
 
     async def async_step_battery_connection_anker(
         self, user_input: dict[str, Any] | None = None
@@ -976,6 +1012,9 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
             max_power = max(max_charge_power, max_discharge_power)
         elif brand == "sessy":
             max_power = max_charge_power = max_discharge_power = _SESSY_MAX_POWER_W
+        elif brand == "hoymiles":
+            max_charge_power, max_discharge_power = _hoymiles_power_ceilings(self._current_battery_data)
+            max_power = max(max_charge_power, max_discharge_power)
         else:
             battery_version = self._current_battery_data.get(CONF_BATTERY_VERSION, DEFAULT_VERSION)
             max_power = MAX_POWER_BY_VERSION.get(battery_version, 2500)
@@ -987,6 +1026,8 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
             soc_min_lo, soc_min_hi = 5, 50
         elif brand == "anker":
             soc_min_lo, soc_min_hi = 0, 20
+        elif brand == "hoymiles":
+            soc_min_lo, soc_min_hi = 0, 30
         else:
             soc_min_lo, soc_min_hi = 12, 30
 
@@ -1011,11 +1052,11 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
             )
             merged["backup_offgrid_threshold"] = int(user_input.get("backup_offgrid_threshold", 50))
             merged[CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED] = (
-                False if brand in ("zendure", "anker", "sessy")
+                False if brand in ("zendure", "anker", "sessy", "hoymiles")
                 else user_input.get(CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED, DEFAULT_FULL_CHARGE_VOLTAGE_TAPER_ENABLED)
             )
-            if brand in ("zendure", "sessy"):
-                merged["battery_capacity_kwh"] = round(float(user_input.get("battery_capacity_kwh", 0.0)), 2)
+            if brand in ("zendure", "sessy", "hoymiles"):
+                merged["battery_capacity_kwh"] = round(float(user_input.get("battery_capacity_kwh", 2.24 if brand == "hoymiles" else 0.0)), 2)
             self.battery_configs.append(merged)
             self.battery_index += 1
 
@@ -1043,18 +1084,18 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
         _schema.update({
             vol.Required("max_soc", default=100):
                 NumberSelector(NumberSelectorConfig(min=80, max=100, step=1, mode=NumberSelectorMode.SLIDER)),
-            vol.Required("min_soc", default=12 if brand != "anker" else 10):
+            vol.Required("min_soc", default=10 if brand in ("anker", "hoymiles") else 12):
                 NumberSelector(NumberSelectorConfig(min=soc_min_lo, max=soc_min_hi, step=1, mode=NumberSelectorMode.SLIDER)),
             vol.Required("charge_hysteresis_percent", default=DEFAULT_CHARGE_HYSTERESIS_PERCENT):
                 NumberSelector(NumberSelectorConfig(min=MIN_CHARGE_HYSTERESIS_PERCENT, max=MAX_CHARGE_HYSTERESIS_PERCENT, step=1, mode=NumberSelectorMode.SLIDER)),
             vol.Required("backup_offgrid_threshold", default=50):
                 NumberSelector(NumberSelectorConfig(min=0, max=2500, step=10, unit_of_measurement="W", mode=NumberSelectorMode.SLIDER)),
         })
-        if brand not in ("zendure", "anker", "sessy"):
+        if brand not in ("zendure", "anker", "sessy", "hoymiles"):
             _schema[vol.Required(CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED, default=DEFAULT_FULL_CHARGE_VOLTAGE_TAPER_ENABLED)] = bool
-        if brand in ("zendure", "sessy"):
-            _schema[vol.Optional("battery_capacity_kwh", default=0.0)] = NumberSelector(
-                NumberSelectorConfig(min=0, max=100, step=0.01, unit_of_measurement="kWh", mode=NumberSelectorMode.BOX)
+        if brand in ("zendure", "sessy", "hoymiles"):
+            _schema[vol.Optional("battery_capacity_kwh", default=2.24 if brand == "hoymiles" else 0.0)] = NumberSelector(
+                NumberSelectorConfig(min=0.01 if brand == "hoymiles" else 0, max=100, step=0.01, unit_of_measurement="kWh", mode=NumberSelectorMode.BOX)
             )
         return self.async_show_form(
             step_id="battery_limits",
@@ -1725,6 +1766,8 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
             return await self.async_step_reconfigure_battery_esphome(user_input)
         if current.get("brand", "marstek") == "anker":
             return await self.async_step_reconfigure_battery_anker(user_input)
+        if current.get("brand", "marstek") == "hoymiles":
+            return await self.async_step_reconfigure_battery_hoymiles(user_input)
 
         errors = {}
 
@@ -2022,6 +2065,34 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
             description_placeholders={"battery_num": str(battery_num)},
         )
 
+    async def async_step_reconfigure_battery_hoymiles(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """Update the MQTT device id without asking for broker credentials."""
+        entry = self._get_reconfigure_entry()
+        current = entry.data.get("batteries", [])[self.battery_index]
+        errors = {}
+        if user_input is not None:
+            device_id = user_input["device_id"].strip()
+            ok, caps = await HoymilesMqttDriver.probe(self.hass, device_id)
+            if not ok:
+                errors["base"] = "cannot_connect"
+            else:
+                old_host, old_port = current.get(CONF_HOST), current.get(CONF_PORT, 0)
+                if old_host and old_host != device_id:
+                    self._migrate_battery_registry_ids(entry, old_host, old_port, device_id, 0)
+                updated = dict(current)
+                updated.update({CONF_NAME: user_input[CONF_NAME], CONF_HOST: device_id, CONF_PORT: 0,
+                                "device_id": device_id, "brand": "hoymiles"})
+                _hoymiles_apply_probe_caps(updated, caps)
+                self._reconfigure_batteries.append(updated)
+                self.battery_index += 1
+                if self.battery_index >= len(entry.data.get("batteries", [])):
+                    return self.async_update_reload_and_abort(entry, data_updates={"batteries": self._reconfigure_batteries})
+                return await self.async_step_reconfigure_battery()
+        return self.async_show_form(step_id="reconfigure_battery_hoymiles", data_schema=vol.Schema({
+            vol.Required(CONF_NAME, default=current.get(CONF_NAME, "Hoymiles MS-A2")): str,
+            vol.Required("device_id", default=current.get("device_id", current.get(CONF_HOST, ""))): str,
+        }), errors=errors, description_placeholders={"battery_num": str(self.battery_index + 1)})
+
     @staticmethod
     @callback
     def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:
@@ -2240,6 +2311,8 @@ class OptionsFlowHandler(OptionsFlow):
                 return await self.async_step_battery_connection_esphome()
             if brand == "anker":
                 return await self.async_step_battery_connection_anker()
+            if brand == "hoymiles":
+                return await self.async_step_battery_connection_hoymiles()
             return await self.async_step_battery_connection()
 
         return self.async_show_form(
@@ -2253,6 +2326,7 @@ class OptionsFlowHandler(OptionsFlow):
                                 {"value": "zendure", "label": "Zendure SolarFlow"},
                                 {"value": "esphome", "label": "Marstek via LilyGo RS485 (ESPHome)"},
                                 {"value": "anker", "label": "Anker SOLIX Solarbank Max AC / 4 E5000 Pro"},
+                                {"value": "hoymiles", "label": "Hoymiles MS-A2"},
                             ],
                             mode=SelectSelectorMode.DROPDOWN,
                         )),
@@ -2464,6 +2538,26 @@ class OptionsFlowHandler(OptionsFlow):
         )
 
 
+    async def async_step_battery_connection_hoymiles(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """Configure the MS-A2 MQTT device id in the options flow."""
+        errors = {}
+        current_batteries = self.config_entry.data.get("batteries", [])
+        current = current_batteries[self.battery_index] if self.battery_index < len(current_batteries) else {}
+        if user_input is not None:
+            device_id = user_input["device_id"].strip()
+            ok, caps = await HoymilesMqttDriver.probe(self.hass, device_id)
+            if not ok:
+                errors["base"] = "cannot_connect"
+            else:
+                self._current_battery_data.update({CONF_NAME: user_input[CONF_NAME], CONF_HOST: device_id,
+                    CONF_PORT: 0, "device_id": device_id, "brand": "hoymiles"})
+                _hoymiles_apply_probe_caps(self._current_battery_data, caps)
+                return await self.async_step_battery_limits()
+        return self.async_show_form(step_id="battery_connection_hoymiles", data_schema=vol.Schema({
+            vol.Required(CONF_NAME, default=current.get(CONF_NAME, f"Hoymiles MS-A2 {self.battery_index + 1}")): str,
+            vol.Required("device_id", default=current.get("device_id", current.get(CONF_HOST, ""))): str,
+        }), errors=errors, description_placeholders={"battery_num": str(self.battery_index + 1)})
+
     async def async_step_battery_connection_anker(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """Configure connection details for an Anker Solarbank Max AC / 4 E5000 Pro."""
         errors = {}
@@ -2544,6 +2638,9 @@ class OptionsFlowHandler(OptionsFlow):
                     self._current_battery_data
                 )
                 max_power = max(max_charge_power, max_discharge_power)
+            elif brand == "hoymiles":
+                max_charge_power, max_discharge_power = _hoymiles_power_ceilings(self._current_battery_data)
+                max_power = max(max_charge_power, max_discharge_power)
             else:
                 battery_version = self._current_battery_data.get(CONF_BATTERY_VERSION, DEFAULT_VERSION)
                 max_power = MAX_POWER_BY_VERSION.get(battery_version, 2500)
@@ -2555,6 +2652,8 @@ class OptionsFlowHandler(OptionsFlow):
                 soc_min_lo, soc_min_hi = 5, 50
             elif brand == "anker":
                 soc_min_lo, soc_min_hi = 0, 20
+            elif brand == "hoymiles":
+                soc_min_lo, soc_min_hi = 0, 30
             else:
                 soc_min_lo, soc_min_hi = 12, 30
             current_batteries = self.config_entry.data.get("batteries", [])
@@ -2584,11 +2683,11 @@ class OptionsFlowHandler(OptionsFlow):
                 )
                 merged["backup_offgrid_threshold"] = int(user_input.get("backup_offgrid_threshold", 50))
                 merged[CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED] = (
-                    False if brand in ("zendure", "anker", "sessy")
+                    False if brand in ("zendure", "anker", "sessy", "hoymiles")
                     else user_input.get(CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED, DEFAULT_FULL_CHARGE_VOLTAGE_TAPER_ENABLED)
                 )
-                if brand in ("zendure", "sessy"):
-                    merged["battery_capacity_kwh"] = round(float(user_input.get("battery_capacity_kwh", 0.0)), 2)
+                if brand in ("zendure", "sessy", "hoymiles"):
+                    merged["battery_capacity_kwh"] = round(float(user_input.get("battery_capacity_kwh", 2.24 if brand == "hoymiles" else 0.0)), 2)
                 self.battery_configs.append(merged)
                 self.battery_index += 1
 
@@ -2604,7 +2703,7 @@ class OptionsFlowHandler(OptionsFlow):
                     "max_charge_power": min(current_battery.get("max_charge_power", max_power), max_power),
                     "max_discharge_power": min(current_battery.get("max_discharge_power", max_power), max_power),
                     "max_soc": current_battery.get("max_soc", 100),
-                    "min_soc": current_battery.get("min_soc", 12 if brand != "anker" else 10),
+                    "min_soc": current_battery.get("min_soc", 10 if brand in ("anker", "hoymiles") else 12),
                     "charge_hysteresis_percent": max(
                         MIN_CHARGE_HYSTERESIS_PERCENT,
                         int(current_battery.get("charge_hysteresis_percent", DEFAULT_CHARGE_HYSTERESIS_PERCENT)),
@@ -2614,7 +2713,7 @@ class OptionsFlowHandler(OptionsFlow):
                         CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED,
                         DEFAULT_FULL_CHARGE_VOLTAGE_TAPER_ENABLED,
                     ),
-                    "battery_capacity_kwh": current_battery.get("battery_capacity_kwh", 0.0),
+                    "battery_capacity_kwh": current_battery.get("battery_capacity_kwh", 2.24 if brand == "hoymiles" else 0.0),
                 }
             else:
                 defaults = {
@@ -2633,11 +2732,11 @@ class OptionsFlowHandler(OptionsFlow):
                         ),
                     ),
                     "max_soc": 100,
-                    "min_soc": 10 if brand == "anker" else 12,
+                    "min_soc": 10 if brand in ("anker", "hoymiles") else 12,
                     "charge_hysteresis_percent": DEFAULT_CHARGE_HYSTERESIS_PERCENT,
                     "backup_offgrid_threshold": 50,
                     CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED: DEFAULT_FULL_CHARGE_VOLTAGE_TAPER_ENABLED,
-                    "battery_capacity_kwh": 0.0,
+                    "battery_capacity_kwh": 2.24 if brand == "hoymiles" else 0.0,
                 }
         except Exception as e:
             _LOGGER.error("Error in options flow battery_limits step: %s", e, exc_info=True)
@@ -2661,11 +2760,11 @@ class OptionsFlowHandler(OptionsFlow):
             vol.Required("backup_offgrid_threshold", default=defaults["backup_offgrid_threshold"]):
                 NumberSelector(NumberSelectorConfig(min=0, max=2500, step=10, unit_of_measurement="W", mode=NumberSelectorMode.SLIDER)),
         })
-        if brand not in ("zendure", "anker", "sessy"):
+        if brand not in ("zendure", "anker", "sessy", "hoymiles"):
             _schema[vol.Required(CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED, default=defaults[CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED])] = bool
-        if brand in ("zendure", "sessy"):
+        if brand in ("zendure", "sessy", "hoymiles"):
             _schema[vol.Optional("battery_capacity_kwh", default=defaults["battery_capacity_kwh"])] = NumberSelector(
-                NumberSelectorConfig(min=0, max=100, step=0.01, unit_of_measurement="kWh", mode=NumberSelectorMode.BOX)
+                NumberSelectorConfig(min=0.01 if brand == "hoymiles" else 0, max=100, step=0.01, unit_of_measurement="kWh", mode=NumberSelectorMode.BOX)
             )
         return self.async_show_form(
             step_id="battery_limits",

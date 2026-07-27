@@ -6,7 +6,7 @@
 
 | Component | Description |
 |---|---|
-| Battery | Marstek Venus E v2/v3, Venus A, Venus D **or** Zendure SolarFlow 2400 AC+ / AC Pro **or** Anker SOLIX Solarbank Max AC / 4 E5000 Pro |
+| Battery | Marstek Venus E v2/v3, Venus A, Venus D; Zendure SolarFlow 2400 AC+ / AC Pro; Anker SOLIX Solarbank Max AC / 4 E5000 Pro; **or Hoymiles MS-A2** |
 | Modbus converter | RS485 → Modbus TCP device (e.g. Elfin-EW11) — **Marstek Venus E v2 only**. Venus E v3, Venus A and Venus D connect via Ethernet and support Modbus TCP natively. Anker Solarbank Max AC and 4 E5000 Pro use native Modbus TCP (enable under Third-Party Control in the Anker app; only one Modbus client at a time). Not required for Zendure (local HTTP). |
 | Serial adapter *(optional)* | USB–RS485 adapter for direct serial (Modbus RTU) connection to Marstek batteries. |
 | Grid sensor | HA sensor measuring total grid consumption (e.g. Shelly EM3, Neurio, smart meter integration) |
@@ -14,6 +14,7 @@
 ### Software
 
 - Home Assistant **2024.1.0** or later
+- Home Assistant MQTT integration and a local broker for Hoymiles MS-A2
 - (Optional) Solar forecast sensor for predictive charging (Solcast, Forecast.Solar, etc.)
 
 ### Network

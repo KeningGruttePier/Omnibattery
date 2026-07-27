@@ -6,6 +6,15 @@ Cada batería se añade bajo una **marca** — **Marstek** (Venus, por Modbus TC
 
 Los campos documentados en esta página son para baterías **Marstek**. El control y los sliders de SOC/potencia se comportan igual para Zendure; solo difieren la conexión y una capacidad fijada por el usuario.
 
+## Hoymiles MS-A2 (MQTT)
+
+La MS-A2 usa el broker MQTT ya configurado en Home Assistant; Omnibattery no solicita host, puerto ni credenciales. En S-Miles Home activa **MQTT Service** en un firmware compatible y apúntalo al broker de HA. Después introduce el ID MQTT del equipo, por ejemplo `MSA-280024341346`. La integración MQTT debe estar configurada previamente en Home Assistant.
+
+El asistente pide la capacidad nominal utilizable (por defecto `2,24 kWh`; `4,48 kWh` para un sistema encadenado). Los signos se adaptan internamente: para Omnibattery positivo es carga, mientras que para el equipo carga es potencia negativa. Mientras controla la batería, Omnibattery renueva `mqtt_ctrl` aproximadamente cada 50 s; al descargar la integración manda potencia cero y restaura explícitamente `general`.
+
+Consulta [Instalar y configurar una Hoymiles MS-A2](hoymiles-ms-a2.md) para
+seguir paso a paso la instalación física, S-Miles Home, MQTT y Omnibattery.
+
 ## Número de baterías
 
 Selecciona cuántas unidades de batería tienes (1–6). La integración te pedirá configurar cada una por separado.

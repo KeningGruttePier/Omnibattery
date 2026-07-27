@@ -16,6 +16,15 @@ Each battery is added under a **brand** — **Marstek** (Venus, over Modbus TCP/
 
 The brand you pick changes the connection fields below: Marstek asks for the Modbus host/port (or a serial path) and battery version; Zendure auto-detects the model and only needs the device's local IP. The rest of the integration — control loop, sensors, dashboard, predictive charging — is shared.The fields documented on this page are for **Marstek** batteries. The control and SOC/power sliders behave the same for Zendure; only the connection and a user-set capacity differ.
 
+## Hoymiles MS-A2 (MQTT)
+
+The MS-A2 uses the MQTT broker already configured in Home Assistant; Omnibattery never needs its host, port or credentials. In S-Miles Home, enable **MQTT Service** on firmware that supports it and point it at that HA broker, then enter the MQTT device ID (for example `MSA-280024341346`). MQTT integration must be configured in Home Assistant first.
+
+The setup asks for the nominal usable capacity (default `2.24 kWh`; use `4.48 kWh` for a paired system). Its signed wire power is handled internally: positive Omnibattery power means charging while the device uses negative power for charging. While Omnibattery controls the unit it renews the external `mqtt_ctrl` command about every 50 seconds. On unload it sends zero power and restores `general`, so the battery is not left in external control.
+
+See [Install and configure a Hoymiles MS-A2](hoymiles-ms-a2.md) for the physical,
+S-Miles Home, MQTT and Omnibattery setup sequence.
+
 ---
 
 ## Per-battery Marstek parameters
