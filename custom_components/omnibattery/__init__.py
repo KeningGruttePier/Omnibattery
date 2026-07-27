@@ -509,12 +509,13 @@ class ChargeDischargeController:
         self._non_responsive = NonResponsiveTracker()
         # Alias to the tracker's internal dict for backward-compat with sensor.py diagnostics
         self._non_responsive_batteries = self._non_responsive.batteries
-        # Discharge engage grace: sign of the last commanded net power per battery
-        # (+1 charge / -1 discharge / 0 idle) to detect a flip into discharge, and
-        # the time that flip happened — non-delivery is suppressed for
-        # DISCHARGE_ENGAGE_GRACE_S after the flip so a slow inverter is not excluded
-        # while it is still engaging. See _set_battery_power.
+        # Direction engage grace: sign of the last commanded net power per battery
+        # (+1 charge / -1 discharge / 0 idle) and the time a move started.
+        # Non-delivery is suppressed for DISCHARGE_ENGAGE_GRACE_S after either
+        # direction flip so a slow inverter is not excluded while it is engaging.
+        # See _set_battery_power.
         self._last_commanded_net_sign: dict[MarstekVenusDataUpdateCoordinator, int] = {}
+        self._charge_engage_started: dict[MarstekVenusDataUpdateCoordinator, datetime] = {}
         self._discharge_engage_started: dict[MarstekVenusDataUpdateCoordinator, datetime] = {}
         # Idle ramp-down grace: the time the commanded direction flipped from a
         # move into idle. The idle-runaway judgment is suppressed for
@@ -3269,12 +3270,19 @@ class ChargeDischargeController:
         else:
             net_power = 0
 
-        # Engage-grace bookkeeping: stamp the moment the commanded direction flips
-        # into discharge so non-delivery detection below can give a slow inverter
-        # time to engage before judging it. Done before the skip-write short-circuit
-        # so the flip is seen even on a cycle that skips the write, and the tracker
-        # is reset on the flip so a stale count from a prior session can't carry over.
+        # Engage-grace bookkeeping: stamp the moment either commanded direction
+        # starts so non-delivery detection below can give a slow inverter time to
+        # engage before judging it. Done before the skip-write short-circuit so
+        # the flip is seen even on a cycle that skips the write, and the tracker is
+        # reset so a stale count from a prior session cannot carry over.
         net_sign = 1 if net_power > 0 else -1 if net_power < 0 else 0
+        if (
+            not preserve_non_responsive_episode
+            and net_sign == 1
+            and self._last_commanded_net_sign.get(coordinator) != 1
+        ):
+            self._charge_engage_started[coordinator] = dt_util.utcnow()
+            self._non_responsive.clear(coordinator)
         if (
             not preserve_non_responsive_episode
             and net_sign == -1
@@ -3314,11 +3322,12 @@ class ChargeDischargeController:
         # write readbacks. External writers and BMS reverts self-correct on the
         # next poll.
         #
-        # For a discharge command we additionally require the battery to actually be
-        # delivering (polled battery_power within the same 10% tolerance the
-        # non-responsive tracker uses). If a battery silently stops while its
-        # set-points still match (the v3 non-responsive failure mode), delivery
-        # drops and we fall through to a real write so the tracker keeps seeing it.
+        # For a move command we additionally require the battery to actually be
+        # delivering in the requested direction (polled battery_power within the
+        # same 10% tolerance the non-responsive tracker uses). If a battery silently
+        # stops while its set-points still match (the v3 non-responsive failure
+        # mode), delivery drops and we fall through to a real write so the tracker
+        # keeps seeing it.
         data = coordinator.data or {}
         current_net = coordinator.driver.net_power_from_data(data)
         if not force_write and current_net is not None and current_net == net_power:
@@ -3399,6 +3408,23 @@ class ChargeDischargeController:
                 ):
                     await self._check_non_delivery(
                         coordinator, abs(net_power), float(batt_power), attempt=0,
+                        direction="discharge",
+                    )
+            elif net_power > 0 and net_power >= 100:
+                batt_power = data.get("battery_power")
+                skip_write = (
+                    batt_power is not None
+                    and float(batt_power) >= 0.10 * net_power
+                )
+                if (
+                    batt_power is not None
+                    and not skip_write
+                    and coordinator.capabilities.actuator_latency_s
+                    > FAST_ACTUATOR_MAX_LATENCY_S
+                ):
+                    await self._check_non_delivery(
+                        coordinator, net_power, float(batt_power), attempt=0,
+                        direction="charge",
                     )
             if skip_write:
                 # Polled set-points match the commanded values exactly — this is
@@ -3506,18 +3532,22 @@ class ChargeDischargeController:
                         commanded_power=discharge_power,
                         actual_power=actual_power,
                     )
-                # Detect non-responsive battery: ACK ok but not delivering discharge
-                # power. Register drivers reach this only on a readback cycle; slow
-                # actuators run the same judgment at poll time (see skip-write block).
-                # Skip when delivered power is unknown (e.g. Anker write ACK without
-                # a successful battery_power sample).
+                # Detect non-responsive battery: ACK ok but not delivering power in
+                # the commanded direction. Register drivers reach this only on a
+                # readback cycle; slow actuators run the same judgment at poll time
+                # (see skip-write block). Skip when delivered power is unknown.
                 if (
-                    discharge_power >= 100
-                    and charge_power == 0
+                    max(charge_power, discharge_power) >= 100
+                    and not (charge_power > 0 and discharge_power > 0)
                     and actual_power is not None
                 ):
+                    direction = "charge" if charge_power > 0 else "discharge"
                     await self._check_non_delivery(
-                        coordinator, discharge_power, actual_power, attempt=attempt,
+                        coordinator,
+                        max(charge_power, discharge_power),
+                        actual_power,
+                        attempt=attempt,
+                        direction=direction,
                     )
                 return True
 
@@ -3571,13 +3601,19 @@ class ChargeDischargeController:
         return False
 
     async def _check_non_delivery(
-        self, coordinator, discharge_power, actual_power, *, attempt,
+        self,
+        coordinator,
+        commanded_power,
+        actual_power,
+        *,
+        attempt,
+        direction: str = "discharge",
     ) -> None:
-        """Judge a discharge command that delivers ~0 W and feed the tracker.
+        """Judge a move command that delivers ~0 W and feed the tracker.
 
-        Applies the engage-grace, BMS low-SOC cutoff and BMS-full standby
-        exemptions, then records a non-delivery (excluding the battery once the
-        tracker's threshold is crossed) or clears it when power is flowing.
+        Applies direction engage-grace and legitimate BMS cutoff exemptions,
+        then records a non-delivery (excluding the battery once the tracker's
+        threshold is crossed) or clears it when power is flowing.
 
         Called from the per-write readback path (register drivers, fresh ACK
         power) and, for slow actuators whose per-write readback is skipped, from
@@ -3585,11 +3621,20 @@ class ChargeDischargeController:
         silently stalled registerless battery in a pool is excluded, not
         re-commanded forever.
         """
-        delivered_discharge = max(0.0, -float(actual_power))
-        if delivered_discharge >= 0.10 * discharge_power:
+        is_charge = direction == "charge"
+        delivered_power = max(
+            0.0,
+            float(actual_power) if is_charge else -float(actual_power),
+        )
+        if delivered_power >= 0.10 * commanded_power:
             self._non_responsive.clear(coordinator)
             return
-        engage_started = self._discharge_engage_started.get(coordinator)
+        engage_times = (
+            self._charge_engage_started
+            if is_charge
+            else self._discharge_engage_started
+        )
+        engage_started = engage_times.get(coordinator)
         within_engage_grace = (
             engage_started is not None
             and (dt_util.utcnow() - engage_started).total_seconds()
@@ -3602,11 +3647,24 @@ class ChargeDischargeController:
             # direction flip is engage latency, not a fault; give it time
             # before judging. The flip already reset the tracker.
             _LOGGER.debug(
-                "[%s] No discharge delivered yet but within %ds engage "
+                "[%s] No %s delivered yet but within %ds engage "
                 "grace — inverter still engaging, not a fault",
-                coordinator.name, DISCHARGE_ENGAGE_GRACE_S,
+                coordinator.name, direction, DISCHARGE_ENGAGE_GRACE_S,
             )
             return
+        if is_charge:
+            weekly_mgr = getattr(self, "_weekly_charge_mgr", None)
+            if (
+                weekly_mgr is not None
+                and weekly_mgr.is_battery_full(coordinator)
+            ):
+                _LOGGER.debug(
+                    "[%s] No charge delivered because the BMS full-charge "
+                    "cutoff is active — not a fault",
+                    coordinator.name,
+                )
+                self._non_responsive.clear(coordinator)
+                return
         # Skip non-responsive recording when the BMS is legitimately
         # refusing discharge: either at/near the configured min-SOC, or
         # anywhere below the low-SOC protective floor where the BMS may
@@ -3616,7 +3674,7 @@ class ChargeDischargeController:
         # the high-SOC BMS-cutoff handling.
         current_soc = coordinator.data.get("battery_soc", 100) if coordinator.data else 100
         bms_cutoff_floor = max(coordinator.min_soc + 1, BMS_DISCHARGE_CUTOFF_SOC)
-        if current_soc <= bms_cutoff_floor:
+        if not is_charge and current_soc <= bms_cutoff_floor:
             _LOGGER.debug(
                 "[%s] No discharge delivered but SOC=%.1f%% is in the BMS "
                 "low-SOC cutoff range (min_soc=%d%%, floor=%d%%) — not a fault",
@@ -3641,9 +3699,14 @@ class ChargeDischargeController:
         # out of BMS-full standby; once it expires, a battery that still ACKs the
         # discharge set-point but remains in standby is genuinely not delivering
         # and must reach the wake/reconnect recovery path (issue #26).
-        reason = "standby_no_delivery" if is_standby else "non_delivery"
+        reason_prefix = "charge_" if is_charge else ""
+        reason = (
+            f"{reason_prefix}standby_no_delivery"
+            if is_standby
+            else f"{reason_prefix}non_delivery"
+        )
         outcome = self._non_responsive.record_non_delivery(
-            coordinator, discharge_power, delivered_discharge,
+            coordinator, commanded_power, delivered_power,
             reason=reason, retry_attempted=attempt > 0,
         )
         # First threshold-cross: a one-shot wake nudge (reconnect/re-assert), but

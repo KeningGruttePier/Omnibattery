@@ -1,6 +1,6 @@
 """Non-responsive battery tracking for Marstek Venus.
 
-Excludes batteries that ACK power commands but fail to deliver power
+Excludes batteries that ACK charge/discharge commands but fail to deliver power
 (e.g. firmware glitch, BMS lockout). Excluded batteries are retried after
 a flat cooldown — the goal is to recover a battery as soon as possible, so
 the penalty never grows across episodes.
@@ -66,8 +66,9 @@ class NonResponsiveTracker:
         """Increment the fail counter for a battery and exclude after threshold.
 
         ``reason`` is a stable category string surfaced on the diagnostic sensor:
-        ``non_delivery`` (ACK ok, awake, ~0 W out), ``standby_no_delivery`` (ACK ok
-        but the inverter sits in standby), ``modbus_write_failed`` /
+        ``non_delivery`` / ``charge_non_delivery`` (ACK ok, awake, ~0 W),
+        ``standby_no_delivery`` / ``charge_standby_no_delivery`` (ACK ok but the
+        inverter sits in standby), ``modbus_write_failed`` /
         ``driver_exception`` (unexpected exception from driver), ``feedback_timeout`` (write
         accepted but the readback never followed) or ``ack_mismatch`` (readback did
         not match the command).

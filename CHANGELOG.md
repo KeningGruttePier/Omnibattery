@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.0b1] - 2026-07-27
+
+### Fixed
+- **Non-responsive batteries during charging are now detected and recovered**: charge commands that are acknowledged but do not deliver power now use the same retry, wake and exclusion flow as failed discharge commands. A direction-change grace period avoids false positives while slow inverters engage, and batteries at a legitimate BMS full-charge cutoff are not flagged as unresponsive.
+
 ## [1.1.0] - 2026-07-24
 
 ### Added
