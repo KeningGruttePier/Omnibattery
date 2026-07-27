@@ -88,6 +88,12 @@
           "port": "Puerto HTTP (por defecto 80)"
         }
       },
+      "battery_connection_hoymiles": {
+        "title": "Configurar batería {battery_num} — Conexión (Hoymiles)",
+        "description": "Activa MQTT Service en S-Miles Home y apúntalo al broker MQTT configurado en Home Assistant antes de continuar.",
+        "data": {"name": "Nombre", "device_id": "ID de dispositivo MQTT"},
+        "data_description": {"device_id": "ID MQTT de la MS-A2, por ejemplo MSA-280024341346. Home Assistant gestiona las credenciales."}
+      },
       "battery_connection_esphome": {
         "title": "Configurar batería {battery_num} — Conexión (LilyGo/ESPHome)",
         "description": "Selecciona el dispositivo ESPHome (puente LilyGo RS485) que expone la batería Marstek {battery_num}. Debe ejecutar el firmware marstek-lilygo-rs485 con los nombres de entidad originales.",
@@ -516,6 +522,11 @@
           "port": "Modbus TCP port (default 502)",
           "slave_id": "Modbus slave/unit id (default 1)"
         }
+      },
+      "reconfigure_battery_hoymiles": {
+        "title": "Reconfigurar batería {battery_num} — MQTT Hoymiles",
+        "description": "Introduce el ID MQTT de la MS-A2; Home Assistant gestiona el broker.",
+        "data": {"name": "Nombre", "device_id": "ID de dispositivo MQTT"}
       },
       "reconfigure_battery_esphome": {
         "title": "Reconfigurar batería {battery_num} — Conexión (LilyGo/ESPHome)",

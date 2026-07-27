@@ -3,7 +3,8 @@
   "name": "Omnibattery",
   "after_dependencies": [
     "recorder",
-    "esphome"
+    "esphome",
+    "mqtt"
   ],
   "codeowners": [
     "@ffunes"
