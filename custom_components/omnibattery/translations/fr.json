@@ -3,6 +3,14 @@
     "slow_main_sensor": {
       "title": "Le capteur de puissance réseau se met à jour trop lentement",
       "description": "Le capteur réseau configuré {sensor} se met à jour environ toutes les {observed_interval} secondes. Des intervalles de {warning_interval} secondes ou plus sont plus lents que recommandé et peuvent réduire la qualité de régulation. Omnibattery suit la dernière mesure jusqu'à ce qu'elle date de plus de {stale_limit} secondes. Utilisez un capteur plus rapide si vous avez besoin d'un contrôle temps réel plus précis."
+    },
+    "price_data_unusable": {
+      "title": "Données tarifaires inutilisables",
+      "description": "Omnibattery n'a pas pu lire de créneaux tarifaires exploitables depuis {sensor} pendant plus de {minutes} minutes (état : {status}). La charge pilotée par les prix est inactive : la planification en tarification dynamique et la libération du report de charge selon le prix reviennent à leur comportement sans prix. Vérifiez que le capteur est disponible et que son attribut de prix est une liste d'entrées ; un capteur de type template doit produire des horodatages ISO-8601, car un datetime Python rendu ne peut pas être reconverti en liste."
+    },
+    "solar_forecast_unusable": {
+      "title": "Prévision solaire inutilisable",
+      "description": "Le capteur de prévision solaire configuré {sensor} est indisponible ou illisible depuis plus de {minutes} minutes. Omnibattery continue de fonctionner, mais tout ce qui dépend de la prévision avance à l'aveugle : le report de charge se libère pour le reste de la journée, les décisions de charge depuis le réseau supposent une absence totale de soleil et peuvent réserver des créneaux inutiles, et l'estimation du solaire restant indique 0 kWh. Vérifiez le capteur ou l'intégration qui le fournit."
     }
   },
   "config": {

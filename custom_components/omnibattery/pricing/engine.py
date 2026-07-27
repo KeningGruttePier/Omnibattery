@@ -17,9 +17,15 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime, timedelta
+from time import monotonic
 from typing import TYPE_CHECKING, Any, Optional
 
+from homeassistant.helpers import issue_registry as ir
+
 from ..const import (
+    DOMAIN,
+    PRICE_DATA_ISSUE_DELAY_S,
+    PRICE_HEALTH_CHECK_INTERVAL_S,
     PRICE_INTEGRATION_NORDPOOL,
     PRICE_INTEGRATION_PVPC,
     PRICE_INTEGRATION_CKW,
@@ -50,6 +56,16 @@ if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
 _LOGGER = logging.getLogger(__name__)
+
+# Sensor attributes each integration expects to hold a LIST of price entries.
+# Used only to detect an attribute that arrived as a string; PVPC is absent
+# because it reads scalar per-hour attributes, not a list.
+_PRICE_LIST_ATTRS = {
+    PRICE_INTEGRATION_NORDPOOL: ("raw_today", "raw_tomorrow"),
+    PRICE_INTEGRATION_CKW: ("prices",),
+    PRICE_INTEGRATION_EPEX: ("data",),
+    PRICE_INTEGRATION_ENTSOE: ("prices_today", "prices_tomorrow"),
+}
 
 
 class PricingManager:
@@ -330,6 +346,119 @@ class PricingManager:
         await self._maybe_refresh_tibber_prices(force=force)
         await self._maybe_refresh_nordpool_prices(force=force)
 
+    def maybe_check_price_data_health(self) -> None:
+        """Periodically re-parse prices and raise/clear the price-data Repairs issue.
+
+        ``_price_data_status`` is only refreshed when something actually asks for
+        prices. In dynamic-pricing mode that is the 00:05 evaluation and whatever
+        the control loop happens to need, so a price sensor that stops delivering
+        usable slots can go unnoticed for days: charging silently falls back to its
+        no-price behaviour and only an attribute buried on the predictive-charging
+        binary sensor says why. Poll it on a slow timer instead and surface a
+        sustained failure in Repairs.
+        """
+        ctrl = self._controller
+        mono = monotonic()
+
+        if not self._prices_are_load_bearing():
+            # Feature off, or a mode that does not consume price slots: prices
+            # cannot be "broken" here. Clear a stale issue (it is persistent, so it
+            # can outlive the run that raised it) and stop tracking.
+            ctrl._price_data_bad_since = None
+            self._clear_price_data_issue()
+            return
+
+        last = ctrl._price_health_last_check
+        if last is not None and mono - last < PRICE_HEALTH_CHECK_INTERVAL_S:
+            return
+        ctrl._price_health_last_check = mono
+        self._parse_price_data(quiet=True)  # refreshes _price_data_status
+        self._update_price_data_issue(mono)
+
+    def _prices_are_load_bearing(self) -> bool:
+        """Whether something in this configuration actually consumes price slots.
+
+        Dynamic pricing schedules from them directly. Real-time price mode charges
+        off the scalar current price, so slots only matter there for the charge
+        delay's price-aware release — without it a slot-less sensor is no defect
+        and must not raise a repair.
+        """
+        ctrl = self._controller
+        if not getattr(ctrl, "predictive_charging_enabled", False):
+            return False
+        mode = getattr(ctrl, "predictive_charging_mode", None)
+        if mode == PREDICTIVE_MODE_DYNAMIC_PRICING:
+            return True
+        return mode == PREDICTIVE_MODE_REALTIME_PRICE and bool(
+            getattr(ctrl, "charge_delay_enabled", False)
+        )
+
+    def _clear_price_data_issue(self) -> None:
+        """Delete the price-data issue, at most once per controller run.
+
+        The issue is created with ``is_persistent=True``, so it survives a restart
+        while ``_price_data_issue_created`` does not. Keying the delete on that flag
+        would therefore strand an issue raised in an earlier run forever. Key it on
+        a separate "already cleared this run" flag instead, so the first healthy
+        check after any start removes a stale issue.
+        """
+        ctrl = self._controller
+        if ctrl._price_data_issue_cleared:
+            return
+        ctrl._price_data_issue_cleared = True
+        ctrl._price_data_issue_created = False
+        ir.async_delete_issue(
+            ctrl.hass, DOMAIN, f"price_data_unusable_{ctrl.config_entry.entry_id}"
+        )
+
+    def _update_price_data_issue(self, mono: float) -> None:
+        """Create or clear the Repairs issue for unusable price data.
+
+        Only a failure sustained for ``PRICE_DATA_ISSUE_DELAY_S`` raises the issue,
+        so an integration reload, a provider outage or the day-ahead publication gap
+        does not flap it. Mirrors the slow-sensor repair: at most one creation per
+        controller run, cleared as soon as prices parse again.
+        """
+        ctrl = self._controller
+        status = ctrl._price_data_status or ""
+
+        if status.startswith("ok"):
+            ctrl._price_data_bad_since = None
+            self._clear_price_data_issue()
+            return
+
+        if ctrl._price_data_bad_since is None:
+            ctrl._price_data_bad_since = mono
+            return
+        if (
+            ctrl._price_data_issue_created
+            or mono - ctrl._price_data_bad_since < PRICE_DATA_ISSUE_DELAY_S
+        ):
+            return
+
+        ctrl._price_data_issue_created = True
+        ctrl._price_data_issue_cleared = False
+        _LOGGER.warning(
+            "Dynamic pricing: price data unusable (%s) for over %.0f minutes - "
+            "price-aware charging is inactive",
+            status, PRICE_DATA_ISSUE_DELAY_S / 60,
+        )
+        ir.async_create_issue(
+            ctrl.hass,
+            DOMAIN,
+            f"price_data_unusable_{ctrl.config_entry.entry_id}",
+            is_fixable=False,
+            is_persistent=True,
+            issue_domain=DOMAIN,
+            severity=ir.IssueSeverity.WARNING,
+            translation_key="price_data_unusable",
+            translation_placeholders={
+                "sensor": ctrl.price_sensor or "-",
+                "status": status,
+                "minutes": f"{PRICE_DATA_ISSUE_DELAY_S / 60:.0f}",
+            },
+        )
+
     def get_future_price_slots(self, horizon_end=None) -> list:
         """Public accessor for parsed future PriceSlots (today, future-only).
 
@@ -376,6 +505,27 @@ class PricingManager:
                 return []
 
             attrs = state.attributes
+            # A template-built price sensor whose attribute renders to something
+            # Home Assistant cannot literal_eval (e.g. a list containing datetime
+            # objects) lands here as a plain string. Iterating it would walk single
+            # characters, and every per-entry parse failure is debug-level, so the
+            # integration would silently run without prices. Catch the type here.
+            stringified = [
+                key
+                for key in _PRICE_LIST_ATTRS.get(self._controller.price_integration_type, ())
+                if isinstance(attrs.get(key), str)
+            ]
+            if stringified:
+                _warn(
+                    "Dynamic pricing: price sensor %s exposes attribute(s) %s as a string "
+                    "instead of a list — the sensor's template most likely renders values "
+                    "(e.g. datetimes) that Home Assistant cannot convert back to a list. "
+                    "Emit ISO-8601 strings instead.",
+                    self._controller.price_sensor, ", ".join(stringified),
+                )
+                self._controller._price_data_status = "bad_format"
+                return []
+
             if self._controller.price_integration_type == PRICE_INTEGRATION_PVPC:
                 raw_slots = calculations.parse_pvpc_prices(attrs)
             elif self._controller.price_integration_type == PRICE_INTEGRATION_CKW:
@@ -403,7 +553,16 @@ class PricingManager:
         end_of_day = now.replace(hour=23, minute=59, second=59, microsecond=0)
         effective_horizon = horizon_end if horizon_end is not None else end_of_day
         filtered = [s for s in raw_slots if s.end > now and s.start <= effective_horizon]
-        self._controller._price_data_status = f"ok ({len(filtered)} slots)"
+        # Slots that parse but all lie in the past leave price-aware charging just as
+        # dead as a parse failure (e.g. a template sensor frozen on yesterday's
+        # entries), so this is a distinct status rather than "ok (0 slots)" — the
+        # latter reads as healthy to the health check. In normal operation the
+        # horizon only empties in the last minutes before midnight, far short of the
+        # sustained window that raises a repair.
+        if not filtered:
+            self._controller._price_data_status = "no_future_slots"
+        else:
+            self._controller._price_data_status = f"ok ({len(filtered)} slots)"
         (_LOGGER.debug if quiet else _LOGGER.info)(
             "Dynamic pricing: parsed %d slots (%d within horizon)", len(raw_slots), len(filtered)
         )

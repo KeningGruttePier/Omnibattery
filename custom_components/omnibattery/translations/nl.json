@@ -3,6 +3,14 @@
     "slow_main_sensor": {
       "title": "De netvermogenssensor werkt te langzaam bij",
       "description": "De geconfigureerde netsensor {sensor} werkt ongeveer elke {observed_interval} seconden bij. Intervallen van {warning_interval} seconden of meer zijn trager dan aanbevolen en kunnen de regelkwaliteit verminderen. Omnibattery volgt de laatste meting totdat deze ouder is dan {stale_limit} seconden. Gebruik een snellere sensor als u een nauwkeurigere realtime regeling nodig hebt."
+    },
+    "price_data_unusable": {
+      "title": "Prijsdata onbruikbaar",
+      "description": "Omnibattery kon langer dan {minutes} minuten geen bruikbare prijsslots uit {sensor} lezen (status: {status}). Prijsgestuurd laden is daardoor inactief: de dynamic-pricing planning en de prijsgestuurde vrijgave van de laadvertraging vallen terug op hun gedrag zonder prijzen. Controleer of de sensor beschikbaar is en of het prijsattribuut een lijst met items is; een template-sensor moet ISO-8601-tijdstempels teruggeven, omdat een gerenderd Python-datetime niet terug naar een lijst kan worden omgezet."
+    },
+    "solar_forecast_unusable": {
+      "title": "Zonneprognose onbruikbaar",
+      "description": "De ingestelde zonneprognose-sensor {sensor} is al meer dan {minutes} minuten niet beschikbaar of onleesbaar. Omnibattery blijft draaien, maar alles wat op de prognose leunt werkt nu blind: de laadvertraging geeft de rest van de dag vrij, beslissingen over netladen gaan uit van geen enkele zon en kunnen onnodig netlaadslots boeken, en de resterende-zon-schatting leest 0 kWh. Controleer de sensor of de integratie die hem levert."
     }
   },
   "config": {
