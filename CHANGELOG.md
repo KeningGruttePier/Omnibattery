@@ -1,8 +1,9 @@
 # Changelog
 
-## [1.2.0b1] - 2026-07-25
+## [1.2.0b1] - 2026-07-26
 
 ### Added
+- **Sessy local API driver**: adds local HTTP support for Sessy batteries through the Sessy dongle, including battery and energy telemetry, signed power control with the required Sessy strategy selection, and integration with the standard Omnibattery setup flow, coordinator and dashboard entities.
 - **Peak shaving for excluded devices** (#107): a new opt-in runtime switch inside Peak Shaving lets the battery cover only the portion of excluded-device demand that would otherwise push grid import above the configured peak limit. Normal home coverage is preserved, inverter and battery discharge limits still apply, and existing installations remain disabled by default.
 
 ## [1.1.0] - 2026-07-25

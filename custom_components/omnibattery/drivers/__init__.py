@@ -26,6 +26,7 @@ from .esphome import EsphomeEntityDriver
 from .marstek import MarstekModbusDriver
 from .zendure import ZendureLocalDriver
 from .anker import AnkerModbusDriver
+from .sessy import SessyLocalDriver
 
 __all__ = [
     "BatteryDriver",
@@ -37,4 +38,5 @@ __all__ = [
     "MarstekModbusDriver",
     "ZendureLocalDriver",
     "AnkerModbusDriver",
+    "SessyLocalDriver",
 ]
