@@ -133,8 +133,8 @@ ALARM_BIT_DESCRIPTIONS: dict[int, str] = {
     19: "CT Connection Abnormal",
 }
 
-# Calculated cycle count sensor (all versions):
-# cycles = (total_discharge + total_charge) / 2 / battery_capacity
+# Calculated cycle count. Sessy uses total_discharge / battery_capacity; legacy
+# drivers retain (total_discharge + total_charge) / 2 / battery_capacity.
 CYCLE_SENSOR_DEFINITIONS = [
     {
         "name": "Battery Cycle Count Calc",

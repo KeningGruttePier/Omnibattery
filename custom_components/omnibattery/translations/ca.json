@@ -1148,6 +1148,9 @@
       "capacity_protection": {
         "name": "Reducció de Pics"
       },
+      "capacity_protection_excluded_devices": {
+        "name": "Reducció de Pics per a Dispositius Exclosos"
+      },
       "backup_function": {
         "name": "Funció de Reserva"
       },

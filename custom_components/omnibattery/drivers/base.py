@@ -70,13 +70,20 @@ class DriverCapabilities:
     # True if external (RS485/Modbus) control mode can be toggled on this hardware.
     has_rs485_control: bool
 
-    # True if the hardware reports cumulative energy counters and a nominal
-    # capacity (Marstek battery_total_energy + total_charging/discharging_energy
-    # registers). When False the device exposes no energy, so the integration
-    # synthesises charge/discharge energy by integrating power and takes the
-    # capacity from a user-set number entity (Zendure). Defaults True so existing
-    # register-backed drivers need no change.
+    # True if the hardware reports cumulative energy counters. When False the
+    # integration synthesises charge/discharge energy by integrating power.
+    # Defaults True so existing register-backed drivers need no change.
     has_energy_counters: bool = True
+
+    # True if the hardware also reports its nominal battery capacity. Drivers
+    # such as Sessy expose lifetime energy counters but require the user to
+    # supply this value for stored-energy and equivalent-cycle calculations.
+    has_nominal_capacity: bool = True
+
+    # True when equivalent cycles are defined from cumulative discharged energy
+    # alone. Sessy exposes that lifetime counter, while the existing drivers
+    # retain their throughput-based calculation for backward compatibility.
+    cycles_from_discharge_only: bool = False
 
     # True if the hardware also reports counters that reset every day. Some
     # devices (Anker) expose only lifetime charge/discharge totals; for those the

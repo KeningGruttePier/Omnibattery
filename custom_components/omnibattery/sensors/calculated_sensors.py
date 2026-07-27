@@ -275,7 +275,7 @@ class MarstekVenusStoredEnergySensor(CoordinatorEntity, SensorEntity):
 
 
 class MarstekVenusCycleSensor(CoordinatorEntity, SensorEntity):
-    """Calculated battery cycle count: total_discharge / battery_capacity."""
+    """Calculated battery cycle count."""
 
     def __init__(
         self, coordinator: MarstekVenusDataUpdateCoordinator, definition: dict
@@ -296,7 +296,7 @@ class MarstekVenusCycleSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def native_value(self):
-        """Return calculated cycle count: (discharge + charge) / 2 / capacity."""
+        """Return the driver's configured equivalent-cycle calculation."""
         if self.coordinator.data is None:
             return None
 
@@ -307,6 +307,8 @@ class MarstekVenusCycleSensor(CoordinatorEntity, SensorEntity):
         if not capacity or capacity <= 0:
             return None
 
+        if getattr(self.coordinator.capabilities, "cycles_from_discharge_only", False):
+            return round(discharge / capacity, 1)
         return round((discharge + charge) / 2 / capacity, 1)
 
     @property
