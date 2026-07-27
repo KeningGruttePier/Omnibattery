@@ -1,6 +1,10 @@
 # Changelog
 
-## [1.2.0b1] - 2026-07-26
+## [1.2.0b1] - 2026-07-27
+
+### Added
+- **Sessy local API driver**: adds local HTTP support for Sessy batteries through the Sessy dongle, including battery and energy telemetry, signed power control with the required Sessy strategy selection, and integration with the standard Omnibattery setup flow, coordinator and dashboard entities.
+- **Peak shaving for excluded devices** (#107): a new opt-in runtime switch inside Peak Shaving lets the battery cover only the portion of excluded-device demand that would otherwise push grid import above the configured peak limit. Normal home coverage is preserved, inverter and battery discharge limits still apply, and existing installations remain disabled by default.
 
 ### Changed
 - **Faster dashboard history charts**: the Power chart now reads compact five-minute Recorder statistics and Weekly Energy reads daily statistics, falling back to raw history only for entities without statistics. History refreshes are coalesced so a slow Recorder cannot overlap repeated requests, and the SOC sparkline loads after the visible charts.
@@ -8,10 +12,7 @@
 ### Fixed
 - **Dashboard history charts could render before their cards existed**: Recorder requests now start only after the Summary cards are mounted, so a fast response cannot leave the Power chart blank until a later UI repaint.
 - **Weekly Energy could show massively inflated daily charge/discharge values**: daily counters reset at midnight, while Recorder normalizes their cumulative sum. The chart now uses each day's final counter state instead of that normalized change, preserving the real daily total.
-
-### Added
-- **Sessy local API driver**: adds local HTTP support for Sessy batteries through the Sessy dongle, including battery and energy telemetry, signed power control with the required Sessy strategy selection, and integration with the standard Omnibattery setup flow, coordinator and dashboard entities.
-- **Peak shaving for excluded devices** (#107): a new opt-in runtime switch inside Peak Shaving lets the battery cover only the portion of excluded-device demand that would otherwise push grid import above the configured peak limit. Normal home coverage is preserved, inverter and battery discharge limits still apply, and existing installations remain disabled by default.
+- **Non-responsive batteries during charging are now detected and recovered**: charge commands that are acknowledged but do not deliver power now use the same retry, wake and exclusion flow as failed discharge commands. A direction-change grace period avoids false positives while slow inverters engage, and batteries at a legitimate BMS full-charge cutoff are not flagged as unresponsive.
 
 ## [1.1.0] - 2026-07-25
 
