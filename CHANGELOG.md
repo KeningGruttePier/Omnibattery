@@ -1,11 +1,9 @@
 # Changelog
 
-- **Documentation: Hoymiles MS-A2 installation** — Added complete English and Spanish setup guides covering physical commissioning, S-Miles Home MQTT configuration, Omnibattery onboarding, verification, safety and troubleshooting.
-
 ## [1.2.0b1] - 2026-07-27
 
 ### Added
-- **Hoymiles MS-A2 MQTT driver**: adds broker-native telemetry and signed external power control through Home Assistant MQTT, including a command watchdog that restores autonomous `general` mode on unload.
+- **Hoymiles MS-A2 MQTT driver**: adds broker-native telemetry and signed external power control through Home Assistant MQTT, including a command watchdog that restores autonomous `general` mode on unload. Added complete English and Spanish setup guides covering physical commissioning, S-Miles Home MQTT configuration, Omnibattery onboarding, verification, safety and troubleshooting.
 - **Sessy local API driver**: adds local HTTP support for Sessy batteries through the Sessy dongle, including battery and energy telemetry, signed power control with the required Sessy strategy selection, and integration with the standard Omnibattery setup flow, coordinator and dashboard entities.
 - **Peak shaving for excluded devices** (#107): a new opt-in runtime switch inside Peak Shaving lets the battery cover only the portion of excluded-device demand that would otherwise push grid import above the configured peak limit. Normal home coverage is preserved, inverter and battery discharge limits still apply, and existing installations remain disabled by default.
 
