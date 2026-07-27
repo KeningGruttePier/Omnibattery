@@ -3,6 +3,14 @@
     "slow_main_sensor": {
       "title": "El sensor de potència de xarxa s'actualitza massa lentament",
       "description": "El sensor de xarxa configurat {sensor} s'actualitza aproximadament cada {observed_interval} segons. Els intervals de {warning_interval} segons o més són més lents del recomanat i poden reduir la qualitat de la regulació. Omnibattery segueix l'última lectura fins que supera els {stale_limit} segons d'antiguitat. Utilitza un sensor més ràpid si necessites un control en temps real més precís."
+    },
+    "price_data_unusable": {
+      "title": "Dades de preus inutilitzables",
+      "description": "Omnibattery no ha pogut llegir franges de preu utilitzables de {sensor} durant més de {minutes} minuts (estat: {status}). La càrrega basada en preus està inactiva: la planificació de preus dinàmics i l'alliberament per preu del retard de càrrega tornen al seu comportament sense preus. Comproveu que el sensor estigui disponible i que el seu atribut de preus sigui una llista d'entrades; un sensor de plantilla ha d'emetre marques de temps ISO-8601, perquè un datetime de Python renderitzat no es pot tornar a convertir en una llista."
+    },
+    "solar_forecast_unusable": {
+      "title": "Previsió solar inutilitzable",
+      "description": "El sensor de previsió solar configurat {sensor} fa més de {minutes} minuts que no està disponible o no es pot llegir. Omnibattery continua funcionant, però tot allò que depèn de la previsió va a cegues: el retard de càrrega s'allibera la resta del dia, les decisions de càrrega des de la xarxa assumeixen que no hi haurà sol i poden reservar franges innecessàries, i l'estimació de sol restant marca 0 kWh. Reviseu el sensor o la integració que el proporciona."
     }
   },
   "config": {

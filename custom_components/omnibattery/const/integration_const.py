@@ -279,6 +279,22 @@ MAX_SENSOR_STALE_S = 65.0
 # gap from flagging an otherwise fast sensor.
 SLOW_SENSOR_WARN_INTERVALS = 3
 
+# How often the dynamic-pricing handler re-parses the price sensor purely to
+# refresh _price_data_status for the health check. The parse itself is cheap but
+# pointless every 2.5 s control cycle, and price attributes change hourly at most.
+PRICE_HEALTH_CHECK_INTERVAL_S = 900.0
+
+# How long price parsing must keep failing before a Repairs issue is raised.
+# Long enough to ride out an integration reload, a provider outage or the
+# day-ahead publication gap; short enough that a broken sensor is noticed the
+# same day instead of silently disabling price-aware charging for weeks.
+PRICE_DATA_ISSUE_DELAY_S = 7200.0
+
+# How long a configured solar-forecast sensor must stay unreadable before a
+# Repairs issue is raised. Same reasoning as the price feed: long enough to ride
+# out a provider outage, short enough to catch a dead sensor the same day.
+FORECAST_DATA_ISSUE_DELAY_S = 7200.0
+
 # An actuator at or below this latency (seconds, DriverCapabilities.actuator_latency_s)
 # reaches its setpoint and reflects it in telemetry within one poll. Such drivers do
 # the hot-path readback and use the measured-power feedforward; slower ones (Zendure

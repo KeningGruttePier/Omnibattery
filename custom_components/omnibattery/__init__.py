@@ -147,6 +147,7 @@ from .const import (
     SLOW_SENSOR_WARNING_INTERVAL_S,
     MAX_SENSOR_STALE_S,
     SLOW_SENSOR_WARN_INTERVALS,
+    FORECAST_DATA_ISSUE_DELAY_S,
     FAST_ACTUATOR_MAX_LATENCY_S,
     DISCHARGE_ENGAGE_GRACE_S,
     IDLE_RUNAWAY_POWER_W,
@@ -630,6 +631,13 @@ class ChargeDischargeController:
         self._dp_eval_retry_count = 0  # Retry counter if tomorrow prices not available at 23:00
         self._dp_pre_evaluated_slots: dict = {}  # slot.start (datetime) → should_charge (bool)
         self._price_data_status = "not_evaluated"
+        self._price_health_last_check = None      # monotonic ts of last health poll
+        self._price_data_bad_since = None         # monotonic ts price parsing started failing
+        self._price_data_issue_created = False    # at most one Repairs creation per controller run
+        self._price_data_issue_cleared = False    # first healthy check clears an issue persisted from an earlier run
+        self._solar_forecast_bad_since = None     # monotonic ts the forecast sensor became unreadable
+        self._solar_forecast_issue_created = False
+        self._solar_forecast_issue_cleared = False
         self._dp_evening_reevaluated_date = None  # Prevent multiple evening re-evaluations per day
         self._dp_last_eval_soc = None  # avg SOC at last DP (re)eval; SOC-drop reeval reference (#411)
         self._pricing_mgr = PricingManager(hass, self)
@@ -4484,6 +4492,72 @@ class ChargeDischargeController:
         )
         return 0
 
+    def _check_solar_forecast_health(self):
+        """Raise one repair per run when the solar forecast stays unreadable.
+
+        Every consumer degrades quietly on its own: the charge delay unlocks for the
+        rest of the day, ``_should_activate_grid_charging`` switches to conservative
+        mode and books grid slots as if the day had no sun, and
+        ``_remaining_solar_today_kwh`` simply returns 0. So a dead forecast sensor
+        costs money without ever surfacing anywhere the user looks.
+
+        Only a sensor that IS configured can be broken; leaving it unset is a
+        deliberate choice that merely disables the features above. The delay is long
+        enough to ride out a provider outage or the midnight rollover gap that
+        ``_forecast_grace_s`` already covers for the delay latch itself.
+        """
+        issue_id = f"solar_forecast_unusable_{self.config_entry.entry_id}"
+
+        usable = False
+        if self.solar_forecast_sensor:
+            state = self.hass.states.get(self.solar_forecast_sensor)
+            if state is not None and state.state not in ("unknown", "unavailable"):
+                try:
+                    float(state.state)
+                    usable = True
+                except (ValueError, TypeError):
+                    usable = False
+
+        if usable or not self.solar_forecast_sensor:
+            self._solar_forecast_bad_since = None
+            if not self._solar_forecast_issue_cleared:
+                self._solar_forecast_issue_cleared = True
+                self._solar_forecast_issue_created = False
+                ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+            return
+
+        mono = time.monotonic()
+        if self._solar_forecast_bad_since is None:
+            self._solar_forecast_bad_since = mono
+            return
+        if (
+            self._solar_forecast_issue_created
+            or mono - self._solar_forecast_bad_since < FORECAST_DATA_ISSUE_DELAY_S
+        ):
+            return
+
+        self._solar_forecast_issue_created = True
+        self._solar_forecast_issue_cleared = False
+        _LOGGER.warning(
+            "Solar forecast sensor %s unreadable for over %.0f minutes - charge delay, "
+            "grid-charge decisions and remaining-solar estimates are running blind",
+            self.solar_forecast_sensor, FORECAST_DATA_ISSUE_DELAY_S / 60,
+        )
+        ir.async_create_issue(
+            self.hass,
+            DOMAIN,
+            issue_id,
+            is_fixable=False,
+            is_persistent=True,
+            issue_domain=DOMAIN,
+            severity=ir.IssueSeverity.WARNING,
+            translation_key="solar_forecast_unusable",
+            translation_placeholders={
+                "sensor": self.solar_forecast_sensor,
+                "minutes": f"{FORECAST_DATA_ISSUE_DELAY_S / 60:.0f}",
+            },
+        )
+
     def _check_sensor_cadence(self, sensor_elapsed_s):
         """Raise one repair per run when the main sensor cadence is slow.
 
@@ -4582,6 +4656,14 @@ class ChargeDischargeController:
         if self._balance_monitor is not None:
             for coordinator in self.coordinators:
                 await self._balance_monitor.async_process(coordinator)
+
+        # === PRICE FEED HEALTH ===
+        # Slow-timer poll that raises/clears the price-data repair. Like the
+        # accumulators above it must not sit behind an early return: manual mode,
+        # a max-SOC charge taking ownership or a price-independent predictive mode
+        # would otherwise starve it, and a persistent issue raised earlier could
+        # never be cleared. Self-throttled, so running it every cycle is cheap.
+        self._pricing_mgr.maybe_check_price_data_health()
 
         # === MANUAL MODE CHECK (highest priority) ===
         # If manual mode is enabled, skip all automatic control logic
@@ -4698,6 +4780,10 @@ class ChargeDischargeController:
         # samples, so a 60 s sensor could never reach the warning threshold.
         if not is_stale:
             self._check_sensor_cadence(sensor_elapsed_s)
+
+        # Same cadence, different failure: a configured solar-forecast sensor that
+        # stops reading. Cheap state lookup, so no extra throttle.
+        self._check_solar_forecast_health()
 
         # Generic safety recalc on a silent sensor must re-evaluate structural state
         # (SOC/limits/blockers) but must NOT integrate the P term: the grid error is
