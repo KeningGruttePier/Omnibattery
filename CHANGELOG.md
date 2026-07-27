@@ -1,5 +1,7 @@
 # Changelog
 
+- **Documentation: Hoymiles MS-A2 installation** — Added complete English and Spanish setup guides covering physical commissioning, S-Miles Home MQTT configuration, Omnibattery onboarding, verification, safety and troubleshooting.
+
 ## [1.2.0b1] - 2026-07-27
 
 ### Added

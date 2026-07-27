@@ -22,6 +22,9 @@ The MS-A2 uses the MQTT broker already configured in Home Assistant; Omnibattery
 
 The setup asks for the nominal usable capacity (default `2.24 kWh`; use `4.48 kWh` for a paired system). Its signed wire power is handled internally: positive Omnibattery power means charging while the device uses negative power for charging. While Omnibattery controls the unit it renews the external `mqtt_ctrl` command about every 50 seconds. On unload it sends zero power and restores `general`, so the battery is not left in external control.
 
+See [Install and configure a Hoymiles MS-A2](hoymiles-ms-a2.md) for the physical,
+S-Miles Home, MQTT and Omnibattery setup sequence.
+
 ---
 
 ## Per-battery Marstek parameters
