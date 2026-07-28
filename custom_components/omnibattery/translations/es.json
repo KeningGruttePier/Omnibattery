@@ -51,7 +51,7 @@
           "brand": "Marca de la batería"
         },
         "data_description": {
-          "brand": "Marstek Venus: Modbus TCP. Zendure SolarFlow: local HTTP (enable HEMS in the Zendure app first). Anker SOLIX Solarbank Max AC / 4 E5000 Pro: Modbus TCP (enable Modbus TCP under Third-Party Control in the Anker app; only one Modbus client at a time)."
+          "brand": "Marstek Venus: Modbus TCP. Zendure SolarFlow: local HTTP (enable HEMS in the Zendure app first). Anker SOLIX Solarbank Max AC / 4 E5000 Pro: Modbus TCP (enable Modbus TCP under Third-Party Control in the Anker app; only one Modbus client at a time). Sessy: local HTTP."
         }
       },
       "battery_connection": {
@@ -127,7 +127,7 @@
           "charge_hysteresis_percent": "Siempre activa (mínimo 2%). Tras llegar al tope, la batería no volverá a cargar hasta que el SOC baje a (SOC máx − histéresis). Ej: SOC máx 100% con 2% = no carga hasta 98%.",
           "backup_offgrid_threshold": "Una carga offgrid superior a este valor se considera un evento de backup activo, excluyendo la batería del control PD. Auméntalo si tienes cargas permanentes (router, cámaras) en el puerto offgrid.",
           "full_charge_voltage_taper_enabled": "Cuando el objetivo es 100%, limita la carga a 95 W desde 3.48 V de celda maxima y para en 3.58 V para medir el desbalanceo tras 60 segundos.",
-          "battery_capacity_kwh": "Capacidad utilizable nominal del pack de baterías. Se usa para calcular la energía almacenada y la eficiencia a partir del SOC. Deja en 0 si no la conoces."
+          "battery_capacity_kwh": "Capacidad utilizable nominal del pack de baterías. Se usa para calcular la energía almacenada y la eficiencia a partir del SOC. Para Sessy, introduce la capacidad real; en otras baterías puedes dejar 0 si no la conoces."
         }
       },
       "time_slots": {
@@ -507,6 +507,12 @@
           "port": "Puerto HTTP (por defecto 80)"
         }
       },
+      "reconfigure_battery_sessy": {
+        "title": "Reconfigurar batería {battery_num} — Conexión (Sessy)",
+        "description": "Actualiza los datos de conexión de la batería Sessy {battery_num}. El resto de ajustes se conserva.",
+        "data": {"name": "Nombre", "host": "Dirección IP", "port": "Puerto HTTP"},
+        "data_description": {"name": "Nombre descriptivo para identificar esta batería", "host": "Dirección IP del dispositivo Sessy en tu red local", "port": "Puerto HTTP (por defecto 80)"}
+      },
       "reconfigure_battery_anker": {
         "title": "Reconfigure battery {battery_num} — Connection (Anker)",
         "description": "Update connection details for Anker SOLIX Solarbank Max AC / 4 E5000 Pro battery {battery_num}. All other settings are preserved.",
@@ -546,6 +552,12 @@
         "data": {
           "restore": "Restaurar la configuración anterior"
         }
+      },
+      "battery_connection_sessy": {
+        "title": "Configurar batería {battery_num} — Conexión (Sessy)",
+        "description": "Introduce los datos de conexión de la batería Sessy {battery_num}.",
+        "data": {"name": "Nombre", "host": "Dirección IP", "port": "Puerto HTTP"},
+        "data_description": {"name": "Nombre descriptivo para identificar esta batería", "host": "Dirección IP del dispositivo Sessy en tu red local", "port": "Puerto HTTP (por defecto 80)"}
       },
       "battery_connection_anker": {
         "title": "Configure battery {battery_num} — Connection (Anker)",
@@ -640,7 +652,7 @@
           "brand": "Marca de la batería"
         },
         "data_description": {
-          "brand": "Marstek Venus: Modbus TCP. Zendure SolarFlow: local HTTP (enable HEMS in the Zendure app first). Anker SOLIX Solarbank Max AC / 4 E5000 Pro: Modbus TCP (enable Modbus TCP under Third-Party Control in the Anker app; only one Modbus client at a time)."
+          "brand": "Marstek Venus: Modbus TCP. Zendure SolarFlow: local HTTP (enable HEMS in the Zendure app first). Anker SOLIX Solarbank Max AC / 4 E5000 Pro: Modbus TCP (enable Modbus TCP under Third-Party Control in the Anker app; only one Modbus client at a time). Sessy: local HTTP."
         }
       },
       "battery_connection": {
@@ -710,7 +722,7 @@
           "charge_hysteresis_percent": "Siempre activa (mínimo 2%). Tras llegar al tope, la batería no volverá a cargar hasta que el SOC baje a (SOC máx − histéresis). Ej: SOC máx 100% con 2% = no carga hasta 98%.",
           "backup_offgrid_threshold": "Una carga offgrid superior a este valor se considera un evento de backup activo, excluyendo la batería del control PD. Auméntalo si tienes cargas permanentes (router, cámaras) en el puerto offgrid.",
           "full_charge_voltage_taper_enabled": "Cuando el objetivo es 100%, limita la carga a 95 W desde 3.48 V de celda maxima y para en 3.58 V para medir el desbalanceo tras 60 segundos.",
-          "battery_capacity_kwh": "Capacidad utilizable nominal del pack de baterías. Se usa para calcular la energía almacenada y la eficiencia a partir del SOC. Deja en 0 si no la conoces."
+          "battery_capacity_kwh": "Capacidad utilizable nominal del pack de baterías. Se usa para calcular la energía almacenada y la eficiencia a partir del SOC. Para Sessy, introduce la capacidad real; en otras baterías puedes dejar 0 si no la conoces."
         }
       },
       "time_slots": {
@@ -1055,6 +1067,12 @@
           "hourly_balance_deadband_wh": "Tolerancia alrededor del objetivo. No se aplica corrección si el balance neto está dentro de ±N kWh del objetivo. 0 = corrección exacta.",
           "hourly_balance_hysteresis_w": "Cambio mínimo en el desplazamiento necesario para aplicar una nueva corrección. Evita micro-ajustes cada ciclo. 0 = aplicar siempre. Por defecto: 15 W."
         }
+      },
+      "battery_connection_sessy": {
+        "title": "Configurar batería {battery_num} — Conexión (Sessy)",
+        "description": "Modifica los datos de conexión de la batería Sessy {battery_num}.",
+        "data": {"name": "Nombre", "host": "Dirección IP", "port": "Puerto HTTP"},
+        "data_description": {"name": "Nombre descriptivo para identificar esta batería", "host": "Dirección IP del dispositivo Sessy en tu red local", "port": "Puerto HTTP (por defecto 80)"}
       },
       "battery_connection_anker": {
         "title": "Configure battery {battery_num} — Connection (Anker)",
