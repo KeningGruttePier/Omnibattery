@@ -46,6 +46,10 @@ _ADDR_BATTERY_SOC = 10014
 # only an upper clamp so peak/aggregate readings cannot inflate PD limits.
 _HW_MAX_POWER_W = 3500
 _MIN_OPERATING_POWER_W = 100
+# Consecutive near-zero battery_power polls required before publishing 0 W while
+# a non-trivial setpoint is still latched (filters one-shot Modbus glitches).
+_ZERO_POWER_GLITCH_POLLS = 3
+_ZERO_POWER_GLITCH_W = 50
 
 # Official product_code_mapping (Max AC YAML + E5000 Pro YAML).
 _PRODUCT_LABELS: dict[str, str] = {
@@ -256,6 +260,8 @@ class AnkerModbusDriver(BatteryDriver):
         self._slave_id = slave_id
         self._client = client or AnkerModbusClient(host, port, slave_id=slave_id)
         self._last_net_power_w: Optional[int] = None
+        self._last_good_battery_power_w: Optional[int] = None
+        self._zero_power_streak = 0
         self._product_code: Optional[str] = None
         self._dynamic_max_charge_w = _HW_MAX_POWER_W
         self._dynamic_max_discharge_w = _HW_MAX_POWER_W
@@ -363,6 +369,8 @@ class AnkerModbusDriver(BatteryDriver):
         # setpoint is written via apply_setpoint(), so Manual Mode idle can
         # leave Solix app modes alone without reconnect fighting them.
         self._last_net_power_w = None
+        self._last_good_battery_power_w = None
+        self._zero_power_streak = 0
         self._client.unit_id = self._slave_id
         await self._refresh_product_code()
         return True
@@ -443,7 +451,42 @@ class AnkerModbusDriver(BatteryDriver):
         # independently using each derived sensor definition above.
         battery_power = snapshot.get("battery_power")
         if isinstance(battery_power, (int, float)):
+            bp = int(battery_power)
+            # Filter one-shot 0 W samples while a charge/discharge setpoint is
+            # still latched. Failed Modbus reads omit the key (coordinator keeps
+            # the previous value); a decoded 0 is "valid" and would otherwise
+            # flash the HA entity even when the inverter UI never stopped.
+            if abs(bp) < _ZERO_POWER_GLITCH_W:
+                last_cmd = self._last_net_power_w
+                last_good = self._last_good_battery_power_w
+                if (
+                    last_cmd is not None
+                    and abs(last_cmd) >= _MIN_OPERATING_POWER_W
+                    and last_good is not None
+                    and abs(last_good) >= _MIN_OPERATING_POWER_W
+                ):
+                    self._zero_power_streak += 1
+                    if self._zero_power_streak < _ZERO_POWER_GLITCH_POLLS:
+                        _LOGGER.debug(
+                            "Ignoring transient Anker battery_power=%s W "
+                            "(streak=%d/%d, last_good=%s W, last_cmd=%s W)",
+                            bp,
+                            self._zero_power_streak,
+                            _ZERO_POWER_GLITCH_POLLS,
+                            last_good,
+                            last_cmd,
+                        )
+                        snapshot.pop("battery_power", None)
+                        battery_power = None
+                else:
+                    self._zero_power_streak = 0
+            else:
+                self._zero_power_streak = 0
+                self._last_good_battery_power_w = bp
+        if isinstance(battery_power, (int, float)):
             snapshot["ac_power"] = -battery_power
+        else:
+            snapshot.pop("ac_power", None)
         temperature = snapshot.get("temperature")
         if isinstance(temperature, (int, float)):
             snapshot["internal_temperature"] = temperature
