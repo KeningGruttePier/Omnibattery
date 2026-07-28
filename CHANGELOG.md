@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.1b2] - 2026-07-28
+
+### Added
+- **Zendure SolarFlow 800-series and 1600 AC+ profiles**: local HTTP onboarding now identifies SolarFlow 800, 800 Plus, 800 Pro and 1600 AC+ from the device API without a manual model selector. Each receives its correct AC control envelope; the AC-coupled 1600 AC+ also omits irrelevant DC MPPT/solar entities.
+
 ## [1.2.0b1] - 2026-07-27
 
 ### Added
