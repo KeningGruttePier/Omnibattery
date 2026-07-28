@@ -43,7 +43,12 @@ from .const import (
     NOTIFICATION_ID_PREFIX,
 )
 from .infra.coordinator import MarstekVenusDataUpdateCoordinator
-from .infra.entity_naming import english_entity_id, system_entity_id, SYSTEM_UNIQUE_ID_PREFIX
+from .infra.entity_naming import (
+    english_entity_id,
+    excluded_device_name,
+    system_entity_id,
+    SYSTEM_UNIQUE_ID_PREFIX,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -1020,12 +1025,6 @@ class WeeklyFullChargeDelaySwitch(SwitchEntity):
         }
 
 
-def _excluded_device_friendly_name(device: dict) -> str:
-    """Derive a readable name from either excluded-device sensor field."""
-    sensor_id = device.get("power_sensor") or device.get("activity_sensor") or "device"
-    return sensor_id.split(".", 1)[-1].replace("_", " ").title()
-
-
 class ExcludedDeviceEnabledSwitch(SwitchEntity):
     """Switch to enable/disable an individual excluded device at runtime.
 
@@ -1040,7 +1039,7 @@ class ExcludedDeviceEnabledSwitch(SwitchEntity):
         self._device_index = index
 
         device = entry.data.get("excluded_devices", [])[index]
-        friendly = _excluded_device_friendly_name(device)
+        friendly = excluded_device_name(hass, device)
 
         self._attr_has_entity_name = True
         self._attr_translation_key = "excluded_device_enabled"
@@ -1121,8 +1120,7 @@ class ExcludedDeviceSolarSurplusSwitch(SwitchEntity):
         self._device_index = index
 
         device = entry.data.get("excluded_devices", [])[index]
-        # Derive a friendly name from the configured sensor entity ID.
-        friendly = _excluded_device_friendly_name(device)
+        friendly = excluded_device_name(hass, device)
 
         self._attr_has_entity_name = True
         self._attr_translation_key = "excluded_device_solar_surplus"
@@ -1198,7 +1196,7 @@ class ExcludedDeviceDynamicPowerControlSwitch(SwitchEntity):
         self._device_index = index
 
         device = entry.data.get("excluded_devices", [])[index]
-        friendly = _excluded_device_friendly_name(device)
+        friendly = excluded_device_name(hass, device)
 
         self._attr_has_entity_name = True
         self._attr_translation_key = "excluded_device_dynamic_power_control"
@@ -1283,7 +1281,7 @@ class ExcludedDeviceCoverHomeSwitch(SwitchEntity):
         self._device_index = index
 
         device = entry.data.get("excluded_devices", [])[index]
-        friendly = _excluded_device_friendly_name(device)
+        friendly = excluded_device_name(hass, device)
 
         self._attr_has_entity_name = True
         self._attr_translation_key = "excluded_device_cover_home"

@@ -37,7 +37,12 @@ from .const import (
     DOMAIN,
 )
 from .infra.coordinator import MarstekVenusDataUpdateCoordinator
-from .infra.entity_naming import english_entity_id, system_entity_id, SYSTEM_UNIQUE_ID_PREFIX
+from .infra.entity_naming import (
+    english_entity_id,
+    excluded_device_name,
+    system_entity_id,
+    SYSTEM_UNIQUE_ID_PREFIX,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -531,8 +536,7 @@ class ExcludedDeviceExclusionPctNumber(NumberEntity):
         self._device_index = index
 
         device = entry.data.get("excluded_devices", [])[index]
-        sensor_id = device.get("power_sensor", "")
-        friendly = sensor_id.replace("sensor.", "").replace("_", " ").title()
+        friendly = excluded_device_name(hass, device)
 
         self._attr_has_entity_name = True
         self._attr_translation_key = "excluded_device_exclusion_pct"
