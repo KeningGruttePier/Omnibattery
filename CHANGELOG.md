@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.0b2] - 2026-07-28
+
+### Fixed
+- **Time-slot predictive-charging notifications could report an incorrect grid-charge amount**: the notification now reports the planned grid energy that actually determines the predictive SOC target. Forecast solar surplus is shown as an energy-balance estimate after expected consumption, rather than as a guaranteed battery top-up.
+
 ## [1.2.0b1] - 2026-07-27
 
 ### Added
