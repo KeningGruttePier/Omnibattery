@@ -56,6 +56,7 @@ _PROBE_TIMEOUT = aiohttp.ClientTimeout(total=5)
 ZENDURE_MODEL_SOLARFLOW_800 = "solarflow_800"
 ZENDURE_MODEL_SOLARFLOW_800_PLUS = "solarflow_800_plus"
 ZENDURE_MODEL_SOLARFLOW_800_PRO = "solarflow_800_pro"
+ZENDURE_MODEL_1600AC_PLUS = "1600ac_plus"
 ZENDURE_MODEL_2400AC_PRO = "2400ac_pro"
 ZENDURE_MODEL_2400AC_PLUS = "2400ac_plus"
 
@@ -66,13 +67,19 @@ _MODEL_POWER_LIMITS: dict[str, tuple[int, int]] = {
     ZENDURE_MODEL_SOLARFLOW_800: (1000, 800),
     ZENDURE_MODEL_SOLARFLOW_800_PLUS: (1000, 800),
     ZENDURE_MODEL_SOLARFLOW_800_PRO: (1000, 800),
+    ZENDURE_MODEL_1600AC_PLUS: (1600, 1600),
     ZENDURE_MODEL_2400AC_PRO: (2400, 2400),
     ZENDURE_MODEL_2400AC_PLUS: (2400, 2400),
 }
 
-# Keys absent on the 2400 AC+ (no DC-coupled MPPT, no dedicated solar-input port).
+# Keys absent on AC-coupled models (no DC-coupled MPPT, no dedicated
+# solar-input port).
 _SOLAR_MPPT_KEYS: frozenset[str] = frozenset({
     "solar_power", "mppt1_power", "mppt2_power", "mppt3_power", "mppt4_power",
+})
+_AC_COUPLED_MODELS: frozenset[str] = frozenset({
+    ZENDURE_MODEL_1600AC_PLUS,
+    ZENDURE_MODEL_2400AC_PLUS,
 })
 
 # Zendure API property name → logical coordinator key.
@@ -303,7 +310,7 @@ class ZendureLocalDriver(BatteryDriver):
             actuator_latency_s=3.0,      # HTTP write + ~2-3 s engage/echo latency
         )
 
-        _excluded = _SOLAR_MPPT_KEYS if model == ZENDURE_MODEL_2400AC_PLUS else frozenset()
+        _excluded = _SOLAR_MPPT_KEYS if model in _AC_COUPLED_MODELS else frozenset()
         _sensor_defs = [d for d in SENSOR_DEFINITIONS if d["key"] not in _excluded]
 
         self._definitions: dict[str, list[dict]] = {
@@ -783,6 +790,8 @@ def detect_model(product: str | None) -> str:
         return ZENDURE_MODEL_SOLARFLOW_800_PLUS
     if "solarflow800" in normalized or normalized.startswith("zdsf800"):
         return ZENDURE_MODEL_SOLARFLOW_800
+    if "1600ac" in normalized or normalized.startswith("zdsf1600"):
+        return ZENDURE_MODEL_1600AC_PLUS
     if "pro" in normalized:
         return ZENDURE_MODEL_2400AC_PRO
     if normalized:
