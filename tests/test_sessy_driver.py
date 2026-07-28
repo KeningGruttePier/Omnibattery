@@ -1,11 +1,15 @@
 """Tests for the Sessy local HTTP driver."""
 
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+import voluptuous as vol
 
-from custom_components.omnibattery.config_flow import MarstekVenusConfigFlow
+from custom_components.omnibattery.config_flow import (
+    MarstekVenusConfigFlow,
+    OptionsFlowHandler,
+)
 from custom_components.omnibattery.drivers.sessy import SessyLocalDriver
 from custom_components.omnibattery.sensors.calculated_sensors import (
     MarstekVenusCycleSensor,
@@ -112,6 +116,11 @@ async def test_sessy_configuration_requests_and_persists_nominal_capacity():
     form = await flow.async_step_battery_limits()
     fields = {marker.schema for marker in form["data_schema"].schema}
     assert "battery_capacity_kwh" in fields
+    capacity_marker = next(
+        marker for marker in form["data_schema"].schema if marker.schema == "battery_capacity_kwh"
+    )
+    assert isinstance(capacity_marker, vol.Required)
+    assert form["data_schema"].schema[capacity_marker].config["min"] == 0.01
 
     await flow.async_step_battery_limits(
         {
@@ -126,3 +135,83 @@ async def test_sessy_configuration_requests_and_persists_nominal_capacity():
     )
 
     assert flow.battery_configs[0]["battery_capacity_kwh"] == 5.12
+
+
+@pytest.mark.asyncio
+async def test_options_flow_offers_and_configures_sessy(monkeypatch):
+    entry = SimpleNamespace(entry_id="test-entry", data={"batteries": []})
+    flow = OptionsFlowHandler(entry)
+    flow.hass = SimpleNamespace(
+        config_entries=SimpleNamespace(
+            async_get_known_entry=lambda entry_id: entry if entry_id == entry.entry_id else None
+        )
+    )
+    flow.handler = entry.entry_id
+
+    form = await flow.async_step_battery_brand()
+    selector = next(iter(form["data_schema"].schema.values()))
+    assert {option["value"] for option in selector.config["options"]} >= {"sessy"}
+
+    form = await flow.async_step_battery_brand({"brand": "sessy"})
+    assert form["step_id"] == "battery_connection_sessy"
+
+    flow._current_battery_data = {"brand": "sessy"}
+    limits = await flow.async_step_battery_limits()
+    fields = {
+        marker.schema: selector for marker, selector in limits["data_schema"].schema.items()
+    }
+    assert fields["max_charge_power"].config["max"] == 2200
+    assert fields["max_discharge_power"].config["max"] == 2200
+    capacity_marker = next(
+        marker for marker in limits["data_schema"].schema if marker.schema == "battery_capacity_kwh"
+    )
+    assert isinstance(capacity_marker, vol.Required)
+    assert not callable(capacity_marker.default)
+    assert fields["battery_capacity_kwh"].config["min"] == 0.01
+
+    probe = AsyncMock(return_value=True)
+    monkeypatch.setattr(SessyLocalDriver, "probe", probe)
+    flow.async_step_battery_limits = AsyncMock(return_value={"type": "form"})
+    result = await flow.async_step_battery_connection_sessy(
+        {"name": "Garage Sessy", "host": "sessy.local", "port": 80}
+    )
+
+    assert result == {"type": "form"}
+    probe.assert_awaited_once_with("sessy.local", 80)
+    assert flow._current_battery_data == {
+        "brand": "sessy", "name": "Garage Sessy", "host": "sessy.local", "port": 80
+    }
+
+
+@pytest.mark.asyncio
+async def test_reconfigure_routes_sessy_to_its_http_form(monkeypatch):
+    entry = SimpleNamespace(
+        entry_id="test-entry",
+        data={
+            "batteries": [
+                {"brand": "sessy", "name": "Garage Sessy", "host": "old.local", "port": 80}
+            ]
+        },
+    )
+    flow = MarstekVenusConfigFlow()
+    flow.battery_index = 0
+    flow._reconfigure_batteries = []
+    flow._get_reconfigure_entry = lambda: entry
+    flow._migrate_battery_registry_ids = MagicMock()
+
+    form = await flow.async_step_reconfigure_battery()
+    assert form["step_id"] == "reconfigure_battery_sessy"
+    assert {marker.schema for marker in form["data_schema"].schema} == {"name", "host", "port"}
+
+    probe = AsyncMock(return_value=True)
+    monkeypatch.setattr(SessyLocalDriver, "probe", probe)
+    flow.async_update_reload_and_abort = MagicMock(return_value={"type": "abort"})
+    result = await flow.async_step_reconfigure_battery_sessy(
+        {"name": "Garage Sessy", "host": "new.local", "port": 80}
+    )
+
+    assert result == {"type": "abort"}
+    probe.assert_awaited_once_with("new.local", 80)
+    assert flow._reconfigure_batteries == [
+        {"brand": "sessy", "name": "Garage Sessy", "host": "new.local", "port": 80}
+    ]
