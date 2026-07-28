@@ -8,6 +8,7 @@
 ### Fixed
 - **Sessy configuration flows completed**: Sessy is now available from the Options Flow battery selector and uses its dedicated local HTTP connection form for both options and reconfiguration, including connection probing and existing-value defaults. Charge and discharge limits are capped consistently at the 2200 W hardware ceiling. Nominal capacity is required for Sessy without inventing a fallback value for legacy entries, so stored-energy and cycle calculations use the real battery capacity. Setup, options and reconfiguration labels and capacity guidance are included in all supported translations.
 - **Time-slot predictive-charging notifications could report an incorrect grid-charge amount**: the notification now reports the planned grid energy that actually determines the predictive SOC target. Forecast solar surplus is shown as an energy-balance estimate after expected consumption, rather than as a guaranteed battery top-up.
+- **Excluded-device control labels now use the configured entity name** (#187): Enabled, Solar Surplus, Dynamic Power Control, Cover Home and Exclusion % controls now prefix their labels with the source entity's Home Assistant name instead of its `entity_id`. If the source entity is unavailable, the previous readable ID-derived label remains as a fallback.
 
 ## [1.2.0b1] - 2026-07-27
 

@@ -52,3 +52,21 @@ def system_entity_id(domain: str, key: str) -> str:
     :data:`SYSTEM_UNIQUE_ID_PREFIX`; only the suggested entity_id is rebranded.
     """
     return f"{domain}.{SYSTEM_OBJECT_ID_PREFIX}{key}"
+
+
+def excluded_device_name(hass, device: dict) -> str:
+    """Return an excluded device's Home Assistant name, with an ID fallback.
+
+    Excluded-device controls are registered on the Omnibattery system device, so
+    their translated names need an explicit per-device prefix.  Prefer the name
+    the user gave the configured source entity rather than exposing its object
+    ID.  The fallback keeps setup resilient when the source entity is currently
+    unavailable or has been removed.
+    """
+    entity_id = device.get("power_sensor") or device.get("activity_sensor") or "device"
+    state = hass.states.get(entity_id)
+    if state:
+        friendly_name = state.attributes.get("friendly_name")
+        if friendly_name:
+            return friendly_name
+    return entity_id.split(".", 1)[-1].replace("_", " ").title()

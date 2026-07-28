@@ -4219,6 +4219,17 @@ class MarstekVenusPanel extends HTMLElement {
           }
         }
       }
+      // Excluded-device controls arrive grouped by their translation key (all
+      // "Enabled" switches, then all "Solar surplus" switches, etc.). Sort
+      // their live entities by the displayed name instead, so adding a device
+      // does not leave the card in registry/control-type order.
+      if (sec.tk === "secExcluded") {
+        rows.sort((a, b) => {
+          const aName = this._entityShortName(this._hass.states[a.id], a.id);
+          const bName = this._entityShortName(this._hass.states[b.id], b.id);
+          return aName.localeCompare(bName, this._lang()) || a.id.localeCompare(b.id);
+        });
+      }
       if (rows.length) {
         sections.push({ sec, rows });
         sigParts.push(sec.tk + ":" + rows.map((r) => r.id).join(","));
