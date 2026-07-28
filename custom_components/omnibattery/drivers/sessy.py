@@ -1,8 +1,9 @@
 """Local HTTP driver for a Sessy home battery.
 
-Sessy's dongle exposes a small unauthenticated JSON API.  The controller uses
-the API power strategy and its signed setpoint: Sessy uses positive values for
-generation/discharge, whereas Omnibattery uses positive values for charging.
+Sessy's dongle exposes a small local JSON API protected by the credentials
+printed on the dongle. The controller uses the API power strategy and its signed
+setpoint: Sessy uses positive values for generation/discharge, whereas
+Omnibattery uses positive values for charging.
 """
 
 from __future__ import annotations
@@ -28,15 +29,41 @@ SENSOR_DEFINITIONS = [
     {"key": "pv_power", "name": "PV Power", "unit": "W", "device_class": "power", "state_class": "measurement", "scale": 1, "precision": 0, "scan_interval": "high", "enabled_by_default": False},
     {"key": "total_charging_energy", "name": "Total Charging Energy", "unit": "kWh", "device_class": "energy", "state_class": "total_increasing", "scale": 0.001, "precision": 3, "scan_interval": "low", "enabled_by_default": True},
     {"key": "total_discharging_energy", "name": "Total Discharging Energy", "unit": "kWh", "device_class": "energy", "state_class": "total_increasing", "scale": 0.001, "precision": 3, "scan_interval": "low", "enabled_by_default": True},
+    {"key": "wifi_signal_strength", "name": "WiFi Signal Strength", "unit": "dBm", "device_class": "signal_strength", "state_class": "measurement", "scale": 1, "precision": 0, "icon": "mdi:wifi", "category": "diagnostic", "scan_interval": "low", "enabled_by_default": True},
+    {"key": "software_version", "name": "Software Version", "data_type": "char", "icon": "mdi:ticket-confirmation-outline", "category": "diagnostic", "scan_interval": "low", "enabled_by_default": True},
 ]
+
+_POWER_KEYS = frozenset({
+    "battery_soc",
+    "battery_power",
+    "battery_voltage",
+    "power_setpoint",
+    "pv_power",
+})
+_ENERGY_KEYS = frozenset({"total_charging_energy", "total_discharging_energy"})
+_DEVICE_INFO_KEYS = frozenset({"wifi_signal_strength", "software_version"})
 
 
 class SessyLocalDriver(BatteryDriver):
     """Poll and control one Sessy dongle using its documented local API."""
 
-    def __init__(self, host: str, *, port: int = 80, max_charge_power_w: int = 2200,
-                 max_discharge_power_w: int = 2200, session: Optional[aiohttp.ClientSession] = None) -> None:
+    def __init__(
+        self,
+        host: str,
+        *,
+        port: int = 80,
+        username: str = "",
+        password: str = "",
+        max_charge_power_w: int = 2200,
+        max_discharge_power_w: int = 2200,
+        session: Optional[aiohttp.ClientSession] = None,
+    ) -> None:
         self._base_url = f"http://{host}" + (f":{port}" if port != 80 else "")
+        self._headers = (
+            {"Authorization": aiohttp.BasicAuth(username, password).encode()}
+            if username or password
+            else None
+        )
         self._session = session
         self._owns_session = False
         self._connected = False
@@ -46,10 +73,16 @@ class SessyLocalDriver(BatteryDriver):
             has_nominal_capacity=False,
             cycles_from_discharge_only=True,
             actuator_latency_s=1.5)
-        self._read_groups = [ReadGroup("high", tuple(d["key"] for d in SENSOR_DEFINITIONS))]
+        self._read_groups = [
+            ReadGroup("high", tuple(key for key in _POWER_KEYS)),
+            ReadGroup("low", tuple(key for key in _ENERGY_KEYS)),
+            ReadGroup("low", tuple(key for key in _DEVICE_INFO_KEYS)),
+        ]
 
     @property
     def capabilities(self) -> DriverCapabilities: return self._capabilities
+    @property
+    def model_label(self) -> Optional[str]: return "Sessy"
     @property
     def connected(self) -> bool: return self._connected
     @property
@@ -83,23 +116,51 @@ class SessyLocalDriver(BatteryDriver):
     def set_shutting_down(self, value: bool) -> None: self._shutting_down = value
 
     async def read_telemetry(self, keys: Optional[list[str]] = None) -> TelemetrySnapshot:
-        status = await self._get_status()
-        if status is None:
-            return {}
-        energy = await self._get_json("/api/v1/energy/status")
-        sessy = status.get("sessy", {})
-        phases = [status.get(f"renewable_energy_phase{i}", {}) for i in range(1, 4)]
-        snapshot = {
-            "battery_soc": sessy.get("state_of_charge", 0) * 100,
-            "battery_power": -sessy["power"] if "power" in sessy else None,
-            "battery_voltage": sessy.get("pack_voltage"),
-            "power_setpoint": sessy.get("power_setpoint"),
-            "pv_power": sum(p.get("power", 0) for p in phases),
-        }
+        requested = set(keys) if keys is not None else set(
+            _POWER_KEYS | _ENERGY_KEYS | _DEVICE_INFO_KEYS
+        )
+        snapshot = {}
+
+        if requested & _POWER_KEYS:
+            status = await self._get_status()
+            if status:
+                sessy = status.get("sessy", {})
+                phases = [
+                    status.get(f"renewable_energy_phase{i}", {})
+                    for i in range(1, 4)
+                ]
+                snapshot.update({
+                    "battery_soc": (
+                        sessy["state_of_charge"] * 100
+                        if "state_of_charge" in sessy
+                        else None
+                    ),
+                    "battery_power": -sessy["power"] if "power" in sessy else None,
+                    "battery_voltage": sessy.get("pack_voltage"),
+                    "power_setpoint": sessy.get("power_setpoint"),
+                    "pv_power": sum(p.get("power", 0) for p in phases),
+                })
+
+        if requested & _ENERGY_KEYS:
+            energy = await self._get_json("/api/v1/energy/status")
+        else:
+            energy = None
         if energy:
             meters = energy.get("sessy_energy", {})
             snapshot["total_charging_energy"] = meters.get("import_wh")
             snapshot["total_discharging_energy"] = meters.get("export_wh")
+
+        if "wifi_signal_strength" in requested:
+            network = await self._get_json("/api/v1/network/status")
+            wifi = network.get("wifi_sta", {}) if network else {}
+            snapshot["wifi_signal_strength"] = wifi.get("rssi")
+
+        if "software_version" in requested:
+            ota = await self._get_json("/api/v1/ota/status")
+            ota_self = ota.get("self", {}) if ota else {}
+            installed = ota_self.get("installed_firmware", {})
+            snapshot["software_version"] = installed.get("version")
+
         snapshot = {key: value for key, value in snapshot.items() if value is not None}
         return snapshot if keys is None else {key: value for key, value in snapshot.items() if key in keys}
 
@@ -134,7 +195,7 @@ class SessyLocalDriver(BatteryDriver):
 
     def _ensure_session(self) -> aiohttp.ClientSession:
         if self._session is None or self._session.closed:
-            self._session = aiohttp.ClientSession()
+            self._session = aiohttp.ClientSession(headers=self._headers)
             self._owns_session = True
         return self._session
 
@@ -157,7 +218,9 @@ class SessyLocalDriver(BatteryDriver):
             return False
 
     @classmethod
-    async def probe(cls, host: str, port: int = 80) -> bool:
-        driver = cls(host, port=port)
+    async def probe(
+        cls, host: str, port: int = 80, username: str = "", password: str = ""
+    ) -> bool:
+        driver = cls(host, port=port, username=username, password=password)
         try: return await driver.connect()
         finally: await driver.close()

@@ -9,7 +9,13 @@ import voluptuous as vol
 
 from homeassistant.core import callback
 from homeassistant.config_entries import ConfigFlow, OptionsFlow, ConfigEntry
-from homeassistant.const import CONF_HOST, CONF_NAME, CONF_PORT
+from homeassistant.const import (
+    CONF_HOST,
+    CONF_NAME,
+    CONF_PORT,
+    CONF_USERNAME,
+    CONF_PASSWORD,
+)
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.selector import (
@@ -114,8 +120,27 @@ from .pricing.nordpool import is_official_nordpool_sensor
 
 _ANKER_MAX_POWER_W = 3500
 _SESSY_MAX_POWER_W = 2200
+_SESSY_DEFAULT_MIN_SOC = 5
 _HOYMILES_MAX_POWER_W = 2000
 _HOYMILES_DEFAULT_POWER_W = 1000
+
+
+def _soc_selector_limits(brand: str) -> tuple[int, int, int, int, int, int]:
+    """Return minimum and maximum SOC selector bounds and defaults."""
+    if brand == "zendure":
+        min_lo, min_hi, min_default = 5, 50, 12
+    elif brand == "anker":
+        min_lo, min_hi, min_default = 0, 20, 10
+    elif brand == "sessy":
+        min_lo, min_hi, min_default = 0, 30, _SESSY_DEFAULT_MIN_SOC
+    elif brand == "hoymiles":
+        min_lo, min_hi, min_default = 0, 30, 10
+    else:
+        min_lo, min_hi, min_default = 12, 30, 12
+
+    # Omnibattery enforces the charge ceiling in software. Sessy's reported SOC
+    # spans 0–100 %, so the standard 100 % ceiling is valid for this driver.
+    return min_lo, min_hi, min_default, 80, 100, 100
 
 
 def _hoymiles_apply_probe_caps(battery_data: dict, caps: dict) -> None:
@@ -931,14 +956,28 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
         errors = {}
         if user_input is not None:
             host, port = user_input[CONF_HOST], int(user_input.get(CONF_PORT, 80))
+            username = user_input[CONF_USERNAME]
+            password = user_input[CONF_PASSWORD]
             _LOGGER.info("Probing Sessy device at %s:%s", host, port)
-            if await SessyLocalDriver.probe(host, port):
-                self._current_battery_data.update({CONF_NAME: user_input[CONF_NAME], CONF_HOST: host, CONF_PORT: port, "brand": "sessy"})
+            if await SessyLocalDriver.probe(host, port, username, password):
+                self._current_battery_data.update({
+                    CONF_NAME: user_input[CONF_NAME],
+                    CONF_HOST: host,
+                    CONF_PORT: port,
+                    CONF_USERNAME: username,
+                    CONF_PASSWORD: password,
+                    "brand": "sessy",
+                })
                 return await self.async_step_battery_limits()
             errors["base"] = "cannot_connect"
         return self.async_show_form(step_id="battery_connection_sessy", data_schema=vol.Schema({
             vol.Required(CONF_NAME, default=f"Sessy {self.battery_index + 1}"): str,
-            vol.Required(CONF_HOST): str, vol.Optional(CONF_PORT, default=80): int,
+            vol.Required(CONF_HOST): str,
+            vol.Optional(CONF_PORT, default=80): int,
+            vol.Required(CONF_USERNAME): str,
+            vol.Required(CONF_PASSWORD): TextSelector(
+                TextSelectorConfig(type=TextSelectorType.PASSWORD)
+            ),
         }), errors=errors, description_placeholders={"battery_num": str(self.battery_index + 1)})
 
     async def async_step_battery_connection_hoymiles(self, user_input: dict[str, Any] | None = None) -> FlowResult:
@@ -1026,16 +1065,14 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
             max_power = MAX_POWER_BY_VERSION.get(battery_version, 2500)
             max_charge_power = max_power
             max_discharge_power = max_power
-        # Zendure's minSoc accepts 5–50 %; Anker discharge limit is 0–20 %;
-        # Marstek's discharge floor is 12–30 %.
-        if brand == "zendure":
-            soc_min_lo, soc_min_hi = 5, 50
-        elif brand == "anker":
-            soc_min_lo, soc_min_hi = 0, 20
-        elif brand == "hoymiles":
-            soc_min_lo, soc_min_hi = 0, 30
-        else:
-            soc_min_lo, soc_min_hi = 12, 30
+        (
+            soc_min_lo,
+            soc_min_hi,
+            soc_min_default,
+            soc_max_lo,
+            soc_max_hi,
+            soc_max_default,
+        ) = _soc_selector_limits(brand)
 
         if user_input is not None:
             merged = dict(self._current_battery_data)
@@ -1088,9 +1125,9 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
                 NumberSelectorConfig(min=100, max=max_discharge_power, step=50, unit_of_measurement="W", mode=NumberSelectorMode.SLIDER)
             )
         _schema.update({
-            vol.Required("max_soc", default=100):
-                NumberSelector(NumberSelectorConfig(min=80, max=100, step=1, mode=NumberSelectorMode.SLIDER)),
-            vol.Required("min_soc", default=10 if brand in ("anker", "hoymiles") else 12):
+            vol.Required("max_soc", default=soc_max_default):
+                NumberSelector(NumberSelectorConfig(min=soc_max_lo, max=soc_max_hi, step=1, mode=NumberSelectorMode.SLIDER)),
+            vol.Required("min_soc", default=soc_min_default):
                 NumberSelector(NumberSelectorConfig(min=soc_min_lo, max=soc_min_hi, step=1, mode=NumberSelectorMode.SLIDER)),
             vol.Required("charge_hysteresis_percent", default=DEFAULT_CHARGE_HYSTERESIS_PERCENT):
                 NumberSelector(NumberSelectorConfig(min=MIN_CHARGE_HYSTERESIS_PERCENT, max=MAX_CHARGE_HYSTERESIS_PERCENT, step=1, mode=NumberSelectorMode.SLIDER)),
@@ -1955,8 +1992,12 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
         if user_input is not None:
             new_host = user_input[CONF_HOST]
             new_port = int(user_input.get(CONF_PORT, 80))
+            username = user_input[CONF_USERNAME]
+            password = user_input[CONF_PASSWORD]
             _LOGGER.info("Probing Sessy device at %s:%s", new_host, new_port)
-            if not await SessyLocalDriver.probe(new_host, new_port):
+            if not await SessyLocalDriver.probe(
+                new_host, new_port, username, password
+            ):
                 errors["base"] = "cannot_connect"
             else:
                 old_host = current.get(CONF_HOST)
@@ -1971,6 +2012,8 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
                     CONF_NAME: user_input[CONF_NAME],
                     CONF_HOST: new_host,
                     CONF_PORT: new_port,
+                    CONF_USERNAME: username,
+                    CONF_PASSWORD: password,
                     "brand": "sessy",
                 })
                 self._reconfigure_batteries.append(updated)
@@ -1987,6 +2030,14 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
                 vol.Required(CONF_NAME, default=current.get(CONF_NAME, f"Sessy {battery_num}")): str,
                 vol.Required(CONF_HOST, default=current.get(CONF_HOST, "")): str,
                 vol.Required(CONF_PORT, default=current.get(CONF_PORT, 80)): int,
+                vol.Required(
+                    CONF_USERNAME, default=current.get(CONF_USERNAME, "")
+                ): str,
+                vol.Required(
+                    CONF_PASSWORD, default=current.get(CONF_PASSWORD, "")
+                ): TextSelector(
+                    TextSelectorConfig(type=TextSelectorType.PASSWORD)
+                ),
             }),
             errors=errors,
             description_placeholders={"battery_num": str(battery_num)},
@@ -2566,12 +2617,16 @@ class OptionsFlowHandler(OptionsFlow):
         if user_input is not None:
             host = user_input[CONF_HOST]
             port = int(user_input.get(CONF_PORT, 80))
+            username = user_input[CONF_USERNAME]
+            password = user_input[CONF_PASSWORD]
             _LOGGER.info("Probing Sessy device at %s:%s", host, port)
-            if await SessyLocalDriver.probe(host, port):
+            if await SessyLocalDriver.probe(host, port, username, password):
                 self._current_battery_data.update({
                     CONF_NAME: user_input[CONF_NAME],
                     CONF_HOST: host,
                     CONF_PORT: port,
+                    CONF_USERNAME: username,
+                    CONF_PASSWORD: password,
                     "brand": "sessy",
                 })
                 return await self.async_step_battery_limits()
@@ -2586,6 +2641,16 @@ class OptionsFlowHandler(OptionsFlow):
                 ): str,
                 vol.Required(CONF_HOST, default=current_battery.get(CONF_HOST, "")): str,
                 vol.Optional(CONF_PORT, default=current_battery.get(CONF_PORT, 80)): int,
+                vol.Required(
+                    CONF_USERNAME,
+                    default=current_battery.get(CONF_USERNAME, ""),
+                ): str,
+                vol.Required(
+                    CONF_PASSWORD,
+                    default=current_battery.get(CONF_PASSWORD, ""),
+                ): TextSelector(
+                    TextSelectorConfig(type=TextSelectorType.PASSWORD)
+                ),
             }),
             errors=errors,
             description_placeholders={"battery_num": str(battery_num)},
@@ -2757,16 +2822,14 @@ class OptionsFlowHandler(OptionsFlow):
                 max_power = MAX_POWER_BY_VERSION.get(battery_version, 2500)
                 max_charge_power = max_power
                 max_discharge_power = max_power
-            # Zendure's minSoc accepts 5–50 %; Anker discharge limit is 0–20 %;
-            # Marstek's discharge floor is 12–30 %.
-            if brand == "zendure":
-                soc_min_lo, soc_min_hi = 5, 50
-            elif brand == "anker":
-                soc_min_lo, soc_min_hi = 0, 20
-            elif brand == "hoymiles":
-                soc_min_lo, soc_min_hi = 0, 30
-            else:
-                soc_min_lo, soc_min_hi = 12, 30
+            (
+                soc_min_lo,
+                soc_min_hi,
+                soc_min_default,
+                soc_max_lo,
+                soc_max_hi,
+                soc_max_default,
+            ) = _soc_selector_limits(brand)
             current_batteries = self.config_entry.data.get("batteries", [])
 
             if user_input is not None:
@@ -2813,8 +2876,8 @@ class OptionsFlowHandler(OptionsFlow):
                 defaults = {
                     "max_charge_power": min(current_battery.get("max_charge_power", max_power), max_power),
                     "max_discharge_power": min(current_battery.get("max_discharge_power", max_power), max_power),
-                    "max_soc": current_battery.get("max_soc", 100),
-                    "min_soc": current_battery.get("min_soc", 10 if brand in ("anker", "hoymiles") else 12),
+                    "max_soc": current_battery.get("max_soc", soc_max_default),
+                    "min_soc": current_battery.get("min_soc", soc_min_default),
                     "charge_hysteresis_percent": max(
                         MIN_CHARGE_HYSTERESIS_PERCENT,
                         int(current_battery.get("charge_hysteresis_percent", DEFAULT_CHARGE_HYSTERESIS_PERCENT)),
@@ -2842,8 +2905,8 @@ class OptionsFlowHandler(OptionsFlow):
                             int(self._current_battery_data.get("max_discharge_power", max_power)),
                         ),
                     ),
-                    "max_soc": 100,
-                    "min_soc": 10 if brand in ("anker", "hoymiles") else 12,
+                    "max_soc": soc_max_default,
+                    "min_soc": soc_min_default,
                     "charge_hysteresis_percent": DEFAULT_CHARGE_HYSTERESIS_PERCENT,
                     "backup_offgrid_threshold": 50,
                     CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED: DEFAULT_FULL_CHARGE_VOLTAGE_TAPER_ENABLED,
@@ -2862,8 +2925,8 @@ class OptionsFlowHandler(OptionsFlow):
                 NumberSelectorConfig(min=100, max=max_discharge_power, step=50, unit_of_measurement="W", mode=NumberSelectorMode.SLIDER)
             )
         _schema.update({
-            vol.Required("max_soc", default=defaults["max_soc"]):
-                NumberSelector(NumberSelectorConfig(min=80, max=100, step=1, mode=NumberSelectorMode.SLIDER)),
+            vol.Required("max_soc", default=max(soc_max_lo, min(soc_max_hi, defaults["max_soc"]))):
+                NumberSelector(NumberSelectorConfig(min=soc_max_lo, max=soc_max_hi, step=1, mode=NumberSelectorMode.SLIDER)),
             vol.Required("min_soc", default=max(soc_min_lo, min(soc_min_hi, defaults["min_soc"]))):
                 NumberSelector(NumberSelectorConfig(min=soc_min_lo, max=soc_min_hi, step=1, mode=NumberSelectorMode.SLIDER)),
             vol.Required("charge_hysteresis_percent", default=defaults["charge_hysteresis_percent"]):

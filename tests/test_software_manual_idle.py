@@ -108,6 +108,28 @@ async def test_selecting_idle_stops_power_once_then_leaves_device_alone():
 
 
 @pytest.mark.asyncio
+async def test_force_mode_direction_stays_selected_before_power_is_set():
+    """Choosing a direction at 0 W must not immediately snap back to None."""
+    coord = SimpleNamespace(
+        name="Sessy",
+        manual_force_mode="None",
+        manual_set_charge_power=0,
+        manual_set_discharge_power=0,
+        commanded_charge_power=0,
+        commanded_discharge_power=0,
+        persist_battery_config=Mock(),
+    )
+    select = MarstekManualForceModeSelect.__new__(MarstekManualForceModeSelect)
+    select.coordinator = coord
+    select.async_write_ha_state = Mock()
+
+    await select.async_select_option("Charge")
+
+    assert select.current_option == "Charge"
+    assert coord.manual_force_mode == "Charge"
+
+
+@pytest.mark.asyncio
 async def test_enabling_manual_mode_clears_persisted_force_mode():
     """A saved manual command must not restart on the first paused cycle."""
     coord = SimpleNamespace(

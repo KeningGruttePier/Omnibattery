@@ -1425,6 +1425,9 @@ class ManualModeSwitch(SwitchEntity):
             self.controller.sign_changes = 0
             self.controller._active_discharge_batteries = []
             self.controller._active_charge_batteries = []
+            for coordinator in self.controller.coordinators:
+                coordinator.manual_force_mode = "None"
+                coordinator.persist_battery_config("manual_force_mode", "None")
 
         _LOGGER.info("Manual Mode DISABLED - resuming automatic control")
 

@@ -510,8 +510,8 @@
       "reconfigure_battery_sessy": {
         "title": "Reconfigurar batería {battery_num} — Conexión (Sessy)",
         "description": "Actualiza los datos de conexión de la batería Sessy {battery_num}. El resto de ajustes se conserva.",
-        "data": {"name": "Nombre", "host": "Dirección IP", "port": "Puerto HTTP"},
-        "data_description": {"name": "Nombre descriptivo para identificar esta batería", "host": "Dirección IP del dispositivo Sessy en tu red local", "port": "Puerto HTTP (por defecto 80)"}
+        "data": {"name": "Nombre", "host": "Dirección IP", "port": "Puerto HTTP", "username": "Usuario", "password": "Contraseña"},
+        "data_description": {"name": "Nombre descriptivo para identificar esta batería", "host": "Dirección IP del dispositivo Sessy en tu red local", "port": "Puerto HTTP (por defecto 80)", "username": "Usuario local impreso en el dongle Sessy", "password": "Contraseña local impresa en el dongle Sessy"}
       },
       "reconfigure_battery_anker": {
         "title": "Reconfigure battery {battery_num} — Connection (Anker)",
@@ -555,9 +555,9 @@
       },
       "battery_connection_sessy": {
         "title": "Configurar batería {battery_num} — Conexión (Sessy)",
-        "description": "Introduce los datos de conexión de la batería Sessy {battery_num}.",
-        "data": {"name": "Nombre", "host": "Dirección IP", "port": "Puerto HTTP"},
-        "data_description": {"name": "Nombre descriptivo para identificar esta batería", "host": "Dirección IP del dispositivo Sessy en tu red local", "port": "Puerto HTTP (por defecto 80)"}
+        "description": "Introduce los datos de conexión y las credenciales locales impresas en el dongle Sessy de la batería {battery_num}.",
+        "data": {"name": "Nombre", "host": "Dirección IP", "port": "Puerto HTTP", "username": "Usuario", "password": "Contraseña"},
+        "data_description": {"name": "Nombre descriptivo para identificar esta batería", "host": "Dirección IP del dispositivo Sessy en tu red local", "port": "Puerto HTTP (por defecto 80)", "username": "Usuario local impreso en el dongle Sessy", "password": "Contraseña local impresa en el dongle Sessy"}
       },
       "battery_connection_anker": {
         "title": "Configure battery {battery_num} — Connection (Anker)",
@@ -1070,9 +1070,9 @@
       },
       "battery_connection_sessy": {
         "title": "Configurar batería {battery_num} — Conexión (Sessy)",
-        "description": "Modifica los datos de conexión de la batería Sessy {battery_num}.",
-        "data": {"name": "Nombre", "host": "Dirección IP", "port": "Puerto HTTP"},
-        "data_description": {"name": "Nombre descriptivo para identificar esta batería", "host": "Dirección IP del dispositivo Sessy en tu red local", "port": "Puerto HTTP (por defecto 80)"}
+        "description": "Modifica los datos de conexión y las credenciales locales del dongle de la batería Sessy {battery_num}.",
+        "data": {"name": "Nombre", "host": "Dirección IP", "port": "Puerto HTTP", "username": "Usuario", "password": "Contraseña"},
+        "data_description": {"name": "Nombre descriptivo para identificar esta batería", "host": "Dirección IP del dispositivo Sessy en tu red local", "port": "Puerto HTTP (por defecto 80)", "username": "Usuario local impreso en el dongle Sessy", "password": "Contraseña local impresa en el dongle Sessy"}
       },
       "battery_connection_anker": {
         "title": "Configure battery {battery_num} — Connection (Anker)",

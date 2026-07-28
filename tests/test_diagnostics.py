@@ -107,7 +107,13 @@ async def test_diagnostics_dump_structure_and_redaction():
         entry_id="abc",
         title="Omnibattery",
         version=9,
-        data={"host": "192.168.1.50", "consumption_sensor": "sensor.grid", "brand": "marstek"},
+        data={
+            "host": "192.168.1.50",
+            "username": "SESSY1234",
+            "password": "secret",
+            "consumption_sensor": "sensor.grid",
+            "brand": "sessy",
+        },
         options={},
     )
     hass = SimpleNamespace(
@@ -117,8 +123,10 @@ async def test_diagnostics_dump_structure_and_redaction():
     result = await diagnostics.async_get_config_entry_diagnostics(hass, entry)
 
     assert result["entry"]["data"]["host"] == "**REDACTED**"
+    assert result["entry"]["data"]["username"] == "**REDACTED**"
+    assert result["entry"]["data"]["password"] == "**REDACTED**"
     assert result["entry"]["data"]["consumption_sensor"] == "**REDACTED**"
-    assert result["entry"]["data"]["brand"] == "marstek"  # non-sensitive kept
+    assert result["entry"]["data"]["brand"] == "sessy"  # non-sensitive kept
 
     battery = result["batteries"][0]
     assert battery["health"]["name"] == "Battery 1"
