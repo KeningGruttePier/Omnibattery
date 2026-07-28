@@ -126,7 +126,7 @@
           "min_soc": "Estat de càrrega mínim per a descàrrega (12-30%) - la bateria no descarregarà per sota d'aquest valor",
           "charge_hysteresis_percent": "Sempre activa (mínim 2%). En arribar al màxim, la bateria no tornarà a carregar fins que el SOC baixi a (SOC màx − histèresi). Ex: SOC màx 100% amb 2% = no carrega fins a 98%.",
           "backup_offgrid_threshold": "Una càrrega offgrid superior a aquest valor es considera un esdeveniment de backup actiu, excloent la bateria del control PD. Augmenta'l si tens càrregues permanents (router, càmeres) al port offgrid.",
-          "full_charge_voltage_taper_enabled": "Quan l'objectiu és 100%, limita la càrrega a 95 W des de 3,48 V de cel·la màxima i s'atura a 3,58 V per mesurar el desbalanç durant 60 segons.",
+          "full_charge_voltage_taper_enabled": "Quan l'objectiu és 100%, limita la càrrega a 200 W des de 3,48 V de cel·la màxima i s'atura a 3,60 V per mesurar el desbalanç durant 60 segons.",
           "battery_capacity_kwh": "Capacitat útil nominal del pack de bateries. Es fa servir per calcular energia emmagatzemada i eficiència a partir del SOC. Per a Sessy, introdueix la capacitat real; per a altres bateries, deixa 0 si no la coneixes."
         }
       },
@@ -721,7 +721,7 @@
           "min_soc": "Estat de càrrega mínim per a descàrrega (12-30%)",
           "charge_hysteresis_percent": "Sempre activa (mínim 2%). En arribar al màxim, la bateria no tornarà a carregar fins que el SOC baixi a (SOC màx − histèresi). Ex: SOC màx 100% amb 2% = no carrega fins a 98%.",
           "backup_offgrid_threshold": "Una càrrega offgrid superior a aquest valor es considera un esdeveniment de backup actiu, excloent la bateria del control PD. Augmenta'l si tens càrregues permanents (router, càmeres) al port offgrid.",
-          "full_charge_voltage_taper_enabled": "Quan l'objectiu és 100%, limita la càrrega a 95 W des de 3,48 V de cel·la màxima i s'atura a 3,58 V per mesurar el desbalanç durant 60 segons.",
+          "full_charge_voltage_taper_enabled": "Quan l'objectiu és 100%, limita la càrrega a 200 W des de 3,48 V de cel·la màxima i s'atura a 3,60 V per mesurar el desbalanç durant 60 segons.",
           "battery_capacity_kwh": "Capacitat útil nominal del pack de bateries. Es fa servir per calcular energia emmagatzemada i eficiència a partir del SOC. Per a Sessy, introdueix la capacitat real; per a altres bateries, deixa 0 si no la coneixes."
         }
       },

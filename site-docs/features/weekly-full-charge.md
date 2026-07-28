@@ -19,11 +19,11 @@ Active cell balancing repeatedly cycles slow charge or discharge near the top vo
 See [Cell balancing](cell-balance-monitor.md) for full details.
 
 !!! note "Drifted SOC"
-    During the weekly charge the 3.58 V pause is **not** applied — charging keeps going at the tapered 95 W until the BMS itself cuts off. If the BMS coulomb counter has drifted (cells genuinely full but reported SOC below 100%), completion is still detected: the BMS-cutoff signature (charge ≤10 W with the inverter in Standby for 5 consecutive cycles) is recognised whenever the pack is in the top taper zone (≥ 3.48 V), regardless of the reported SOC. This lets the weekly cycle finish even when the pack never reads 100%, and best-effort attempts to recalibrate the SOC — depending on BMS firmware. See [SOC recalibration on a stuck top voltage](cell-balance-monitor.md#soc-recalibration-on-a-stuck-top-voltage).
+    During the weekly charge the 3.60 V pause is **not** applied — charging keeps going at the tapered 200 W until the BMS itself cuts off. If the BMS coulomb counter has drifted (cells genuinely full but reported SOC below 100%), completion is still detected: the BMS-cutoff signature (charge ≤10 W with the inverter in Standby for 5 consecutive cycles) is recognised whenever the pack is in the top taper zone (≥ 3.48 V), regardless of the reported SOC. This lets the weekly cycle finish even when the pack never reads 100%, and best-effort attempts to recalibrate the SOC — depending on BMS firmware. See [SOC recalibration on a stuck top voltage](cell-balance-monitor.md#soc-recalibration-on-a-stuck-top-voltage).
 
 ## When the cycle completes
 
-The weekly charge is marked **Complete** only when every battery is genuinely full — not merely when a cell touches the 3.58 V top voltage. A battery counts as full when either:
+The weekly charge is marked **Complete** only when every battery is genuinely full — not merely when a cell touches the 3.60 V top voltage. A battery counts as full when either:
 
 - its reported SOC reaches **100%**, or
 - a **BMS cutoff** is confirmed: charge collapses to ≤10 W with the inverter in Standby for 5 consecutive cycles (~10 s). During the weekly charge this is recognised whenever the pack is in the top taper zone (≥ 3.48 V), so a pack with a drifted SOC still completes.

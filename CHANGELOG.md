@@ -6,6 +6,9 @@
 - **Sessy control authentication and device information**: local API calls now use the username and password printed on the Sessy dongle, with credential fields available during setup, options and reconfiguration. This prevents control writes from being rejected and subsequently reported as “No response”. The dashboard now exposes the Sessy model, dongle firmware and Wi-Fi RSSI when available, links to the local device UI, and keeps a manually selected force direction visible while its power is still 0 W.
 - **Sessy SOC limits**: setup and options now accept a 0–30% software minimum with a conservative 5% default instead of inheriting Marstek's 12% floor. The software maximum remains 80–100% with a 100% default and ceiling, matching Sessy's full visible SOC range.
 
+### Changed
+- **Top-cell voltage raised to 3.60 V**: both the normal 100% voltage taper and Active Cell Balance now use 3.60 V, instead of 3.58 V, for their upper stop and 60-second measurement point. Low-power charging still starts earlier and the battery BMS remains the final cutoff. SOC recalibration after a real BMS cutoff is documented and logged as best-effort because some firmware keeps the previous SOC.
+
 ## [1.2.0b2] - 2026-07-28
 
 ### Added

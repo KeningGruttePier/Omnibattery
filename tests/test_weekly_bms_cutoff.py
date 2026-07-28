@@ -1,6 +1,6 @@
 """Regression tests for WeeklyFullChargeManager BMS-cutoff detection.
 
-Pins the fix for the "full charge stops at 3.58 V" bug: a battery that is merely
+Pins the fix for the "full charge stops at the top voltage" bug: a battery that is merely
 idle (≤10 W + Standby in the taper zone but NOT commanded to charge) must not be
 mistaken for a real top-of-charge BMS cutoff. Only a battery we actually commanded
 to charge yet refuses counts; once confirmed, the latch must survive the charge

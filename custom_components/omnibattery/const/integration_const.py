@@ -180,10 +180,10 @@ BALANCE_NOTIFY_COOLDOWN_DAYS = 7    # min days between cell-imbalance notificati
 # ignored because some batteries report it unreliably near the top.
 NORMAL_BALANCE_TAPER_CELL_VOLTAGE = 3.48
 # Hysteresis: taper latch releases only after cell drops this far below entry.
-# Prevents oscillation: at 95 W the cell relaxes slightly below 3.48 V but not
+# Prevents oscillation: at low taper power the cell can relax below 3.48 V but not
 # to 3.44 V, so the latch stays active until the battery is meaningfully discharged.
 NORMAL_BALANCE_TAPER_EXIT_CELL_VOLTAGE = 3.44
-NORMAL_BALANCE_PAUSE_CELL_VOLTAGE = 3.58
+NORMAL_BALANCE_PAUSE_CELL_VOLTAGE = 3.60
 NORMAL_BALANCE_CHARGE_POWER_W = 200
 NORMAL_BALANCE_MEASURE_WAIT_SECONDS = 60
 # Once the top voltage is reached the taper stops charging and latches. It does
@@ -193,13 +193,13 @@ NORMAL_BALANCE_MEASURE_WAIT_SECONDS = 60
 # actually been discharged by this SOC margin from where it latched.
 # SOC recalibration on a stuck top voltage.
 # A pack that hits the top cell voltage (pause point) while the BMS reports a SOC
-# below full is miscalibrated: these BMSs do not correct the coulomb counter until
-# they perform the charge cutoff themselves (users see e.g. 70% — or 96% — with a
-# cell already at 3.58 V). In that case, instead of holding at the pause voltage,
-# keep charging at the tapered power until the BMS itself cuts off, which forces it
-# to recalibrate SOC to 100%. Threshold is just below full so the whole drifted
-# range (not only "far below full") gets one recalibrating cutoff.
-NORMAL_BALANCE_RECAL_SOC_THRESHOLD = 99        # %: reported SOC below this at the pause voltage = miscalibration
+# below full may have a drifted coulomb counter. Some BMS firmware only corrects
+# that counter after performing the charge cutoff itself (users see e.g. 70% or 96% with a
+# cell already at 3.60 V). In that case, instead of holding at the pause voltage,
+# keep charging at the tapered power until the BMS itself cuts off, attempting to
+# recalibrate SOC. The firmware may keep reporting the old SOC after cutoff, so
+# recalibration is explicitly best-effort rather than a completion guarantee.
+NORMAL_BALANCE_RECAL_SOC_THRESHOLD = 99        # %: below this, make one best-effort recalibration attempt
 NORMAL_BALANCE_RECAL_CUTOFF_POWER_W = 10       # W: charge collapsed (BMS terminated)
 NORMAL_BALANCE_RECAL_CUTOFF_CYCLES = 5         # consecutive cycles to confirm the BMS cutoff
 NORMAL_BALANCE_RECAL_INVERTER_STANDBY = 1      # inverter_state raw value for Standby
@@ -337,7 +337,7 @@ DISCHARGE_MIN_SOC_REENTRY_MARGIN = 2
 # Once the battery has reached the top, keep the cells in the balancing window
 # with gentle charge/discharge micro-cycles instead of only resting at 100% SOC.
 ACTIVE_BALANCE_CHARGE_RESUME_CELL_VOLTAGE = 3.49
-ACTIVE_BALANCE_CHARGE_STOP_CELL_VOLTAGE = 3.58
+ACTIVE_BALANCE_CHARGE_STOP_CELL_VOLTAGE = 3.60
 ACTIVE_BALANCE_DISCHARGE_STOP_CELL_VOLTAGE = 3.49
 ACTIVE_BALANCE_FINAL_DISCHARGE_STOP_CELL_VOLTAGE = 3.48
 ACTIVE_BALANCE_MEASURE_WAIT_SECONDS = 60

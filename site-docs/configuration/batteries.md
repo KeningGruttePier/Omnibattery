@@ -42,7 +42,7 @@ S-Miles Home, MQTT and Omnibattery setup sequence.
 | **Min SOC (%)** | Stop discharging at this percentage | `12 %` |
 | **Charge hysteresis (%)** | Always on (minimum 2 %). After the battery reaches the top it won't charge again until SOC drops by this margin — avoids rapid cycling and absorbs SOC-reading drift | `2 %` |
 | **Backup offgrid threshold (W)** | Minimum offgrid load (W) to be considered an active backup event | `50 W` |
-| **Enable 100% charge voltage taper** | When target is 100%, limit charge to 95W from 3.48V max cell voltage and stop at 3.58V to measure imbalance after 60 seconds | `on` |
+| **Enable 100% charge voltage taper** | When target is 100%, limit charge to 200 W from 3.48 V max cell voltage and stop at 3.60 V to measure imbalance after 60 seconds | `on` |
 
 ### Battery versions
 
@@ -66,7 +66,7 @@ S-Miles Home, MQTT and Omnibattery setup sequence.
 
 Max/min SOC and max charge/discharge power values can be adjusted at any time using the integration's sliders without reconfiguring. Changes are persisted and restored on every Home Assistant restart.
 
-If you raise a battery's **Max SOC** to `100 %`, that battery uses voltage-based top protection: 95 W charge throttle from `max_cell_voltage >= 3.48 V`, then charging stops at 3.58 V and the integration waits 60 s to record the balance measurement. Charging then stays stopped (it does not re-trickle and there is no forced discharge) until SOC drops a small margin — so the cell relaxes off the top instead of being held there. See [Cell balance monitor](../features/cell-balance-monitor.md#100-charge-voltage-taper) for the exact entry and exit conditions.
+If you raise a battery's **Max SOC** to `100 %`, that battery uses voltage-based top protection: 200 W charge throttle from `max_cell_voltage >= 3.48 V`, then charging stops at 3.60 V and the integration waits 60 s to record the balance measurement. Charging then stays stopped (it does not re-trickle and there is no forced discharge) until the configured charge-hysteresis threshold is crossed — so the cell relaxes off the top instead of being held there. See [Cell balance monitor](../features/cell-balance-monitor.md#100-charge-voltage-taper) for the exact entry and exit conditions.
 
 ![SOC and power sliders](../assets/screenshots/configuration/battery-runtime-sliders.png){ width="650"  style="display: block; margin: 0 auto;"}
 

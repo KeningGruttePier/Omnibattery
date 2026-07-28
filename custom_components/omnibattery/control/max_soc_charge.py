@@ -143,10 +143,11 @@ class MaxSocChargeManager:
 
         Called while the max cell is in the top taper zone (down to the taper
         voltage, so the BMS-cutoff counter keeps advancing as the cell relaxes
-        after a cut). A low reported SOC at full cell voltage means the BMS
-        coulomb counter has drifted, so
-        keep charging (at the tapered power) until the BMS itself cuts off, then
-        latch off so the SOC can recalibrate to 100%. The latch clears when the
+        after a cut). A low reported SOC at full cell voltage may mean the BMS
+        coulomb counter has drifted, so keep charging (at the tapered power)
+        until the BMS itself cuts off, then
+        latch off and give the BMS one opportunity to recalibrate its SOC. Some
+        firmware keeps the previous SOC after cutoff; the latch clears when the
         battery leaves the top zone (see refresh_blocks).
         """
         c = self._controller
@@ -165,7 +166,7 @@ class MaxSocChargeManager:
                 c._normal_balance_recal_cutoff_count.pop(coordinator, None)
                 _LOGGER.info(
                     "%s: BMS cutoff during SOC recalibration at vmax=%.3f V, SOC=%s%% — "
-                    "holding; SOC should recalibrate to 100%%",
+                    "holding; SOC recalibration remains firmware-dependent",
                     coordinator.name, vmax_f, soc,
                 )
                 return False
@@ -223,7 +224,7 @@ class MaxSocChargeManager:
                 vmax_now = None
             # Hysteresis: only clear the taper latch once the cell has dropped to the
             # exit threshold (below entry), not the moment it slips under 3.48 V at
-            # low charge power. This prevents 1250 W ↔ 95 W oscillation.
+            # low charge power. This prevents full-power ↔ tapered-power oscillation.
             if not in_zone and (vmax_now is None or vmax_now < NORMAL_BALANCE_TAPER_EXIT_CELL_VOLTAGE):
                 c._normal_balance_voltage_tapered.pop(coordinator, None)
             if not in_zone:
@@ -321,8 +322,8 @@ class MaxSocChargeManager:
 
         # During an active weekly full charge the taper must drive the battery
         # all the way to the real BMS cutoff. The 60 s measurement hold (0 W
-        # while vmax >= pause voltage) would otherwise cap the cell at 3.58 V and
-        # stall an imbalanced pack there forever — it relaxes below 3.58 V at 0 W,
+        # while vmax >= pause voltage) would otherwise cap the cell at 3.60 V and
+        # stall an imbalanced pack there forever — it relaxes below 3.60 V at 0 W,
         # resumes, climbs back, and ping-pongs without ever reaching the cutoff.
         # The delta-V diagnostic is still captured once at completion.
         weekly_active = (
