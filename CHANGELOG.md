@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.0b2] - 2026-07-28
+
+### Fixed
+- **Excluded-device control labels now use the configured entity name** (#187): Enabled, Solar Surplus, Dynamic Power Control, Cover Home and Exclusion % controls now prefix their labels with the source entity's Home Assistant name instead of its `entity_id`. If the source entity is unavailable, the previous readable ID-derived label remains as a fallback.
+
 ## [1.2.0b1] - 2026-07-27
 
 ### Added
