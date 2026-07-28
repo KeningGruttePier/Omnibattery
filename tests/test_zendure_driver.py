@@ -16,6 +16,10 @@ from custom_components.omnibattery.drivers.zendure import (
     SENSOR_DEFINITIONS,
     SWITCH_DEFINITIONS,
     ZendureLocalDriver,
+    ZENDURE_MODEL_SOLARFLOW_800,
+    ZENDURE_MODEL_SOLARFLOW_800_PLUS,
+    ZENDURE_MODEL_SOLARFLOW_800_PRO,
+    detect_model,
 )
 
 
@@ -135,6 +139,26 @@ def test_capabilities_flags():
 def test_capabilities_power_envelope():
     caps = _driver(max_charge=1200, max_discharge=800).capabilities
     assert caps.max_charge_power_w == 1200
+    assert caps.max_discharge_power_w == 800
+
+
+@pytest.mark.parametrize(("product", "model"), [
+    ("SolarFlow800", ZENDURE_MODEL_SOLARFLOW_800),
+    ("SolarFlow 800 Plus", ZENDURE_MODEL_SOLARFLOW_800_PLUS),
+    ("ZDSF800PRO", ZENDURE_MODEL_SOLARFLOW_800_PRO),
+])
+def test_detect_model_identifies_each_supported_solarflow_800(product, model):
+    assert detect_model(product) == model
+
+
+@pytest.mark.parametrize("model", [
+    ZENDURE_MODEL_SOLARFLOW_800,
+    ZENDURE_MODEL_SOLARFLOW_800_PLUS,
+    ZENDURE_MODEL_SOLARFLOW_800_PRO,
+])
+def test_solarflow_800_models_use_their_ac_power_envelope(model):
+    caps = ZendureLocalDriver("192.168.1.100", model=model).capabilities
+    assert caps.max_charge_power_w == 1000
     assert caps.max_discharge_power_w == 800
 
 
