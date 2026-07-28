@@ -60,7 +60,7 @@ class SessyLocalDriver(BatteryDriver):
     ) -> None:
         self._base_url = f"http://{host}" + (f":{port}" if port != 80 else "")
         self._headers = (
-            {"Authorization": aiohttp.encode_basic_auth(username, password)}
+            {"Authorization": aiohttp.BasicAuth(username, password).encode()}
             if username or password
             else None
         )

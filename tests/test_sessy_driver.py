@@ -157,8 +157,19 @@ async def test_sessy_configuration_requests_and_persists_nominal_capacity():
     flow._current_battery_data = {"brand": "sessy"}
 
     form = await flow.async_step_battery_limits()
-    fields = {marker.schema for marker in form["data_schema"].schema}
+    fields = {
+        marker.schema: selector for marker, selector in form["data_schema"].schema.items()
+    }
+    markers = {
+        marker.schema: marker for marker in form["data_schema"].schema
+    }
     assert "battery_capacity_kwh" in fields
+    assert fields["min_soc"].config["min"] == 0
+    assert fields["min_soc"].config["max"] == 30
+    assert markers["min_soc"].default() == 5
+    assert fields["max_soc"].config["min"] == 80
+    assert fields["max_soc"].config["max"] == 100
+    assert markers["max_soc"].default() == 100
     capacity_marker = next(
         marker for marker in form["data_schema"].schema if marker.schema == "battery_capacity_kwh"
     )
@@ -170,7 +181,7 @@ async def test_sessy_configuration_requests_and_persists_nominal_capacity():
             "max_charge_power": 2200,
             "max_discharge_power": 2200,
             "max_soc": 100,
-            "min_soc": 12,
+            "min_soc": 0,
             "charge_hysteresis_percent": 2,
             "backup_offgrid_threshold": 50,
             "battery_capacity_kwh": 5.12,
@@ -178,6 +189,8 @@ async def test_sessy_configuration_requests_and_persists_nominal_capacity():
     )
 
     assert flow.battery_configs[0]["battery_capacity_kwh"] == 5.12
+    assert flow.battery_configs[0]["min_soc"] == 0
+    assert flow.battery_configs[0]["max_soc"] == 100
 
 
 @pytest.mark.asyncio
@@ -209,6 +222,15 @@ async def test_options_flow_offers_and_configures_sessy(monkeypatch):
     }
     assert fields["max_charge_power"].config["max"] == 2200
     assert fields["max_discharge_power"].config["max"] == 2200
+    markers = {
+        marker.schema: marker for marker in limits["data_schema"].schema
+    }
+    assert fields["min_soc"].config["min"] == 0
+    assert fields["min_soc"].config["max"] == 30
+    assert markers["min_soc"].default() == 5
+    assert fields["max_soc"].config["min"] == 80
+    assert fields["max_soc"].config["max"] == 100
+    assert markers["max_soc"].default() == 100
     capacity_marker = next(
         marker for marker in limits["data_schema"].schema if marker.schema == "battery_capacity_kwh"
     )

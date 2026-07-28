@@ -4,6 +4,7 @@
 
 ### Fixed
 - **Sessy control authentication and device information**: local API calls now use the username and password printed on the Sessy dongle, with credential fields available during setup, options and reconfiguration. This prevents control writes from being rejected and subsequently reported as “No response”. The dashboard now exposes the Sessy model, dongle firmware and Wi-Fi RSSI when available, links to the local device UI, and keeps a manually selected force direction visible while its power is still 0 W.
+- **Sessy SOC limits**: setup and options now accept a 0–30% software minimum with a conservative 5% default instead of inheriting Marstek's 12% floor. The software maximum remains 80–100% with a 100% default and ceiling, matching Sessy's full visible SOC range.
 
 ## [1.2.0b2] - 2026-07-28
 

@@ -120,8 +120,27 @@ from .pricing.nordpool import is_official_nordpool_sensor
 
 _ANKER_MAX_POWER_W = 3500
 _SESSY_MAX_POWER_W = 2200
+_SESSY_DEFAULT_MIN_SOC = 5
 _HOYMILES_MAX_POWER_W = 2000
 _HOYMILES_DEFAULT_POWER_W = 1000
+
+
+def _soc_selector_limits(brand: str) -> tuple[int, int, int, int, int, int]:
+    """Return minimum and maximum SOC selector bounds and defaults."""
+    if brand == "zendure":
+        min_lo, min_hi, min_default = 5, 50, 12
+    elif brand == "anker":
+        min_lo, min_hi, min_default = 0, 20, 10
+    elif brand == "sessy":
+        min_lo, min_hi, min_default = 0, 30, _SESSY_DEFAULT_MIN_SOC
+    elif brand == "hoymiles":
+        min_lo, min_hi, min_default = 0, 30, 10
+    else:
+        min_lo, min_hi, min_default = 12, 30, 12
+
+    # Omnibattery enforces the charge ceiling in software. Sessy's reported SOC
+    # spans 0–100 %, so the standard 100 % ceiling is valid for this driver.
+    return min_lo, min_hi, min_default, 80, 100, 100
 
 
 def _hoymiles_apply_probe_caps(battery_data: dict, caps: dict) -> None:
@@ -1046,16 +1065,14 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
             max_power = MAX_POWER_BY_VERSION.get(battery_version, 2500)
             max_charge_power = max_power
             max_discharge_power = max_power
-        # Zendure's minSoc accepts 5–50 %; Anker discharge limit is 0–20 %;
-        # Marstek's discharge floor is 12–30 %.
-        if brand == "zendure":
-            soc_min_lo, soc_min_hi = 5, 50
-        elif brand == "anker":
-            soc_min_lo, soc_min_hi = 0, 20
-        elif brand == "hoymiles":
-            soc_min_lo, soc_min_hi = 0, 30
-        else:
-            soc_min_lo, soc_min_hi = 12, 30
+        (
+            soc_min_lo,
+            soc_min_hi,
+            soc_min_default,
+            soc_max_lo,
+            soc_max_hi,
+            soc_max_default,
+        ) = _soc_selector_limits(brand)
 
         if user_input is not None:
             merged = dict(self._current_battery_data)
@@ -1108,9 +1125,9 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
                 NumberSelectorConfig(min=100, max=max_discharge_power, step=50, unit_of_measurement="W", mode=NumberSelectorMode.SLIDER)
             )
         _schema.update({
-            vol.Required("max_soc", default=100):
-                NumberSelector(NumberSelectorConfig(min=80, max=100, step=1, mode=NumberSelectorMode.SLIDER)),
-            vol.Required("min_soc", default=10 if brand in ("anker", "hoymiles") else 12):
+            vol.Required("max_soc", default=soc_max_default):
+                NumberSelector(NumberSelectorConfig(min=soc_max_lo, max=soc_max_hi, step=1, mode=NumberSelectorMode.SLIDER)),
+            vol.Required("min_soc", default=soc_min_default):
                 NumberSelector(NumberSelectorConfig(min=soc_min_lo, max=soc_min_hi, step=1, mode=NumberSelectorMode.SLIDER)),
             vol.Required("charge_hysteresis_percent", default=DEFAULT_CHARGE_HYSTERESIS_PERCENT):
                 NumberSelector(NumberSelectorConfig(min=MIN_CHARGE_HYSTERESIS_PERCENT, max=MAX_CHARGE_HYSTERESIS_PERCENT, step=1, mode=NumberSelectorMode.SLIDER)),
@@ -2805,16 +2822,14 @@ class OptionsFlowHandler(OptionsFlow):
                 max_power = MAX_POWER_BY_VERSION.get(battery_version, 2500)
                 max_charge_power = max_power
                 max_discharge_power = max_power
-            # Zendure's minSoc accepts 5–50 %; Anker discharge limit is 0–20 %;
-            # Marstek's discharge floor is 12–30 %.
-            if brand == "zendure":
-                soc_min_lo, soc_min_hi = 5, 50
-            elif brand == "anker":
-                soc_min_lo, soc_min_hi = 0, 20
-            elif brand == "hoymiles":
-                soc_min_lo, soc_min_hi = 0, 30
-            else:
-                soc_min_lo, soc_min_hi = 12, 30
+            (
+                soc_min_lo,
+                soc_min_hi,
+                soc_min_default,
+                soc_max_lo,
+                soc_max_hi,
+                soc_max_default,
+            ) = _soc_selector_limits(brand)
             current_batteries = self.config_entry.data.get("batteries", [])
 
             if user_input is not None:
@@ -2861,8 +2876,8 @@ class OptionsFlowHandler(OptionsFlow):
                 defaults = {
                     "max_charge_power": min(current_battery.get("max_charge_power", max_power), max_power),
                     "max_discharge_power": min(current_battery.get("max_discharge_power", max_power), max_power),
-                    "max_soc": current_battery.get("max_soc", 100),
-                    "min_soc": current_battery.get("min_soc", 10 if brand in ("anker", "hoymiles") else 12),
+                    "max_soc": current_battery.get("max_soc", soc_max_default),
+                    "min_soc": current_battery.get("min_soc", soc_min_default),
                     "charge_hysteresis_percent": max(
                         MIN_CHARGE_HYSTERESIS_PERCENT,
                         int(current_battery.get("charge_hysteresis_percent", DEFAULT_CHARGE_HYSTERESIS_PERCENT)),
@@ -2890,8 +2905,8 @@ class OptionsFlowHandler(OptionsFlow):
                             int(self._current_battery_data.get("max_discharge_power", max_power)),
                         ),
                     ),
-                    "max_soc": 100,
-                    "min_soc": 10 if brand in ("anker", "hoymiles") else 12,
+                    "max_soc": soc_max_default,
+                    "min_soc": soc_min_default,
                     "charge_hysteresis_percent": DEFAULT_CHARGE_HYSTERESIS_PERCENT,
                     "backup_offgrid_threshold": 50,
                     CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED: DEFAULT_FULL_CHARGE_VOLTAGE_TAPER_ENABLED,
@@ -2910,8 +2925,8 @@ class OptionsFlowHandler(OptionsFlow):
                 NumberSelectorConfig(min=100, max=max_discharge_power, step=50, unit_of_measurement="W", mode=NumberSelectorMode.SLIDER)
             )
         _schema.update({
-            vol.Required("max_soc", default=defaults["max_soc"]):
-                NumberSelector(NumberSelectorConfig(min=80, max=100, step=1, mode=NumberSelectorMode.SLIDER)),
+            vol.Required("max_soc", default=max(soc_max_lo, min(soc_max_hi, defaults["max_soc"]))):
+                NumberSelector(NumberSelectorConfig(min=soc_max_lo, max=soc_max_hi, step=1, mode=NumberSelectorMode.SLIDER)),
             vol.Required("min_soc", default=max(soc_min_lo, min(soc_min_hi, defaults["min_soc"]))):
                 NumberSelector(NumberSelectorConfig(min=soc_min_lo, max=soc_min_hi, step=1, mode=NumberSelectorMode.SLIDER)),
             vol.Required("charge_hysteresis_percent", default=defaults["charge_hysteresis_percent"]):
