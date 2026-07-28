@@ -9,7 +9,13 @@ import voluptuous as vol
 
 from homeassistant.core import callback
 from homeassistant.config_entries import ConfigFlow, OptionsFlow, ConfigEntry
-from homeassistant.const import CONF_HOST, CONF_NAME, CONF_PORT
+from homeassistant.const import (
+    CONF_HOST,
+    CONF_NAME,
+    CONF_PORT,
+    CONF_USERNAME,
+    CONF_PASSWORD,
+)
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.selector import (
@@ -931,14 +937,28 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
         errors = {}
         if user_input is not None:
             host, port = user_input[CONF_HOST], int(user_input.get(CONF_PORT, 80))
+            username = user_input[CONF_USERNAME]
+            password = user_input[CONF_PASSWORD]
             _LOGGER.info("Probing Sessy device at %s:%s", host, port)
-            if await SessyLocalDriver.probe(host, port):
-                self._current_battery_data.update({CONF_NAME: user_input[CONF_NAME], CONF_HOST: host, CONF_PORT: port, "brand": "sessy"})
+            if await SessyLocalDriver.probe(host, port, username, password):
+                self._current_battery_data.update({
+                    CONF_NAME: user_input[CONF_NAME],
+                    CONF_HOST: host,
+                    CONF_PORT: port,
+                    CONF_USERNAME: username,
+                    CONF_PASSWORD: password,
+                    "brand": "sessy",
+                })
                 return await self.async_step_battery_limits()
             errors["base"] = "cannot_connect"
         return self.async_show_form(step_id="battery_connection_sessy", data_schema=vol.Schema({
             vol.Required(CONF_NAME, default=f"Sessy {self.battery_index + 1}"): str,
-            vol.Required(CONF_HOST): str, vol.Optional(CONF_PORT, default=80): int,
+            vol.Required(CONF_HOST): str,
+            vol.Optional(CONF_PORT, default=80): int,
+            vol.Required(CONF_USERNAME): str,
+            vol.Required(CONF_PASSWORD): TextSelector(
+                TextSelectorConfig(type=TextSelectorType.PASSWORD)
+            ),
         }), errors=errors, description_placeholders={"battery_num": str(self.battery_index + 1)})
 
     async def async_step_battery_connection_hoymiles(self, user_input: dict[str, Any] | None = None) -> FlowResult:
@@ -1955,8 +1975,12 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
         if user_input is not None:
             new_host = user_input[CONF_HOST]
             new_port = int(user_input.get(CONF_PORT, 80))
+            username = user_input[CONF_USERNAME]
+            password = user_input[CONF_PASSWORD]
             _LOGGER.info("Probing Sessy device at %s:%s", new_host, new_port)
-            if not await SessyLocalDriver.probe(new_host, new_port):
+            if not await SessyLocalDriver.probe(
+                new_host, new_port, username, password
+            ):
                 errors["base"] = "cannot_connect"
             else:
                 old_host = current.get(CONF_HOST)
@@ -1971,6 +1995,8 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
                     CONF_NAME: user_input[CONF_NAME],
                     CONF_HOST: new_host,
                     CONF_PORT: new_port,
+                    CONF_USERNAME: username,
+                    CONF_PASSWORD: password,
                     "brand": "sessy",
                 })
                 self._reconfigure_batteries.append(updated)
@@ -1987,6 +2013,14 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
                 vol.Required(CONF_NAME, default=current.get(CONF_NAME, f"Sessy {battery_num}")): str,
                 vol.Required(CONF_HOST, default=current.get(CONF_HOST, "")): str,
                 vol.Required(CONF_PORT, default=current.get(CONF_PORT, 80)): int,
+                vol.Required(
+                    CONF_USERNAME, default=current.get(CONF_USERNAME, "")
+                ): str,
+                vol.Required(
+                    CONF_PASSWORD, default=current.get(CONF_PASSWORD, "")
+                ): TextSelector(
+                    TextSelectorConfig(type=TextSelectorType.PASSWORD)
+                ),
             }),
             errors=errors,
             description_placeholders={"battery_num": str(battery_num)},
@@ -2566,12 +2600,16 @@ class OptionsFlowHandler(OptionsFlow):
         if user_input is not None:
             host = user_input[CONF_HOST]
             port = int(user_input.get(CONF_PORT, 80))
+            username = user_input[CONF_USERNAME]
+            password = user_input[CONF_PASSWORD]
             _LOGGER.info("Probing Sessy device at %s:%s", host, port)
-            if await SessyLocalDriver.probe(host, port):
+            if await SessyLocalDriver.probe(host, port, username, password):
                 self._current_battery_data.update({
                     CONF_NAME: user_input[CONF_NAME],
                     CONF_HOST: host,
                     CONF_PORT: port,
+                    CONF_USERNAME: username,
+                    CONF_PASSWORD: password,
                     "brand": "sessy",
                 })
                 return await self.async_step_battery_limits()
@@ -2586,6 +2624,16 @@ class OptionsFlowHandler(OptionsFlow):
                 ): str,
                 vol.Required(CONF_HOST, default=current_battery.get(CONF_HOST, "")): str,
                 vol.Optional(CONF_PORT, default=current_battery.get(CONF_PORT, 80)): int,
+                vol.Required(
+                    CONF_USERNAME,
+                    default=current_battery.get(CONF_USERNAME, ""),
+                ): str,
+                vol.Required(
+                    CONF_PASSWORD,
+                    default=current_battery.get(CONF_PASSWORD, ""),
+                ): TextSelector(
+                    TextSelectorConfig(type=TextSelectorType.PASSWORD)
+                ),
             }),
             errors=errors,
             description_placeholders={"battery_num": str(battery_num)},

@@ -112,7 +112,9 @@ class MarstekVenusDataUpdateCoordinator(DataUpdateCoordinator):
                  brand: str = "marstek",
                  zendure_model: str = ZENDURE_MODEL_2400AC_PRO,
                  serial_port: str | None = None,
-                 esphome_device_id: str | None = None) -> None:
+                 esphome_device_id: str | None = None,
+                 username: str = "",
+                 password: str = "") -> None:
         """Initialize the data update coordinator."""
         super().__init__(
             hass,
@@ -280,6 +282,8 @@ class MarstekVenusDataUpdateCoordinator(DataUpdateCoordinator):
         elif self.brand == "sessy":
             self.driver = SessyLocalDriver(
                 self.host, port=self.port,
+                username=username,
+                password=password,
                 max_charge_power_w=self.max_charge_power,
                 max_discharge_power_w=self.max_discharge_power,
             )
@@ -408,7 +412,7 @@ class MarstekVenusDataUpdateCoordinator(DataUpdateCoordinator):
         Zendure (not the historical hard-coded "Marstek"/"Venus"). HA updates the
         existing device on the next start, so no migration is needed.
         """
-        return {
+        info = {
             "identifiers": {(DOMAIN, f"{self.device_key}")},
             "name": self.name,
             "manufacturer": (
@@ -426,6 +430,16 @@ class MarstekVenusDataUpdateCoordinator(DataUpdateCoordinator):
                 else "Venus"
             ),
         }
+        if self.brand == "sessy":
+            info["configuration_url"] = (
+                f"http://{self.host}"
+                + (f":{self.port}" if self.port != 80 else "")
+                + "/"
+            )
+            software_version = (self.data or {}).get("software_version")
+            if software_version:
+                info["sw_version"] = str(software_version)
+        return info
 
     async def connect(self) -> bool:
         """Connect to the battery via the driver."""

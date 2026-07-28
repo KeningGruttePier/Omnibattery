@@ -5,12 +5,16 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 import voluptuous as vol
+from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 
 from custom_components.omnibattery.config_flow import (
     MarstekVenusConfigFlow,
     OptionsFlowHandler,
 )
 from custom_components.omnibattery.drivers.sessy import SessyLocalDriver
+from custom_components.omnibattery.infra.coordinator import (
+    MarstekVenusDataUpdateCoordinator,
+)
 from custom_components.omnibattery.sensors.calculated_sensors import (
     MarstekVenusCycleSensor,
     MarstekVenusStoredEnergySensor,
@@ -32,11 +36,16 @@ class _Context:
     async def __aexit__(self, *args): return False
 
 
-def _session(status=None, energy=None):
+def _session(status=None, energy=None, network=None, ota=None):
     power = status or {"sessy": {"state_of_charge": 0.6, "power": 420, "pack_voltage": 51200, "power_setpoint": 500}, "renewable_energy_phase1": {"power": 100}, "renewable_energy_phase2": {"power": 0}, "renewable_energy_phase3": {"power": -20}}
     session = MagicMock()
     session.closed = False
-    session.get.side_effect = [_Context(_Response(200, power)), _Context(_Response(200, energy or {"sessy_energy": {"import_wh": 1200, "export_wh": 800}}))]
+    session.get.side_effect = [
+        _Context(_Response(200, power)),
+        _Context(_Response(200, energy or {"sessy_energy": {"import_wh": 1200, "export_wh": 800}})),
+        _Context(_Response(200, network or {"wifi_sta": {"rssi": -61}})),
+        _Context(_Response(200, ota or {"self": {"installed_firmware": {"version": "1.9.2"}}})),
+    ]
     session.post.return_value = _Context(_Response(200))
     return session
 
@@ -49,6 +58,40 @@ async def test_telemetry_maps_sessy_sign_and_units():
     assert snapshot["battery_voltage"] == 51200
     assert snapshot["pv_power"] == 80
     assert snapshot["total_charging_energy"] == 1200
+    assert snapshot["wifi_signal_strength"] == -61
+    assert snapshot["software_version"] == "1.9.2"
+
+
+def test_sessy_uses_dongle_credentials_for_http_basic_auth():
+    driver = SessyLocalDriver(
+        "sessy.local", username="SESSY1234", password="secret"
+    )
+
+    assert driver._headers == {
+        "Authorization": "Basic U0VTU1kxMjM0OnNlY3JldA=="
+    }
+    assert driver.model_label == "Sessy"
+
+
+def test_sessy_device_info_exposes_local_ui_and_firmware():
+    coordinator = SimpleNamespace(
+        device_key="sessy.local_80",
+        name="Garage Sessy",
+        brand="sessy",
+        driver=SimpleNamespace(model_label="Sessy"),
+        host="sessy.local",
+        port=80,
+        data={"software_version": "1.9.2"},
+    )
+
+    info = MarstekVenusDataUpdateCoordinator.battery_device_info.fget(
+        coordinator
+    )
+
+    assert info["manufacturer"] == "Sessy"
+    assert info["model"] == "Sessy"
+    assert info["configuration_url"] == "http://sessy.local/"
+    assert info["sw_version"] == "1.9.2"
 
 
 @pytest.mark.asyncio
@@ -154,6 +197,10 @@ async def test_options_flow_offers_and_configures_sessy(monkeypatch):
 
     form = await flow.async_step_battery_brand({"brand": "sessy"})
     assert form["step_id"] == "battery_connection_sessy"
+    assert {marker.schema for marker in form["data_schema"].schema} >= {
+        CONF_USERNAME,
+        CONF_PASSWORD,
+    }
 
     flow._current_battery_data = {"brand": "sessy"}
     limits = await flow.async_step_battery_limits()
@@ -173,13 +220,24 @@ async def test_options_flow_offers_and_configures_sessy(monkeypatch):
     monkeypatch.setattr(SessyLocalDriver, "probe", probe)
     flow.async_step_battery_limits = AsyncMock(return_value={"type": "form"})
     result = await flow.async_step_battery_connection_sessy(
-        {"name": "Garage Sessy", "host": "sessy.local", "port": 80}
+        {
+            "name": "Garage Sessy",
+            "host": "sessy.local",
+            "port": 80,
+            CONF_USERNAME: "SESSY1234",
+            CONF_PASSWORD: "secret",
+        }
     )
 
     assert result == {"type": "form"}
-    probe.assert_awaited_once_with("sessy.local", 80)
+    probe.assert_awaited_once_with("sessy.local", 80, "SESSY1234", "secret")
     assert flow._current_battery_data == {
-        "brand": "sessy", "name": "Garage Sessy", "host": "sessy.local", "port": 80
+        "brand": "sessy",
+        "name": "Garage Sessy",
+        "host": "sessy.local",
+        "port": 80,
+        CONF_USERNAME: "SESSY1234",
+        CONF_PASSWORD: "secret",
     }
 
 
@@ -189,7 +247,14 @@ async def test_reconfigure_routes_sessy_to_its_http_form(monkeypatch):
         entry_id="test-entry",
         data={
             "batteries": [
-                {"brand": "sessy", "name": "Garage Sessy", "host": "old.local", "port": 80}
+                {
+                    "brand": "sessy",
+                    "name": "Garage Sessy",
+                    "host": "old.local",
+                    "port": 80,
+                    CONF_USERNAME: "SESSY1234",
+                    CONF_PASSWORD: "old-secret",
+                }
             ]
         },
     )
@@ -201,17 +266,38 @@ async def test_reconfigure_routes_sessy_to_its_http_form(monkeypatch):
 
     form = await flow.async_step_reconfigure_battery()
     assert form["step_id"] == "reconfigure_battery_sessy"
-    assert {marker.schema for marker in form["data_schema"].schema} == {"name", "host", "port"}
+    assert {marker.schema for marker in form["data_schema"].schema} == {
+        "name",
+        "host",
+        "port",
+        CONF_USERNAME,
+        CONF_PASSWORD,
+    }
 
     probe = AsyncMock(return_value=True)
     monkeypatch.setattr(SessyLocalDriver, "probe", probe)
     flow.async_update_reload_and_abort = MagicMock(return_value={"type": "abort"})
     result = await flow.async_step_reconfigure_battery_sessy(
-        {"name": "Garage Sessy", "host": "new.local", "port": 80}
+        {
+            "name": "Garage Sessy",
+            "host": "new.local",
+            "port": 80,
+            CONF_USERNAME: "SESSY1234",
+            CONF_PASSWORD: "new-secret",
+        }
     )
 
     assert result == {"type": "abort"}
-    probe.assert_awaited_once_with("new.local", 80)
+    probe.assert_awaited_once_with(
+        "new.local", 80, "SESSY1234", "new-secret"
+    )
     assert flow._reconfigure_batteries == [
-        {"brand": "sessy", "name": "Garage Sessy", "host": "new.local", "port": 80}
+        {
+            "brand": "sessy",
+            "name": "Garage Sessy",
+            "host": "new.local",
+            "port": 80,
+            CONF_USERNAME: "SESSY1234",
+            CONF_PASSWORD: "new-secret",
+        }
     ]

@@ -10,7 +10,14 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import Platform, CONF_HOST, CONF_NAME, CONF_PORT
+from homeassistant.const import (
+    Platform,
+    CONF_HOST,
+    CONF_NAME,
+    CONF_PORT,
+    CONF_USERNAME,
+    CONF_PASSWORD,
+)
 from homeassistant.core import CoreState, HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import issue_registry as ir
@@ -5929,6 +5936,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             zendure_model=battery_config.get("zendure_model", "2400ac_pro"),
             serial_port=battery_config.get(CONF_SERIAL_PORT) or None,
             esphome_device_id=battery_config.get("esphome_device_id"),
+            username=battery_config.get(CONF_USERNAME, ""),
+            password=battery_config.get(CONF_PASSWORD, ""),
         )
 
         # Restore persisted RS485 user preference and store entry reference for future persistence

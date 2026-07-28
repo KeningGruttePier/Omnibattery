@@ -22,6 +22,8 @@ from .const import DOMAIN
 # entries inside a batteries list are covered too.
 TO_REDACT = {
     "host",
+    "username",
+    "password",
     "serial",
     "serial_port",
     "ip_address",

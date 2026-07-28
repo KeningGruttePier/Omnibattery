@@ -255,7 +255,10 @@ class MarstekManualForceModeSelect(CoordinatorEntity, SelectEntity):
             return "Charge"
         if self.coordinator.commanded_discharge_power > 0:
             return "Discharge"
-        return "None"
+        # A user may choose the direction before entering a non-zero power. Keep
+        # that intent visible instead of immediately snapping back to None.
+        stored = self.coordinator.manual_force_mode
+        return stored if stored in MANUAL_FORCE_MODE_OPTIONS else "None"
 
     async def async_select_option(self, option: str) -> None:
         """Store the manual force mode and reflect it now.
