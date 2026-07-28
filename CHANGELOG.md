@@ -5,6 +5,9 @@
 ### Added
 - **Zendure SolarFlow 800-series and 1600 AC+ profiles**: local HTTP onboarding now identifies SolarFlow 800, 800 Plus, 800 Pro and 1600 AC+ from the device API without a manual model selector. Each receives its correct AC control envelope; the AC-coupled 1600 AC+ also omits irrelevant DC MPPT/solar entities.
 
+### Fixed
+- **Sessy configuration flows completed**: Sessy is now available from the Options Flow battery selector and uses its dedicated local HTTP connection form for both options and reconfiguration, including connection probing and existing-value defaults. Charge and discharge limits are capped consistently at the 2200 W hardware ceiling. Nominal capacity is required for Sessy without inventing a fallback value for legacy entries, so stored-energy and cycle calculations use the real battery capacity. Setup, options and reconfiguration labels and capacity guidance are included in all supported translations.
+
 ## [1.2.0b1] - 2026-07-27
 
 ### Added
