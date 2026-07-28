@@ -50,13 +50,36 @@ _LOGGER = logging.getLogger(__name__)
 _HTTP_TIMEOUT = aiohttp.ClientTimeout(total=10)
 _PROBE_TIMEOUT = aiohttp.ClientTimeout(total=5)
 
-# Supported device model identifiers.
+# Supported device model identifiers.  The product field of /properties/report
+# selects one of these automatically during the config flow; users never need
+# to select a Zendure model themselves.
+ZENDURE_MODEL_SOLARFLOW_800 = "solarflow_800"
+ZENDURE_MODEL_SOLARFLOW_800_PLUS = "solarflow_800_plus"
+ZENDURE_MODEL_SOLARFLOW_800_PRO = "solarflow_800_pro"
+ZENDURE_MODEL_1600AC_PLUS = "1600ac_plus"
 ZENDURE_MODEL_2400AC_PRO = "2400ac_pro"
 ZENDURE_MODEL_2400AC_PLUS = "2400ac_plus"
 
-# Keys absent on the 2400 AC+ (no DC-coupled MPPT, no dedicated solar-input port).
+# Grid-connected AC limits.  The SolarFlow 800, 800 Plus and 800 Pro all have
+# an 800 W grid output; their AC charging input is limited to 1000 W.  The
+# report's chargeMaxLimit remains authoritative if it announces a lower cap.
+_MODEL_POWER_LIMITS: dict[str, tuple[int, int]] = {
+    ZENDURE_MODEL_SOLARFLOW_800: (1000, 800),
+    ZENDURE_MODEL_SOLARFLOW_800_PLUS: (1000, 800),
+    ZENDURE_MODEL_SOLARFLOW_800_PRO: (1000, 800),
+    ZENDURE_MODEL_1600AC_PLUS: (1600, 1600),
+    ZENDURE_MODEL_2400AC_PRO: (2400, 2400),
+    ZENDURE_MODEL_2400AC_PLUS: (2400, 2400),
+}
+
+# Keys absent on AC-coupled models (no DC-coupled MPPT, no dedicated
+# solar-input port).
 _SOLAR_MPPT_KEYS: frozenset[str] = frozenset({
     "solar_power", "mppt1_power", "mppt2_power", "mppt3_power", "mppt4_power",
+})
+_AC_COUPLED_MODELS: frozenset[str] = frozenset({
+    ZENDURE_MODEL_1600AC_PLUS,
+    ZENDURE_MODEL_2400AC_PLUS,
 })
 
 # Zendure API property name → logical coordinator key.
@@ -246,8 +269,8 @@ class ZendureLocalDriver(BatteryDriver):
         *,
         port: int = 80,
         model: str = ZENDURE_MODEL_2400AC_PRO,
-        max_charge_power_w: int = 2400,
-        max_discharge_power_w: int = 2400,
+        max_charge_power_w: int | None = None,
+        max_discharge_power_w: int | None = None,
         session: Optional[aiohttp.ClientSession] = None,
     ) -> None:
         """Build the driver.
@@ -267,12 +290,17 @@ class ZendureLocalDriver(BatteryDriver):
         self._product: Optional[str] = None  # device model from the report root
         self._model = model
 
+        default_charge_power, default_discharge_power = zendure_power_limits(model)
         self._capabilities = DriverCapabilities(
             hardware_soc_cutoff=True,    # minSoc + socSet exist on the device
             has_force_mode=False,        # no explicit force_mode register; control via limits
             push_telemetry=False,        # HTTP poll, not MQTT push
-            max_charge_power_w=max_charge_power_w,
-            max_discharge_power_w=max_discharge_power_w,
+            max_charge_power_w=(
+                default_charge_power if max_charge_power_w is None else max_charge_power_w
+            ),
+            max_discharge_power_w=(
+                default_discharge_power if max_discharge_power_w is None else max_discharge_power_w
+            ),
             has_mppt_pv=False,           # no DC-coupled MPPT; solar is AC-side
             has_alarm_registers=True,    # faultLevel + is_error
             has_rs485_control=False,
@@ -282,7 +310,7 @@ class ZendureLocalDriver(BatteryDriver):
             actuator_latency_s=3.0,      # HTTP write + ~2-3 s engage/echo latency
         )
 
-        _excluded = _SOLAR_MPPT_KEYS if model == ZENDURE_MODEL_2400AC_PLUS else frozenset()
+        _excluded = _SOLAR_MPPT_KEYS if model in _AC_COUPLED_MODELS else frozenset()
         _sensor_defs = [d for d in SENSOR_DEFINITIONS if d["key"] not in _excluded]
 
         self._definitions: dict[str, list[dict]] = {
@@ -751,18 +779,30 @@ class ZendureLocalDriver(BatteryDriver):
 def detect_model(product: str | None) -> str:
     """Map a raw device product string to a ZENDURE_MODEL_* constant.
 
-    Matching is case-insensitive on "pro": the 2400 AC Pro reports a product
-    string containing "Pro"; the 2400 AC+ does not. Unknown / absent strings
-    default to ZENDURE_MODEL_2400AC_PRO so all sensor entities are registered
-    (the extra MPPT sensors are simply unavailable on hardware that lacks them,
-    which is less surprising than missing sensors on hardware that has them).
+    Matching tolerates spacing, hyphens and Zendure's product model codes.  The
+    documented SolarFlow 800 variants have their own hardware power envelope;
+    unknown products retain the historical 2400 AC Pro fallback.
     """
-    if product and "pro" in product.lower():
+    normalized = re.sub(r"[^a-z0-9]", "", (product or "").lower())
+    if "800pro" in normalized:
+        return ZENDURE_MODEL_SOLARFLOW_800_PRO
+    if "800plus" in normalized or "800pls" in normalized:
+        return ZENDURE_MODEL_SOLARFLOW_800_PLUS
+    if "solarflow800" in normalized or normalized.startswith("zdsf800"):
+        return ZENDURE_MODEL_SOLARFLOW_800
+    if "1600ac" in normalized or normalized.startswith("zdsf1600"):
+        return ZENDURE_MODEL_1600AC_PLUS
+    if "pro" in normalized:
         return ZENDURE_MODEL_2400AC_PRO
-    if product:
+    if normalized:
         return ZENDURE_MODEL_2400AC_PLUS
     _LOGGER.warning(
         "Zendure device reported no product string; defaulting to %s",
         ZENDURE_MODEL_2400AC_PRO,
     )
     return ZENDURE_MODEL_2400AC_PRO
+
+
+def zendure_power_limits(model: str) -> tuple[int, int]:
+    """Return conservative (AC charge, AC discharge) limits for ``model``."""
+    return _MODEL_POWER_LIMITS.get(model, _MODEL_POWER_LIMITS[ZENDURE_MODEL_2400AC_PRO])

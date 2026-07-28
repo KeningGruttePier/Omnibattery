@@ -102,13 +102,16 @@ from .const import (
 )
 from .drivers.esphome import EsphomeEntityDriver
 from .drivers.marstek import MarstekModbusDriver
-from .drivers.zendure import ZendureLocalDriver, detect_model as _detect_zendure_model
+from .drivers.zendure import (
+    ZendureLocalDriver,
+    detect_model as _detect_zendure_model,
+    zendure_power_limits as _zendure_power_limits,
+)
 from .drivers.anker import AnkerModbusDriver
 from .drivers.sessy import SessyLocalDriver
 from .drivers.hoymiles import HoymilesMqttDriver
 from .pricing.nordpool import is_official_nordpool_sensor
 
-_ZENDURE_MAX_POWER_W = 2400
 _ANKER_MAX_POWER_W = 3500
 _SESSY_MAX_POWER_W = 2200
 _HOYMILES_MAX_POWER_W = 2000
@@ -1004,9 +1007,10 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
         battery_num = self.battery_index + 1
         brand = self._current_battery_data.get("brand", "marstek")
         if brand == "zendure":
-            max_power = _ZENDURE_MAX_POWER_W
-            max_charge_power = max_power
-            max_discharge_power = max_power
+            max_charge_power, max_discharge_power = _zendure_power_limits(
+                self._current_battery_data.get("zendure_model", "2400ac_pro")
+            )
+            max_power = max(max_charge_power, max_discharge_power)
         elif brand == "anker":
             max_charge_power, max_discharge_power = _anker_power_ceilings(
                 self._current_battery_data
@@ -2734,9 +2738,10 @@ class OptionsFlowHandler(OptionsFlow):
             battery_num = self.battery_index + 1
             brand = self._current_battery_data.get("brand", "marstek")
             if brand == "zendure":
-                max_power = _ZENDURE_MAX_POWER_W
-                max_charge_power = max_power
-                max_discharge_power = max_power
+                max_charge_power, max_discharge_power = _zendure_power_limits(
+                    self._current_battery_data.get("zendure_model", "2400ac_pro")
+                )
+                max_power = max(max_charge_power, max_discharge_power)
             elif brand == "anker":
                 max_charge_power, max_discharge_power = _anker_power_ceilings(
                     self._current_battery_data
