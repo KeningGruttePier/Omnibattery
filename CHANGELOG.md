@@ -9,6 +9,7 @@
 - **Top-cell voltage raised to 3.60 V**: both the normal 100% voltage taper and Active Cell Balance now use 3.60 V, instead of 3.58 V, for their upper stop and 60-second measurement point. Low-power charging still starts earlier and the battery BMS remains the final cutoff. SOC recalibration after a real BMS cutoff is documented and logged as best-effort because some firmware keeps the previous SOC.
 
 ### Fixed
+- **Fast P1 meters could be reported as slow when consecutive readings were identical**: grid-sensor cadence and stale-data health now use Home Assistant's publication timestamp instead of the last value-change timestamp, so a meter reporting every 4 seconds no longer appears to update every 12–20 seconds while its power value remains unchanged.
 - **Anker battery power could briefly report 0 W while actively charging or discharging**: isolated near-zero Modbus readings are now ignored while a non-zero power setpoint remains active. A genuine idle state is still published after three consecutive near-zero readings. Thanks to @wouterbouvy.
 - **Marstek daily charge/discharge energy now follows one consistent reset path**: Venus E v2/v3, Venus A and Venus D derive their daily sensors from the reliable lifetime counters and reset them at local midnight. Updating mid-day preserves the greatest value already recorded for the current day.
 

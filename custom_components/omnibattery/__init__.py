@@ -467,8 +467,8 @@ class ChargeDischargeController:
         self.last_output_sign = 0        # Track last output direction (1=charge, -1=discharge, 0=idle)
 
         # Stale sensor detection
-        self._last_sensor_update_time = None    # datetime of last real sensor change (HA last_updated)
-        self._stale_cycles = 0                  # consecutive cycles without sensor change
+        self._last_sensor_report_time = None    # datetime of last real sensor publication (HA last_reported)
+        self._stale_cycles = 0                  # consecutive cycles without a sensor publication
         self._max_sensor_stale_s = MAX_SENSOR_STALE_S
         self._control_lock = asyncio.Lock()     # serialize control cycle across timer + sensor-event triggers
         self._grid_at_min_soc_last_ts = None     # last accumulation timestamp for grid-at-min-soc kWh integration
@@ -2993,13 +2993,7 @@ class ChargeDischargeController:
 
         # Cadence-independent time bases (this loop runs event-driven too). The stored
         # timestamp is shared with the main loop; exactly one of the two runs per cycle.
-        sensor_update_time = consumption_state.last_updated
-        previous_update_time = self._last_sensor_update_time
-        self._last_sensor_update_time = sensor_update_time
-        sensor_elapsed_s = (
-            (sensor_update_time - previous_update_time).total_seconds()
-            if previous_update_time is not None else None
-        )
+        _, sensor_elapsed_s, _ = self._track_sensor_report(consumption_state)
         base_dt = sensor_elapsed_s if (sensor_elapsed_s and sensor_elapsed_s > 0) else self.dt
         real_dt = max(1.0, min(base_dt, 30.0))
         scale_dt = max(0.1, min(base_dt, 30.0))
@@ -4679,6 +4673,30 @@ class ChargeDischargeController:
             },
         )
 
+    def _track_sensor_report(self, sensor_state):
+        """Track real sensor publications, including unchanged state reports.
+
+        Home Assistant leaves ``last_updated`` unchanged when an integration
+        republishes the same state and attributes. ``last_reported`` still advances,
+        so it is the correct source for cadence and stale-data health. The fallback
+        keeps compatibility with State-like objects from older Home Assistant versions.
+        """
+        sensor_report_time = (
+            getattr(sensor_state, "last_reported", None)
+            or sensor_state.last_updated
+        )
+        previous_report_time = self._last_sensor_report_time
+        self._last_sensor_report_time = sensor_report_time
+        is_stale = (
+            previous_report_time is not None
+            and sensor_report_time == previous_report_time
+        )
+        sensor_elapsed_s = (
+            (sensor_report_time - previous_report_time).total_seconds()
+            if previous_report_time is not None else None
+        )
+        return sensor_report_time, sensor_elapsed_s, is_stale
+
     def _check_sensor_cadence(self, sensor_elapsed_s):
         """Raise one repair per run when the main sensor cadence is slow.
 
@@ -4735,16 +4753,16 @@ class ChargeDischargeController:
             },
         )
 
-    def _sensor_age_seconds(self, sensor_update_time, now=None):
+    def _sensor_age_seconds(self, sensor_report_time, now=None):
         """Return the real age of the current grid sample."""
         reference_time = now if isinstance(now, datetime) else dt_util.utcnow()
-        return max(0.0, (reference_time - sensor_update_time).total_seconds())
+        return max(0.0, (reference_time - sensor_report_time).total_seconds())
 
-    def _sensor_is_within_stale_tolerance(self, sensor_update_time, now=None):
+    def _sensor_is_within_stale_tolerance(self, sensor_report_time, now=None):
         """Return whether the latest grid sample must remain authoritative."""
         return (
             ChargeDischargeController._sensor_age_seconds(
-                self, sensor_update_time, now
+                self, sensor_report_time, now
             )
             <= self._max_sensor_stale_s
         )
@@ -4881,20 +4899,12 @@ class ChargeDischargeController:
                 _LOGGER.warning(f"Could not parse consumption sensor state: {consumption_state.state}")
             return
 
-        # Detect if sensor has actually updated since last cycle
-        sensor_update_time = consumption_state.last_updated
-        is_stale = (
-            self._last_sensor_update_time is not None
-            and sensor_update_time == self._last_sensor_update_time
+        # Detect real sensor publications, even when the numeric value is unchanged.
+        sensor_report_time, sensor_elapsed_s, is_stale = (
+            self._track_sensor_report(consumption_state)
         )
-        previous_update_time = self._last_sensor_update_time
-        self._last_sensor_update_time = sensor_update_time
-        # Real time since the last sensor update — single source of truth for every
+        # Real time since the last sensor report — single source of truth for every
         # cadence-dependent term (filter, derivative, P scaling, rate limiter).
-        sensor_elapsed_s = (
-            (sensor_update_time - previous_update_time).total_seconds()
-            if previous_update_time is not None else None
-        )
 
         # Watchdog ticks have elapsed=0 and are not cadence observations. Feeding
         # them into the debounce reset the slow streak between every pair of real
@@ -4913,13 +4923,13 @@ class ChargeDischargeController:
         stale_safety_recalc = False
         if is_stale:
             self._stale_cycles += 1
-            sensor_age_s = self._sensor_age_seconds(sensor_update_time, now)
+            sensor_age_s = self._sensor_age_seconds(sensor_report_time, now)
             capacity_protection_must_recheck = (
                 self.previous_power < 0
                 and self._is_capacity_protection_soc_limited()
             )
             if (
-                self._sensor_is_within_stale_tolerance(sensor_update_time, now)
+                self._sensor_is_within_stale_tolerance(sensor_report_time, now)
                 and not capacity_protection_must_recheck
                 and not blocked_active_changed
             ):
