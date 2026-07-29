@@ -202,12 +202,12 @@ class ActiveBalanceModeManager:
         self,
         coordinator,
         details: dict,
-        source: str = "measurement_3.58V",
+        source: str = "measurement_3.60V",
     ) -> None:
         """Store the latest balance measurement for result notifications.
 
-        ``source`` distinguishes a normal 3.58 V top measurement from one taken
-        when the BMS cut charge before reaching the 3.58 V stop voltage.
+        ``source`` distinguishes a normal 3.60 V top measurement from one taken
+        when the BMS cut charge before reaching the 3.60 V stop voltage.
         """
         final_delta = details.get("delta_V")
         if final_delta is None:
@@ -244,7 +244,7 @@ class ActiveBalanceModeManager:
             )
 
     def _active_balance_mode_last_recorded_delta_v(self, coordinator) -> tuple[float | None, str]:
-        """Return the last official 3.58 V balance measurement, else instant delta."""
+        """Return the last official 3.60 V balance measurement, else instant delta."""
         delta, _vmax, _vmin, source = self._active_balance_mode_initial_snapshot(coordinator)
         return delta, source
 
@@ -253,7 +253,7 @@ class ActiveBalanceModeManager:
     ) -> tuple[float | None, float | None, float | None, str]:
         """Return (delta_V, vmax_V, vmin_V, source) for the start notification.
 
-        Prefers the last official 3.58 V balance measurement stored by the
+        Prefers the last official 3.60 V balance measurement stored by the
         BalanceMonitor so the start figures match a real cutoff reading.
         Falls back to the current instant cell values if no measurement is
         available (e.g. first ever run with empty history).
@@ -273,7 +273,7 @@ class ActiveBalanceModeManager:
                     vmin = None
                 if delta_mv is not None and vmax is not None and vmin is not None:
                     ts = last.get("ts")
-                    source = f"measurement_3.58V ({ts})" if ts else "measurement_3.58V"
+                    source = f"measurement_3.60V ({ts})" if ts else "measurement_3.60V"
                     return delta_mv / 1000.0, vmax, vmin, source
         vmax_f, vmin_f, delta_v = self._active_balance_mode_cell_values(coordinator)
         return delta_v, vmax_f, vmin_f, "instant"
@@ -865,7 +865,7 @@ class ActiveBalanceModeManager:
             # approaching the stop voltage) trips the detector for one or two
             # cycles even though the BMS is still charging. Recording a delta on
             # such a blip injects a low-vmax reading that is not comparable to a
-            # true 3.58 V top measurement and distorts the balance history.
+            # true 3.60 V top measurement and distorts the balance history.
             # Require the rejection to persist before acting on it.
             below_stop = vmax_f < ACTIVE_BALANCE_CHARGE_STOP_CELL_VOLTAGE
             if charge_rejected and below_stop:
@@ -878,7 +878,7 @@ class ActiveBalanceModeManager:
             # end-of-charge signal and must transition us into WAIT_MEASURE,
             # not into DISCHARGE (which would skip the delta evaluation).
             if reject_count >= ACTIVE_BALANCE_CHARGE_REJECT_DEBOUNCE_CYCLES:
-                # BMS cut charge before the 3.58 V top and has stayed at ~0 W for
+                # BMS cut charge before the 3.60 V top and has stayed at ~0 W for
                 # several cycles, so cells are genuinely at rest: record the
                 # achieved delta as a real measurement before stepping the retry
                 # point down and dropping into the escape discharge.
@@ -900,7 +900,7 @@ class ActiveBalanceModeManager:
                 if vmax_f >= ACTIVE_BALANCE_CHARGE_STOP_CELL_VOLTAGE:
                     phase = "WAIT_MEASURE"
                     coordinator.active_balance_mode_wait_started_ts = now.isoformat()
-                    # Reached the 3.58 V top: clear any ratcheted-down retry so
+                    # Reached the 3.60 V top: clear any ratcheted-down retry so
                     # the next run-up starts from the default resume voltage.
                     coordinator.active_balance_mode_retry_voltage = None
                     self._reset_active_balance_charge_resume_target(coordinator)
@@ -937,7 +937,7 @@ class ActiveBalanceModeManager:
                 else:
                     # Keep the ratcheted-down retry voltage so a repeated BMS
                     # rejection steps it lower on the next charge attempt (down
-                    # to the 3.40 V floor). It is reset only when the 3.58 V top
+                    # to the 3.40 V floor). It is reset only when the 3.60 V top
                     # is reached (WAIT_MEASURE) or the run completes.
                     phase = "CHARGE"
                     charge_power = ACTIVE_BALANCE_CHARGE_POWER_W

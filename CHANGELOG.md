@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.0b4] - 2026-07-29
+
+### Changed
+- **Top-cell voltage raised to 3.60 V**: both the normal 100% voltage taper and Active Cell Balance now use 3.60 V, instead of 3.58 V, for their upper stop and 60-second measurement point. Low-power charging still starts earlier and the battery BMS remains the final cutoff. SOC recalibration after a real BMS cutoff is documented and logged as best-effort because some firmware keeps the previous SOC.
+
 ## [1.2.0b3] - 2026-07-28
 
 ### Fixed

@@ -424,7 +424,7 @@ async def test_handle_measurement_skips_during_soc_recalibration():
 
 
 async def test_handle_measurement_skips_during_weekly_full_charge():
-    """Weekly full charge owns the taper to the BMS cutoff — no 3.58 V hold."""
+    """Weekly full charge owns the taper to the BMS cutoff — no 3.60 V hold."""
     c = _Coord(data={"max_cell_voltage": 3.60, "min_cell_voltage": 3.55,
                      "battery_soc": 94})
     calls = []
