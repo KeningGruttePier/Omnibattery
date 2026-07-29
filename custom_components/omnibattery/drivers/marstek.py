@@ -37,6 +37,14 @@ _LOGGER = logging.getLogger(__name__)
 # hardware SOC cut-off registers, packet correction.
 _V3_FAMILY = ("v3", "vA", "vD")
 
+# Venus E v2/v3 daily counters are unreliable around the day boundary.  Their
+# entity IDs are still exposed by derived sensors backed by the lifetime totals.
+_UNRELIABLE_DAILY_ENERGY_VERSIONS = ("v2", "v3")
+_DAILY_ENERGY_KEYS = {
+    "total_daily_charging_energy",
+    "total_daily_discharging_energy",
+}
+
 # Marstek force_mode register values.
 _FORCE_NONE = 0
 _FORCE_CHARGE = 1
@@ -93,8 +101,7 @@ def _load_definitions(version: str) -> dict[str, list[dict]]:
         sensor = [
             definition
             for definition in SENSOR_DEFINITIONS_V3
-            if definition["key"]
-            not in {"total_daily_charging_energy", "total_daily_discharging_energy"}
+            if definition["key"] not in _DAILY_ENERGY_KEYS
         ]
         number = NUMBER_DEFINITIONS_V3
         select = SELECT_DEFINITIONS_V3
@@ -119,7 +126,13 @@ def _load_definitions(version: str) -> dict[str, list[dict]]:
         binary_sensor = BINARY_SENSOR_DEFINITIONS_V3
         button = BUTTON_DEFINITIONS_V3
     else:  # v2 (default)
-        sensor = SENSOR_DEFINITIONS
+        # v2 daily registers have the same unreliable reset behaviour as v3.
+        # Keep the lifetime totals and derive the daily entities in software.
+        sensor = [
+            definition
+            for definition in SENSOR_DEFINITIONS
+            if definition["key"] not in _DAILY_ENERGY_KEYS
+        ]
         number = NUMBER_DEFINITIONS
         select = SELECT_DEFINITIONS
         switch = SWITCH_DEFINITIONS
@@ -269,9 +282,9 @@ class MarstekModbusDriver(BatteryDriver):
             has_alarm_registers="alarm_status" in self._telemetry_index,
             has_rs485_control=REGISTER_MAP.get(version, {}).get("rs485_control") is not None,
             has_energy_counters=True,  # battery_total_energy + total_*_energy registers
-            # v3's hardware daily registers are unreliable.  The entity layer
-            # derives them from the reliable lifetime counters instead.
-            has_daily_energy_counters=version != "v3",
+            # Venus E v2/v3 hardware daily registers are unreliable.  The entity
+            # layer derives them from the reliable lifetime counters instead.
+            has_daily_energy_counters=version not in _UNRELIABLE_DAILY_ENERGY_VERSIONS,
             # v3/vA/vD pace at 150 ms/frame through a single TCP slot, so a setpoint
             # write + the inverter engaging settles slower than v2's 50 ms/frame.
             actuator_latency_s=0.8 if self._is_v3_family else 0.3,

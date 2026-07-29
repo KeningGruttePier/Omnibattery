@@ -1,4 +1,4 @@
-"""Daily energy derived from lifetime hardware counters (Anker)."""
+"""Daily energy derived from lifetime hardware counters."""
 from __future__ import annotations
 
 from datetime import timedelta

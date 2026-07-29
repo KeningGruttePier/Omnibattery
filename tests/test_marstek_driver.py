@@ -143,10 +143,19 @@ def test_definitions_loaded_from_version_when_not_injected():
         BUTTON_DEFINITIONS,
     )
     drv = MarstekModbusDriver("1.2.3.4", 502, "v2", client=_fake_client())
-    assert drv.sensor_definitions is SENSOR_DEFINITIONS
+    daily_keys = {
+        "total_daily_charging_energy",
+        "total_daily_discharging_energy",
+    }
+    expected_sensor_definitions = [
+        definition
+        for definition in SENSOR_DEFINITIONS
+        if definition["key"] not in daily_keys
+    ]
+    assert drv.sensor_definitions == expected_sensor_definitions
     assert drv.button_definitions is BUTTON_DEFINITIONS
     assert drv.all_definitions == (
-        SENSOR_DEFINITIONS + NUMBER_DEFINITIONS + SELECT_DEFINITIONS
+        expected_sensor_definitions + NUMBER_DEFINITIONS + SELECT_DEFINITIONS
         + SWITCH_DEFINITIONS + BINARY_SENSOR_DEFINITIONS
     )
     # all_definitions is the polled union; buttons (stateless) are excluded.
@@ -176,17 +185,22 @@ def test_capabilities_use_version_loaded_definitions():
     assert v2.has_alarm_registers is True
 
 
-def test_v3_daily_energy_is_derived_from_lifetime_counters():
-    """v3 avoids its unreliable daily registers, like Anker does."""
-    drv = MarstekModbusDriver("1.2.3.4", 502, "v3", client=_fake_client())
+@pytest.mark.parametrize("version", ["v2", "v3"])
+def test_venus_e_daily_energy_is_derived_from_lifetime_counters(version):
+    """Venus E avoids its unreliable daily registers, like Anker does."""
+    drv = MarstekModbusDriver("1.2.3.4", 502, version, client=_fake_client())
 
     assert drv.capabilities.has_daily_energy_counters is False
     assert {
         definition["key"] for definition in drv.sensor_definitions
     }.isdisjoint({"total_daily_charging_energy", "total_daily_discharging_energy"})
 
-    v2 = MarstekModbusDriver("1.2.3.4", 502, "v2", client=_fake_client())
-    assert v2.capabilities.has_daily_energy_counters is True
+
+@pytest.mark.parametrize("version", ["vA", "vD"])
+def test_hybrid_models_keep_hardware_daily_energy_counters(version):
+    drv = MarstekModbusDriver("1.2.3.4", 502, version, client=_fake_client())
+
+    assert drv.capabilities.has_daily_energy_counters is True
 
 
 # ----------------------------------------------------------------------

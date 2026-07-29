@@ -10,6 +10,7 @@
 
 ### Fixed
 - **Anker battery power could briefly report 0 W while actively charging or discharging**: isolated near-zero Modbus readings are now ignored while a non-zero power setpoint remains active. A genuine idle state is still published after three consecutive near-zero readings. Thanks to @wouterbouvy.
+- **Venus E v2 daily charge/discharge energy could start the day with residual values**: like v3, v2 now derives its daily sensors from the reliable lifetime counters and resets them at local midnight. Updating mid-day preserves the greatest value already recorded for the current day.
 
 
 ## [1.2.0b3] - 2026-07-28

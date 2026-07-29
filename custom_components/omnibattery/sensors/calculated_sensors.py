@@ -125,7 +125,7 @@ class MarstekVenusEfficiencySensor(CoordinatorEntity, RestoreEntity, SensorEntit
         charge_energy = self.coordinator.data.get(self._dependency_keys["charge"], 0)
         discharge_energy = self.coordinator.data.get(self._dependency_keys["discharge"], 0)
 
-        # Anker and Venus E v3 only expose lifetime energy registers. Their
+        # Anker and Venus E v2/v3 only expose lifetime energy registers. Their
         # derived daily counters share a common midnight baseline, unlike the
         # independent lifetime counters that can retain different historical
         # baselines. Prefer that like-for-like pair when it is available.
@@ -444,8 +444,8 @@ class _CumulativeDailyEnergyData(ExtraStoredData):
 def _legacy_daily_energy_value(last_state: State | None, today: str) -> float | None:
     """Return today's value from the daily-register entity this replaces.
 
-    The v3 migration keeps the entity ID but changes its implementation from a
-    Modbus register sensor to a derived sensor.  The old sensor has no extra
+    The v2/v3 migration keeps the entity ID but changes its implementation from
+    a Modbus register sensor to a derived sensor. The old sensor has no extra
     restore data, so retain its last numeric state if Home Assistant recorded it
     today.  A state from an earlier local day must not leak into a new day's
     counter.
@@ -511,7 +511,7 @@ class CumulativeDailyEnergySensor(CoordinatorEntity, RestoreEntity, SensorEntity
         today = dt_util.now().date().isoformat()
         if restored is not None and restored.reset_date == today:
             self._energy_data = restored
-        # On migration from v3's register sensor there is no extra restore
+        # On migration from a v2/v3 register sensor there is no extra restore
         # payload: that sensor did not inherit RestoreEntity. A previous release
         # may also have persisted a small post-migration value before this
         # recovery runs. Read today's recorder history in either case and keep
