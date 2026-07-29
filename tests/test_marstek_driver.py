@@ -143,19 +143,10 @@ def test_definitions_loaded_from_version_when_not_injected():
         BUTTON_DEFINITIONS,
     )
     drv = MarstekModbusDriver("1.2.3.4", 502, "v2", client=_fake_client())
-    daily_keys = {
-        "total_daily_charging_energy",
-        "total_daily_discharging_energy",
-    }
-    expected_sensor_definitions = [
-        definition
-        for definition in SENSOR_DEFINITIONS
-        if definition["key"] not in daily_keys
-    ]
-    assert drv.sensor_definitions == expected_sensor_definitions
+    assert drv.sensor_definitions is SENSOR_DEFINITIONS
     assert drv.button_definitions is BUTTON_DEFINITIONS
     assert drv.all_definitions == (
-        expected_sensor_definitions + NUMBER_DEFINITIONS + SELECT_DEFINITIONS
+        SENSOR_DEFINITIONS + NUMBER_DEFINITIONS + SELECT_DEFINITIONS
         + SWITCH_DEFINITIONS + BINARY_SENSOR_DEFINITIONS
     )
     # all_definitions is the polled union; buttons (stateless) are excluded.

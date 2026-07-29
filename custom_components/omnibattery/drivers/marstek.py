@@ -37,14 +37,6 @@ _LOGGER = logging.getLogger(__name__)
 # hardware SOC cut-off registers, packet correction.
 _V3_FAMILY = ("v3", "vA", "vD")
 
-# Marstek daily counters are not used so every model follows the same local-day
-# behaviour. Their entity IDs are still exposed by derived sensors backed by
-# the lifetime totals.
-_DAILY_ENERGY_KEYS = {
-    "total_daily_charging_energy",
-    "total_daily_discharging_energy",
-}
-
 # Marstek force_mode register values.
 _FORCE_NONE = 0
 _FORCE_CHARGE = 1
@@ -125,15 +117,6 @@ def _load_definitions(version: str) -> dict[str, list[dict]]:
         switch = SWITCH_DEFINITIONS
         binary_sensor = BINARY_SENSOR_DEFINITIONS
         button = BUTTON_DEFINITIONS
-
-    # Keep daily reset and migration behaviour consistent across every Marstek
-    # model: do not poll hardware daily registers; derive the same entity keys
-    # from lifetime totals in the sensor platform.
-    sensor = [
-        definition
-        for definition in sensor
-        if definition["key"] not in _DAILY_ENERGY_KEYS
-    ]
 
     return {
         "sensor": sensor,
