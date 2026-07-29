@@ -258,11 +258,20 @@ class ChargeDelayManager:
             and not ctrl._charge_delay_unlocked
             and not ctrl._delay_setpoint_reached
             and not ctrl._balance_monitor_overrides_delay()
-            and not ctrl._active_balance_overrides_delay()
         )
         for coordinator in ctrl.coordinators:
             soc = coordinator.data.get("battery_soc") if coordinator.data else None
-            if setpoint_active and soc is not None and soc >= ctrl._delay_soc_setpoint:
+            active_balance_enabled = bool(
+                getattr(coordinator, "active_balance_mode_enabled", False)
+            )
+            # Active balance owns only its selected battery; other batteries at
+            # the floor must retain their individual charge-delay block.
+            if (
+                setpoint_active
+                and not active_balance_enabled
+                and soc is not None
+                and soc >= ctrl._delay_soc_setpoint
+            ):
                 ctrl.set_charge_block(
                     "charge_delay_setpoint",
                     "charge_delay",

@@ -15,6 +15,10 @@ from types import SimpleNamespace
 
 import pytest
 
+from custom_components.omnibattery import ChargeDischargeController
+from custom_components.omnibattery.control.active_balance_mode import (
+    ActiveBalanceModeManager,
+)
 from custom_components.omnibattery.control.charge_delay import (
     ChargeDelayManager,
     _TRANSIENT_UNLOCK_REASONS,
@@ -440,7 +444,6 @@ def _setpoint_controller(coords, **overrides):
         _charge_delay_unlocked=False,
         _delay_setpoint_reached=False,
         coordinators=coords,
-        _active_balance_overrides_delay=lambda: False,
         _balance_monitor_overrides_delay=lambda: False,
     )
     base.update(overrides)
@@ -473,6 +476,17 @@ def test_setpoint_blocks_only_battery_above_setpoint():
     assert ctrl.blocks.get("charge_delay_setpoint", set()) == {"Marstek"}
 
 
+def test_setpoint_block_only_bypassed_by_active_balance_battery():
+    active = _ncoord("Balancing", soc=87)
+    active.active_balance_mode_enabled = True
+    normal = _ncoord("Normal", soc=87)
+    ctrl = _setpoint_controller([active, normal])
+
+    _mgr_for(ctrl).refresh_setpoint_blocks()
+
+    assert ctrl.blocks.get("charge_delay_setpoint", set()) == {"Normal"}
+
+
 def test_setpoint_blocks_cleared_once_floor_reached():
     # _delay_setpoint_reached -> forecast phase governs all; no per-battery floor.
     leader = _ncoord("Marstek", soc=87)
@@ -496,6 +510,41 @@ def test_setpoint_blocks_noop_when_feature_disabled():
     ctrl = _setpoint_controller([leader], _delay_soc_setpoint_enabled=False)
     _mgr_for(ctrl).refresh_setpoint_blocks()
     assert ctrl.blocks.get("charge_delay_setpoint", set()) == set()
+
+
+def test_active_balance_keeps_global_charge_delay_block():
+    calls = {"set": [], "remove": []}
+    balancing = _ncoord("Balancing", soc=87)
+    balancing.active_balance_mode_enabled = True
+    ctrl = ChargeDischargeController.__new__(ChargeDischargeController)
+    ctrl.charge_delay_enabled = True
+    ctrl.coordinators = [balancing]
+    ctrl._charge_delay_status = {"state": "Delayed"}
+    ctrl._charge_delay_mgr = SimpleNamespace(
+        is_charge_delayed=lambda: True,
+        refresh_setpoint_blocks=lambda: None,
+    )
+    ctrl.set_charge_block = (
+        lambda source, reason, details=None: calls["set"].append(source)
+    )
+    ctrl.remove_charge_block = lambda source: calls["remove"].append(source)
+    ctrl._refresh_time_slot_blocks = lambda: None
+    ctrl._apply_price_discharge_block = lambda: None
+    ctrl._refresh_ev_blocks = lambda: None
+    ctrl._refresh_dynamic_power_control_block = lambda: None
+    ctrl._refresh_user_battery_blocks = lambda: None
+    ctrl._refresh_normal_balance_blocks = lambda: None
+    ctrl._refresh_battery_charge_limit_blocks = lambda: None
+    ctrl._refresh_battery_discharge_limit_blocks = lambda: None
+    ctrl._global_discharge_blockers = {}
+    active_balance_mgr = ActiveBalanceModeManager.__new__(ActiveBalanceModeManager)
+    active_balance_mgr._controller = ctrl
+    ctrl._active_balance_mgr = active_balance_mgr
+
+    ChargeDischargeController._refresh_operation_blockers(ctrl)
+
+    assert "charge_delay" in calls["set"]
+    assert "charge_delay" not in calls["remove"]
 
 
 # ----------------------------------------------------------------------

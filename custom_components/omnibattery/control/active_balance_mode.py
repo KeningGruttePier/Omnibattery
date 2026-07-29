@@ -1030,14 +1030,3 @@ class ActiveBalanceModeManager:
                 )
 
         self._active_balance_mode_status = statuses
-
-    def _active_balance_overrides_delay(self) -> bool:
-        """Return True when any battery has the scheduled active balance mode enabled.
-
-        Active balance sends direct battery commands in both pre-top and top
-        phases, so charge delay must not block those explicit commands.
-        """
-        return any(
-            bool(getattr(c, "active_balance_mode_enabled", False))
-            for c in self._controller.coordinators
-        )

@@ -1849,10 +1849,11 @@ class ChargeDischargeController:
 
     def _refresh_operation_blockers(self) -> None:
         """Refresh all runtime operation blockers for the current control cycle."""
+        # Active balance ignores this source on its explicit per-battery writes.
+        # Keep the global block so every other battery remains delayed.
         if (
             self.charge_delay_enabled
             and self._charge_delay_mgr.is_charge_delayed()
-            and not self._active_balance_overrides_delay()
         ):
             self.set_charge_block(
                 "charge_delay",
@@ -2236,9 +2237,6 @@ class ChargeDischargeController:
     def _balance_monitor_overrides_delay(self) -> bool:
         """Return True when the weekly full charge should bypass the solar charge delay today."""
         return self._weekly_full_charge_skip_delay and self._weekly_charge_mgr.is_active()
-
-    def _active_balance_overrides_delay(self) -> bool:
-        return self._active_balance_mgr._active_balance_overrides_delay()
 
     # -------------------------------------------------------------------------
     # Setpoint offset management
