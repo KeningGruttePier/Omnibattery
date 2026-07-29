@@ -1,0 +1,65 @@
+blueprint:
+  name: "Omnibattery - Peak Shaving Limit Sync"
+  description: >
+    Synchronizes Omnibattery's Capacity Protection Limit with the current
+    monthly peak measurement. The measured kW value is converted to W before
+    updating the number entity.
+  domain: automation
+  source_url: "https://github.com/ffunes/omnibattery/blob/main/blueprints/peak_shaving_limit_sync_blueprint.yaml"
+
+  input:
+    monthly_peak_sensor:
+      name: "Monthly Peak Sensor"
+      description: >
+        Sensor reporting the current monthly peak. Values in kW and W are
+        supported and converted automatically.
+      selector:
+        entity:
+          filter:
+            domain: sensor
+
+    capacity_protection_limit:
+      name: "Capacity Protection Limit"
+      description: "Omnibattery Capacity Protection Limit number entity, in W."
+      default: number.omnibattery_capacity_protection_limit
+      selector:
+        entity:
+          filter:
+            domain: number
+
+variables:
+  monthly_peak_sensor: !input monthly_peak_sensor
+  capacity_protection_limit: !input capacity_protection_limit
+
+trigger:
+  - platform: state
+    entity_id: !input monthly_peak_sensor
+
+  - platform: state
+    entity_id: !input capacity_protection_limit
+
+  - platform: time_pattern
+    seconds: "/15"
+
+condition:
+  - condition: template
+    value_template: >
+      {% set unit = state_attr(monthly_peak_sensor, 'unit_of_measurement') %}
+      {% set peak = states(monthly_peak_sensor) | float(none) %}
+      {% set multiplier = 1000 if unit == 'kW' else 1 if unit == 'W' else none %}
+      {{ peak is not none
+         and multiplier is not none
+         and states(capacity_protection_limit) | int(0) != (peak * multiplier) | int(0) }}
+
+action:
+  - service: number.set_value
+    target:
+      entity_id: !input capacity_protection_limit
+    data:
+      value: >
+        {% set unit = state_attr(monthly_peak_sensor, 'unit_of_measurement') %}
+        {% set peak = states(monthly_peak_sensor) | float(0) %}
+        {% set multiplier = 1000 if unit == 'kW' else 1 %}
+        {{ (peak * multiplier) | int(0) }}
+
+mode: single

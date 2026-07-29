@@ -59,6 +59,7 @@ plugins:
           nav_translations:
             Home: Inicio
             Installation: Instalación
+            Blueprints: Blueprints
             Configuration: Configuración
             Overview: Resumen
             Main sensor: Sensor principal
@@ -124,6 +125,7 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Installation: installation.md
+  - Blueprints: blueprints.md
   - Configuration:
       - Overview: configuration/index.md
       - Main sensor: configuration/main-sensor.md
