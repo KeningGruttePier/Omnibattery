@@ -6,7 +6,9 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util import dt as dt_util
 import logging
 
 _LOGGER = logging.getLogger(__name__)
@@ -231,7 +233,13 @@ class PdControlQualitySensor(SensorEntity):
         }
 
 
-class MarstekVenusAggregateSensor(SensorEntity):
+_DAILY_AGGREGATE_SOURCE_KEYS = {
+    "system_daily_charging_energy": "total_daily_charging_energy",
+    "system_daily_discharging_energy": "total_daily_discharging_energy",
+}
+
+
+class MarstekVenusAggregateSensor(RestoreEntity, SensorEntity):
     """Representation of an aggregate sensor combining all batteries."""
 
     def __init__(
@@ -254,17 +262,44 @@ class MarstekVenusAggregateSensor(SensorEntity):
         self._attr_icon = definition.get("icon")
         self._attr_should_poll = False
 
-        # Register as listener to all coordinators
-        for coordinator in coordinators:
-            coordinator.async_add_listener(self._handle_coordinator_update)
+        self._daily_source_key = _DAILY_AGGREGATE_SOURCE_KEYS.get(definition["key"])
+        self._daily_value: float | None = None
+        self._daily_reset_date = dt_util.now().date().isoformat()
+
+    async def async_added_to_hass(self) -> None:
+        """Restore daily aggregates before coordinator callbacks can publish."""
+        await super().async_added_to_hass()
+
+        if self._daily_source_key is not None:
+            today = dt_util.now().date().isoformat()
+            last_state = await self.async_get_last_state()
+            if last_state is not None:
+                reset_date = last_state.attributes.get("reset_date")
+                if reset_date is None:
+                    reset_date = (
+                        dt_util.as_local(last_state.last_updated).date().isoformat()
+                    )
+                if reset_date == today:
+                    try:
+                        restored_value = float(last_state.state)
+                    except (TypeError, ValueError):
+                        restored_value = None
+                    if restored_value is not None and restored_value >= 0:
+                        self._daily_value = restored_value
+            self._daily_reset_date = today
+            self._refresh_daily_value()
+
+        # Register only after restore. Registering in __init__ allowed the
+        # aggregate to publish while per-battery RestoreEntity work was pending.
+        for coordinator in self.coordinators:
+            self.async_on_remove(
+                coordinator.async_add_listener(self._handle_coordinator_update)
+            )
     
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from any coordinator."""
-        # The listener is registered in __init__, so it also fires for a
-        # disabled entity (never added to hass). Writing state then raises
-        # RuntimeError and breaks the coordinator's listener-notify loop.
-        if self.hass is None:
-            return
+        if self._daily_source_key is not None:
+            self._refresh_daily_value()
         self.async_write_ha_state()
 
     @property
@@ -282,10 +317,8 @@ class MarstekVenusAggregateSensor(SensorEntity):
             return self._calculate_total_energy()
         elif key == "system_stored_energy":
             return self._calculate_total_stored_energy()
-        elif key == "system_daily_charging_energy":
-            return self._calculate_daily_charging_energy()
-        elif key == "system_daily_discharging_energy":
-            return self._calculate_daily_discharging_energy()
+        elif key in _DAILY_AGGREGATE_SOURCE_KEYS:
+            return self._daily_value
         elif key == "home_consumption":
             return self._calculate_home_consumption()
         elif key == "system_battery_cell_power":
@@ -469,39 +502,55 @@ class MarstekVenusAggregateSensor(SensorEntity):
         
         return round(total_stored, self.definition.get("precision", 3))
     
-    def _calculate_daily_charging_energy(self) -> float | None:
-        """Calculate total daily charging energy across all batteries."""
-        total_energy = 0
-        has_data = False
-
-        for coordinator in self.coordinators:
-            if coordinator.data:
-                energy = coordinator.data.get("total_daily_charging_energy")
-                if energy is not None:
-                    total_energy += energy
-                    has_data = True
-
-        if not has_data:
+    def _complete_daily_sum(self, today: str) -> float | None:
+        """Return the sum only when every source belongs to the current day."""
+        if self._daily_source_key is None:
             return None
+
+        total_energy = 0.0
+        reset_key = f"{self._daily_source_key}_reset_date"
+        for coordinator in self.coordinators:
+            data = coordinator.data
+            if not data or data.get(reset_key) != today:
+                return None
+            energy = data.get(self._daily_source_key)
+            try:
+                value = float(energy)
+            except (TypeError, ValueError):
+                return None
+            if value < 0:
+                return None
+            total_energy += value
 
         return round(total_energy, self.definition.get("precision", 2))
 
-    def _calculate_daily_discharging_energy(self) -> float | None:
-        """Calculate total daily discharging energy across all batteries."""
-        total_energy = 0
-        has_data = False
+    def _refresh_daily_value(self) -> None:
+        """Accept complete monotonic sums, resetting only on a local-day change."""
+        today = dt_util.now().date().isoformat()
+        if today != self._daily_reset_date:
+            self._daily_reset_date = today
+            self._daily_value = 0.0
 
-        for coordinator in self.coordinators:
-            if coordinator.data:
-                energy = coordinator.data.get("total_daily_discharging_energy")
-                if energy is not None:
-                    total_energy += energy
-                    has_data = True
+        candidate = self._complete_daily_sum(today)
+        if candidate is None:
+            return
+        if self._daily_value is None or candidate >= self._daily_value:
+            self._daily_value = candidate
+            return
 
-        if not has_data:
+        _LOGGER.debug(
+            "Ignoring same-day decrease for %s: %.2f -> %.2f",
+            self.entity_id,
+            self._daily_value,
+            candidate,
+        )
+
+    @property
+    def extra_state_attributes(self):
+        """Expose the local reset date for safe same-day restoration."""
+        if self._daily_source_key is None:
             return None
-
-        return round(total_energy, self.definition.get("precision", 2))
+        return {"reset_date": self._daily_reset_date}
 
     def _read_power_w(self, entity_id: str) -> float | None:
         """Read a power entity and return its value in Watts, or None if unusable."""

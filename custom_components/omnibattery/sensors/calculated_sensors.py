@@ -502,6 +502,10 @@ class CumulativeDailyEnergySensor(CoordinatorEntity, RestoreEntity, SensorEntity
             last_total=None,
             reset_date=dt_util.now().date().isoformat(),
         )
+        # CoordinatorEntity registers its listener before the asynchronous
+        # RestoreEntity/Recorder recovery below finishes. Ignore callbacks in
+        # that window so a reload cannot publish a transient zero.
+        self._restore_complete = False
 
     async def async_added_to_hass(self) -> None:
         """Restore today's accumulator and cumulative-counter baseline."""
@@ -527,6 +531,7 @@ class CumulativeDailyEnergySensor(CoordinatorEntity, RestoreEntity, SensorEntity
             self._energy_data = _CumulativeDailyEnergyData(
                 recovered_value, self._energy_data.last_total, today
             )
+        self._restore_complete = True
         self._publish_daily()
 
     async def _recover_daily_value_from_recorder(self, today: str) -> float | None:
@@ -555,6 +560,8 @@ class CumulativeDailyEnergySensor(CoordinatorEntity, RestoreEntity, SensorEntity
     @callback
     def _handle_coordinator_update(self) -> None:
         """Consume the newest hardware total and publish the daily delta."""
+        if not self._restore_complete:
+            return
         self._accumulate()
         self._publish_daily()
         super()._handle_coordinator_update()
@@ -576,6 +583,9 @@ class CumulativeDailyEnergySensor(CoordinatorEntity, RestoreEntity, SensorEntity
         """Make the derived key available to system aggregates and the panel."""
         if self.coordinator.data is not None:
             self.coordinator.data[self._key] = self._energy_data.kwh
+            self.coordinator.data[f"{self._key}_reset_date"] = (
+                self._energy_data.reset_date
+            )
 
     @property
     def native_value(self) -> float:
@@ -669,6 +679,9 @@ class SyntheticEnergySensor(CoordinatorEntity, RestoreEntity, SensorEntity):
         self._backup = None
         self._restored_from_entity = False
         self._backup_restore_done = False
+        # See CumulativeDailyEnergySensor: coordinator callbacks may arrive
+        # while RestoreEntity is still awaiting storage.
+        self._restore_complete = False
 
     async def async_added_to_hass(self) -> None:
         """Restore the accumulated energy on startup.
@@ -711,6 +724,7 @@ class SyntheticEnergySensor(CoordinatorEntity, RestoreEntity, SensorEntity):
 
         # Seed the running total into coordinator.data immediately so the cycle /
         # efficiency sensors can read it before the first poll re-publishes it.
+        self._restore_complete = True
         self._publish_total()
 
     @callback
@@ -762,10 +776,16 @@ class SyntheticEnergySensor(CoordinatorEntity, RestoreEntity, SensorEntity):
         """
         if self.coordinator.data is not None:
             self.coordinator.data[self._key] = self._kwh
+            if self._daily and self._reset_date is not None:
+                self.coordinator.data[f"{self._key}_reset_date"] = (
+                    self._reset_date.isoformat()
+                )
 
     @callback
     def _handle_coordinator_update(self) -> None:
         """Integrate battery_power on each coordinator update, then write state."""
+        if not self._restore_complete:
+            return
         self._maybe_restore_from_backup()
         self._accumulate()
         self._publish_total()
