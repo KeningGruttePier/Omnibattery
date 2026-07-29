@@ -2,8 +2,15 @@
 
 ## [1.2.0b4] - 2026-07-29
 
+### Added
+- **New Home Assistant blueprints**: added optional automations to synchronize the Capacity Protection Limit with a monthly peak sensor, periodically report selected installation states to a central webhook, and automatically dismiss predictive-charging notifications. English and Spanish documentation is included.
+
 ### Changed
 - **Top-cell voltage raised to 3.60 V**: both the normal 100% voltage taper and Active Cell Balance now use 3.60 V, instead of 3.58 V, for their upper stop and 60-second measurement point. Low-power charging still starts earlier and the battery BMS remains the final cutoff. SOC recalibration after a real BMS cutoff is documented and logged as best-effort because some firmware keeps the previous SOC.
+
+### Fixed
+- **Anker battery power could briefly report 0 W while actively charging or discharging**: isolated near-zero Modbus readings are now ignored while a non-zero power setpoint remains active. A genuine idle state is still published after three consecutive near-zero readings. Thanks to @wouterbouvy.
+
 
 ## [1.2.0b3] - 2026-07-28
 
