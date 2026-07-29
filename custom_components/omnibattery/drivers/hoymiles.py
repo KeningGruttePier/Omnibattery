@@ -20,7 +20,9 @@ from .base import BatteryDriver, DriverCapabilities, ReadGroup, SetpointResult, 
 _LOGGER = logging.getLogger(__name__)
 _DEFAULT_MAX_POWER_W = 1000
 _ABSOLUTE_MAX_POWER_W = 2000
-_KEEPALIVE_S = 50
+_KEEPALIVE_S = 30
+_KEEPALIVE_RETRY_S = 5
+_KEEPALIVE_DELTA_W = 1.0
 
 SENSOR_DEFINITIONS: list[dict] = [
     {"key": "battery_soc", "name": "Battery SOC", "unit": "%", "device_class": "battery", "state_class": "measurement", "scale": 1, "precision": 0, "scan_interval": "high", "enabled_by_default": True},
@@ -227,9 +229,9 @@ class HoymilesMqttDriver(BatteryDriver):
         wire = float(-net_power_w)
         if refresh and self._last_wire_power is not None:
             # Alternate from the last payload, not from the logical target. At
-            # an envelope edge this yields e.g. -1000.0/-999.9 rather than
+            # an envelope edge this yields e.g. -1000/-999 rather than
             # repeatedly choosing the same inward value.
-            offset = -0.1 if self._keepalive_offset else 0.1
+            offset = -_KEEPALIVE_DELTA_W if self._keepalive_offset else _KEEPALIVE_DELTA_W
             candidate = self._last_wire_power + offset
             if -self._max_charge_w <= candidate <= self._max_discharge_w:
                 wire = candidate
@@ -267,10 +269,12 @@ class HoymilesMqttDriver(BatteryDriver):
             self._keepalive_task = self.hass.async_create_task(self._keepalive_loop())
 
     async def _keepalive_loop(self) -> None:
+        delay_s = _KEEPALIVE_S
         try:
             while True:
-                await asyncio.sleep(_KEEPALIVE_S)
-                await self._refresh_command()
+                await asyncio.sleep(delay_s)
+                refreshed = await self._refresh_command()
+                delay_s = _KEEPALIVE_S if refreshed else _KEEPALIVE_RETRY_S
         except asyncio.CancelledError:
             raise
 

@@ -110,9 +110,10 @@ protocol automatically:
 - zero holds the battery idle.
 
 When control is active, the driver selects `mqtt_ctrl` and renews the command
-about every 50 seconds. This renewal is required because the MS-A2 returns to
-its internal logic when external MQTT commands stop. When Omnibattery unloads,
-it sends `0 W` and restores `general`.
+about every 30 seconds, varying the repeated setpoint by `1 W` because identical
+values may be ignored. A failed renewal is retried after 5 seconds. This is
+required because the MS-A2 returns to its internal logic when external MQTT
+commands stop. When Omnibattery unloads, it sends `0 W` and restores `general`.
 
 SOC limits are enforced by Omnibattery software because the MQTT protocol does
 not expose writable MS-A2 SOC cutoffs. Cell-voltage balance and voltage-taper

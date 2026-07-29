@@ -75,7 +75,7 @@ async def test_setpoint_clamps_inverts_and_close_restores_general(mqtt_mock):
     assert mqtt_mock.published[-1] == (driver._power_set_topic, "-800", 1, False)
     assert driver.net_power_from_data(result.applied) == 800
     await driver._refresh_command()
-    assert mqtt_mock.published[-1][1] in ("-799.9", "-800")
+    assert mqtt_mock.published[-1][1] in ("-799", "-800")
     await driver.close()
     assert mqtt_mock.published[-3:] == [
         (driver._ems_command_topic, "mqtt_ctrl", 1, False),
@@ -99,16 +99,40 @@ async def test_setpoint_publish_failure_and_keepalive_alternation_at_both_limits
     first = mqtt_mock.published[-1][1]
     await driver._refresh_command()
     second = mqtt_mock.published[-1][1]
-    assert {first, second} == {"-800", "-799.9"}
+    assert {first, second} == {"-800", "-799"}
 
     await driver.apply_setpoint(-700, read_back=False)
     await driver._refresh_command()
     first = mqtt_mock.published[-1][1]
     await driver._refresh_command()
     second = mqtt_mock.published[-1][1]
-    assert {first, second} == {"700", "699.9"}
+    assert {first, second} == {"700", "699"}
     assert driver._last_net_power_w == -700
     await driver.close()
+
+
+@pytest.mark.asyncio
+async def test_keepalive_retries_quickly_after_refresh_failure(monkeypatch):
+    driver = HoymilesMqttDriver(SimpleNamespace(async_create_task=asyncio.create_task), "MSA-1")
+    refresh = AsyncMock(side_effect=[False, True])
+    delays = []
+
+    async def record_sleep(delay):
+        delays.append(delay)
+        if len(delays) == 3:
+            raise asyncio.CancelledError
+
+    monkeypatch.setattr(driver, "_refresh_command", refresh)
+    monkeypatch.setattr(
+        "custom_components.omnibattery.drivers.hoymiles.asyncio.sleep",
+        record_sleep,
+    )
+
+    with pytest.raises(asyncio.CancelledError):
+        await driver._keepalive_loop()
+
+    assert delays == [30, 5, 30]
+    assert refresh.await_count == 2
 
 
 @pytest.mark.asyncio

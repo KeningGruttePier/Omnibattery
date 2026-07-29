@@ -114,9 +114,11 @@ protocolo de Hoymiles:
 - cero mantiene la batería en reposo.
 
 Cuando el control está activo, el driver selecciona `mqtt_ctrl` y renueva la
-orden aproximadamente cada 50 segundos. Esta renovación es necesaria porque la
-MS-A2 vuelve a su lógica interna cuando dejan de llegar órdenes MQTT externas.
-Al descargar Omnibattery se envían `0 W` y se restaura `general`.
+orden aproximadamente cada 30 segundos, variando `1 W` el setpoint repetido
+porque los valores idénticos pueden ignorarse. Si una renovación falla, se
+reintenta después de 5 segundos. Esto es necesario porque la MS-A2 vuelve a su
+lógica interna cuando dejan de llegar órdenes MQTT externas. Al descargar
+Omnibattery se envían `0 W` y se restaura `general`.
 
 Omnibattery aplica los límites de SOC por software porque el protocolo MQTT no
 expone límites de SOC editables de la MS-A2. El balanceo por tensión de celda y
