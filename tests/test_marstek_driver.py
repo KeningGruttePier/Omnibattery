@@ -185,22 +185,20 @@ def test_capabilities_use_version_loaded_definitions():
     assert v2.has_alarm_registers is True
 
 
-@pytest.mark.parametrize("version", ["v2", "v3"])
-def test_venus_e_daily_energy_is_derived_from_lifetime_counters(version):
-    """Venus E avoids its unreliable daily registers, like Anker does."""
+@pytest.mark.parametrize("version", ["v2", "v3", "vA", "vD"])
+def test_marstek_daily_energy_is_derived_from_lifetime_counters(version):
+    """Every Marstek model uses the same software-derived daily counters."""
     drv = MarstekModbusDriver("1.2.3.4", 502, version, client=_fake_client())
 
     assert drv.capabilities.has_daily_energy_counters is False
+    sensor_keys = {definition["key"] for definition in drv.sensor_definitions}
+    assert sensor_keys.isdisjoint(
+        {"total_daily_charging_energy", "total_daily_discharging_energy"}
+    )
     assert {
-        definition["key"] for definition in drv.sensor_definitions
-    }.isdisjoint({"total_daily_charging_energy", "total_daily_discharging_energy"})
-
-
-@pytest.mark.parametrize("version", ["vA", "vD"])
-def test_hybrid_models_keep_hardware_daily_energy_counters(version):
-    drv = MarstekModbusDriver("1.2.3.4", 502, version, client=_fake_client())
-
-    assert drv.capabilities.has_daily_energy_counters is True
+        "total_charging_energy",
+        "total_discharging_energy",
+    }.issubset(sensor_keys)
 
 
 # ----------------------------------------------------------------------

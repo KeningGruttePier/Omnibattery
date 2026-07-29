@@ -641,7 +641,7 @@ class MarstekVenusDataUpdateCoordinator(DataUpdateCoordinator):
         dependency_keys_set = {dep_key for defn in all_definitions_for_deps
                             for dep_key in defn.get("dependency_keys", {}).values()
                             if dep_key}
-        # Daily energy derived from lifetime counters (Anker and Venus E v2/v3)
+        # Daily energy derived from lifetime counters (Anker and all Marstek)
         # remains meaningful even when the user disables the lifetime-total
         # entities in Home Assistant. Keep the source counters polling so the
         # derived daily entities do not stay at zero.
