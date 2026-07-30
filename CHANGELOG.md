@@ -4,6 +4,7 @@
 
 ### Fixed
 - **Zendure total and stored energy could remain unknown despite a configured capacity**: Zendure now explicitly reports that nominal capacity is not available from its local API, allowing the coordinator to inject the configured kWh value. This restores the per-battery total energy, stored energy and calculated cycle sensors, and includes Zendure capacity and stored energy in the system aggregates.
+- **Active Cell Balance could inject low-voltage glitches into Cell Delta history**: the discharge-to-charge transition briefly reports Standby and near-zero residual power before the 95 W charge command engages, which could be mistaken for a BMS rejection and publish a 90–100 mV reading between valid top-voltage measurements. New charge legs now receive a 10-second engage grace, and below-stop rejection diagnostics no longer feed the Cell Delta sensor, four-reading average or trend. Existing stored rejection readings are filtered when balance entities are restored.
 
 
 ## [1.2.0b4] - 2026-07-29
