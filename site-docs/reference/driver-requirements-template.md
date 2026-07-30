@@ -159,7 +159,8 @@ on the base class; a new driver must still implement them.
 | `has_rs485_control` | `...` | `...` |
 | `has_energy_counters` | `...` | `...` |
 | `setpoint_confirm_reliable` | `...` | `...` |
-| `actuator_latency_s` | `...` | Worst case, not average |
+| `actuator_latency_s` | `...` | Measured physical response timescale |
+| `readback_latency_s` | `...` | Worst-case settled telemetry delay, if different |
 
 ## 4. Minimum telemetry and control levers
 
@@ -175,7 +176,8 @@ on the base class; a new driver must still implement them.
 | Maximum power | B | Per-model values or device readings | C values bounded by official maxima |
 | Availability/freshness | B | Error, timestamp or equivalent | Driver cache expiry timer |
 | Setpoint echo | R | Applied/accepted mode and limit | Intent cache only optimises; it is not measured power |
-| Actuator latency | R | Write-to-application-to-telemetry delay | Hardware measurement with conservative margin |
+| Actuator latency | R | Write-to-physical-response delay | Hardware measurement with conservative margin |
+| Readback latency | R | Write-to-settled-telemetry delay | Reuse actuator latency only when both are equivalent |
 | Reliable minimum power | R | Sustainable non-zero minimum and command step | Validated per-model C constant |
 
 ### Optional feature inputs
@@ -229,7 +231,7 @@ or different vendor enum may implement the same contract.
 | No Marstek force mode | Map net power to `acMode` plus input/output limits |
 | Read-only charge cap | Combine the device cap with a user software ceiling |
 | Cells reported per pack | Derive global extremes and optionally expose per-pack keys |
-| Multi-second readback lag | Set unreliable confirmation and conservative actuator latency capabilities |
+| Multi-second readback lag | Set unreliable confirmation and a conservative readback latency |
 | Frequent writes may touch flash | Use volatile setpoints and explicit persistent configuration writes |
 
 Accept a substitute only when its sign, timing, range and persistence have been

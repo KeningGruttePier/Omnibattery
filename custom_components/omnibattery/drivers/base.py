@@ -100,16 +100,19 @@ class DriverCapabilities:
     # than warning — the retry still confirms it. Defaults True.
     setpoint_confirm_reliable: bool = True
 
-    # Approximate worst-case time (seconds) between issuing a setpoint and the
-    # device both reaching it and reflecting the new power in its telemetry. Drives
-    # the control loop's per-driver pacing: a slow actuator gets a longer grid-filter
-    # time constant and a higher minimum cycle interval (so the loop does not fire
-    # several corrections before the first one lands — dead-time-induced oscillation),
-    # skips the multi-second-settle hot-path readback, and is excluded from the
-    # measured-power feedforward (its telemetry lags the command by seconds). A
-    # register battery reaches its setpoint well within one poll; an HTTP/MQTT
-    # actuator can take seconds. Defaults to the fast (register) case.
+    # Approximate physical response time (seconds) after issuing a setpoint. The
+    # zero-cross guard uses it to avoid commanding the opposite direction while
+    # the previous command is still taking effect. Readback freshness is declared
+    # separately below because a device may begin responding quickly while its
+    # telemetry takes several more seconds to settle.
     actuator_latency_s: float = 0.5
+
+    # Worst-case time (seconds) before post-command telemetry can be trusted as a
+    # settled readback. ``None`` preserves the historical behaviour by falling
+    # back to ``actuator_latency_s``. Drivers with distinct actuation and telemetry
+    # timing should report both values so hot-path ACK checks can be skipped
+    # without changing the physical-response model.
+    readback_latency_s: Optional[float] = None
 
     # Minimum reliable operating power (watts, per unit) below which the hardware
     # will not sustain a non-zero charge/discharge. Marstek v2/v3 report 800 W (the

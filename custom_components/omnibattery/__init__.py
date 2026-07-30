@@ -156,7 +156,7 @@ from .const import (
     MAX_SENSOR_STALE_S,
     SLOW_SENSOR_WARN_INTERVALS,
     FORECAST_DATA_ISSUE_DELAY_S,
-    FAST_ACTUATOR_MAX_LATENCY_S,
+    HOT_PATH_READBACK_MAX_LATENCY_S,
     DISCHARGE_ENGAGE_GRACE_S,
     IDLE_RUNAWAY_POWER_W,
     IDLE_RUNAWAY_GRACE_S,
@@ -3402,6 +3402,14 @@ class ChargeDischargeController:
         # mode), delivery drops and we fall through to a real write so the tracker
         # keeps seeing it.
         data = coordinator.data or {}
+        readback_latency_s = getattr(
+            coordinator.capabilities, "readback_latency_s", None
+        )
+        if readback_latency_s is None:
+            readback_latency_s = coordinator.capabilities.actuator_latency_s
+        hot_path_readback = (
+            readback_latency_s <= HOT_PATH_READBACK_MAX_LATENCY_S
+        )
         current_net = coordinator.driver.net_power_from_data(data)
         if not force_write and current_net is not None and current_net == net_power:
             skip_write = True
@@ -3476,8 +3484,7 @@ class ChargeDischargeController:
                 if (
                     batt_power is not None
                     and not skip_write
-                    and coordinator.capabilities.actuator_latency_s
-                    > FAST_ACTUATOR_MAX_LATENCY_S
+                    and not hot_path_readback
                 ):
                     await self._check_non_delivery(
                         coordinator, abs(net_power), float(batt_power), attempt=0,
@@ -3492,8 +3499,7 @@ class ChargeDischargeController:
                 if (
                     batt_power is not None
                     and not skip_write
-                    and coordinator.capabilities.actuator_latency_s
-                    > FAST_ACTUATOR_MAX_LATENCY_S
+                    and not hot_path_readback
                 ):
                     await self._check_non_delivery(
                         coordinator, net_power, float(batt_power), attempt=0,
@@ -3532,7 +3538,7 @@ class ChargeDischargeController:
         coordinator._pd_write_count = write_count + 1
         read_back = (
             (write_count % PD_READBACK_EVERY_N_WRITES) == 0
-            and coordinator.capabilities.actuator_latency_s <= FAST_ACTUATOR_MAX_LATENCY_S
+            and hot_path_readback
         )
 
         # Attempt the setpoint + verify, with one retry on failure.

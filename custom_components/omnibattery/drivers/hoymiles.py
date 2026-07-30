@@ -22,7 +22,6 @@ _DEFAULT_MAX_POWER_W = 1000
 _ABSOLUTE_MAX_POWER_W = 2000
 _KEEPALIVE_S = 30
 _KEEPALIVE_RETRY_S = 5
-_KEEPALIVE_DELTA_W = 1.0
 
 SENSOR_DEFINITIONS: list[dict] = [
     {"key": "battery_soc", "name": "Battery SOC", "unit": "%", "device_class": "battery", "state_class": "measurement", "scale": 1, "precision": 0, "scan_interval": "high", "enabled_by_default": True},
@@ -45,11 +44,14 @@ class HoymilesMqttDriver(BatteryDriver):
                  max_discharge_power_w: int = _DEFAULT_MAX_POWER_W) -> None:
         self.hass = hass
         self.device_id = device_id
-        self._max_charge_w = min(_ABSOLUTE_MAX_POWER_W, max(0, int(max_charge_power_w or _DEFAULT_MAX_POWER_W)))
-        self._max_discharge_w = min(_ABSOLUTE_MAX_POWER_W, max(0, int(max_discharge_power_w or _DEFAULT_MAX_POWER_W)))
+        self._configured_max_charge_w = min(_ABSOLUTE_MAX_POWER_W, max(0, int(max_charge_power_w or _DEFAULT_MAX_POWER_W)))
+        self._configured_max_discharge_w = min(_ABSOLUTE_MAX_POWER_W, max(0, int(max_discharge_power_w or _DEFAULT_MAX_POWER_W)))
+        self._max_charge_w = self._configured_max_charge_w
+        self._max_discharge_w = self._configured_max_discharge_w
         self._capabilities = DriverCapabilities(False, False, True, self._max_charge_w, self._max_discharge_w,
             False, False, False, has_energy_counters=True, has_daily_energy_counters=True,
-            has_nominal_capacity=False, setpoint_confirm_reliable=False, actuator_latency_s=1.8)
+            has_nominal_capacity=False, setpoint_confirm_reliable=False,
+            actuator_latency_s=1.8, readback_latency_s=4.0)
         self._cache: dict[str, Any] = {}
         self._connected = False
         self._shutting_down = False
@@ -57,8 +59,6 @@ class HoymilesMqttDriver(BatteryDriver):
         self._write_lock = asyncio.Lock()
         self._keepalive_task: asyncio.Task | None = None
         self._last_net_power_w: int | None = None
-        self._keepalive_offset = False
-        self._last_wire_power: float | None = None
         self._read_groups = [ReadGroup("high", tuple(d["key"] for d in SENSOR_DEFINITIONS))]
 
     @property
@@ -201,14 +201,48 @@ class HoymilesMqttDriver(BatteryDriver):
     def _handle_power_config(self, message) -> None:
         data = self._payload(message)
         if not data: return
-        minimum, maximum = self._number(data, "min"), self._number(data, "max")
-        if maximum is None: return
-        # MQTT discovery uses a signed wire envelope. Avoid ever inflating caps.
-        self._max_charge_w = min(_ABSOLUTE_MAX_POWER_W, max(0, int(-minimum))) if minimum is not None and minimum < 0 else self._max_charge_w
-        self._max_discharge_w = min(_ABSOLUTE_MAX_POWER_W, max(0, int(maximum)))
+        device_charge_w, device_discharge_w = self._device_power_caps(data)
+        if device_charge_w is None and device_discharge_w is None: return
+        # The discovery ``max`` overstates a standalone MS-A2 (2000 W advertised,
+        # 1000 W delivered). Keep the user's configured ceilings authoritative
+        # and only shrink them using the symmetric, device-derived envelope.
+        self._max_charge_w = min(
+            self._configured_max_charge_w,
+            device_charge_w if device_charge_w is not None else _ABSOLUTE_MAX_POWER_W,
+        )
+        self._max_discharge_w = min(
+            self._configured_max_discharge_w,
+            device_discharge_w if device_discharge_w is not None else _DEFAULT_MAX_POWER_W,
+        )
         self._capabilities = DriverCapabilities(False, False, True, self._max_charge_w, self._max_discharge_w,
             False, False, False, has_energy_counters=True, has_daily_energy_counters=True,
-            has_nominal_capacity=False, setpoint_confirm_reliable=False, actuator_latency_s=1.8)
+            has_nominal_capacity=False, setpoint_confirm_reliable=False,
+            actuator_latency_s=1.8, readback_latency_s=4.0)
+        if self._last_net_power_w is not None:
+            self._last_net_power_w = self._clamp(self._last_net_power_w)
+            self._cache["commanded_net_power"] = self._last_net_power_w
+
+    @classmethod
+    def _device_power_caps(cls, data: dict) -> tuple[int | None, int | None]:
+        """Return safe symmetric caps from the signed MQTT discovery envelope."""
+        minimum, maximum = cls._number(data, "min"), cls._number(data, "max")
+        charge_w = (
+            min(_ABSOLUTE_MAX_POWER_W, max(0, int(-minimum)))
+            if minimum is not None and minimum < 0
+            else None
+        )
+        advertised_discharge_w = (
+            min(_ABSOLUTE_MAX_POWER_W, max(0, int(maximum)))
+            if maximum is not None and maximum > 0
+            else None
+        )
+        if advertised_discharge_w is None:
+            return charge_w, None
+        # MS-A2 charge and discharge hardware are symmetric. The charge-side
+        # magnitude distinguishes a 1 kW standalone unit from a 2 kW pair, while
+        # firmware 01.06.03 incorrectly advertises 2 kW discharge for one unit.
+        symmetric_ceiling_w = charge_w if charge_w is not None else _DEFAULT_MAX_POWER_W
+        return charge_w, min(advertised_discharge_w, symmetric_ceiling_w)
 
     def _merge_battery(self, data: dict) -> None:
         soc = self._number(data, "sys_soc")
@@ -225,20 +259,9 @@ class HoymilesMqttDriver(BatteryDriver):
     def _clamp(self, net_power_w: int) -> int:
         return max(-self._max_discharge_w, min(self._max_charge_w, int(round(net_power_w))))
 
-    def _wire_for(self, net_power_w: int, *, refresh: bool = False) -> float:
-        wire = float(-net_power_w)
-        if refresh and self._last_wire_power is not None:
-            # Alternate from the last payload, not from the logical target. At
-            # an envelope edge this yields e.g. -1000/-999 rather than
-            # repeatedly choosing the same inward value.
-            offset = -_KEEPALIVE_DELTA_W if self._keepalive_offset else _KEEPALIVE_DELTA_W
-            candidate = self._last_wire_power + offset
-            if -self._max_charge_w <= candidate <= self._max_discharge_w:
-                wire = candidate
-                self._keepalive_offset = not self._keepalive_offset
-            else:
-                wire = self._last_wire_power - offset
-        return wire
+    @staticmethod
+    def _wire_for(net_power_w: int) -> float:
+        return float(-net_power_w)
 
     async def _publish(self, mode: str, wire_power: float | None) -> None:
         await mqtt.async_publish(self.hass, self._ems_command_topic, mode, qos=1, retain=False)
@@ -254,8 +277,7 @@ class HoymilesMqttDriver(BatteryDriver):
             async with self._write_lock:
                 wire = self._wire_for(applied)
                 await self._publish("mqtt_ctrl", wire)
-                self._last_wire_power, self._last_net_power_w = wire, applied
-                self._keepalive_offset = False
+                self._last_net_power_w = applied
                 self._cache["commanded_net_power"] = applied
         except Exception as err:
             _LOGGER.debug("Hoymiles MQTT command failed: %s", err)
@@ -283,9 +305,10 @@ class HoymilesMqttDriver(BatteryDriver):
             return False
         try:
             async with self._write_lock:
-                wire = self._wire_for(self._last_net_power_w, refresh=True)
+                self._last_net_power_w = self._clamp(self._last_net_power_w)
+                self._cache["commanded_net_power"] = self._last_net_power_w
+                wire = self._wire_for(self._last_net_power_w)
                 await self._publish("mqtt_ctrl", wire)
-                self._last_wire_power = wire
             return True
         except Exception as err:
             _LOGGER.debug("Hoymiles MQTT keepalive failed: %s", err)
@@ -297,7 +320,6 @@ class HoymilesMqttDriver(BatteryDriver):
             async with self._write_lock:
                 await self._publish("mqtt_ctrl", 0)
                 self._last_net_power_w = 0
-                self._last_wire_power = 0
                 self._cache["commanded_net_power"] = 0
             self._ensure_keepalive()
             return True
@@ -328,10 +350,9 @@ class HoymilesMqttDriver(BatteryDriver):
 
         @callback
         def config(message) -> None:
-            data = cls._payload(message) or {}
-            lo, hi = cls._number(data, "min"), cls._number(data, "max")
-            if lo is not None and lo < 0: metadata["device_max_charge_power"] = min(_ABSOLUTE_MAX_POWER_W, int(-lo))
-            if hi is not None and hi > 0: metadata["device_max_discharge_power"] = min(_ABSOLUTE_MAX_POWER_W, int(hi))
+            charge_w, discharge_w = cls._device_power_caps(cls._payload(message) or {})
+            if charge_w is not None: metadata["device_max_charge_power"] = charge_w
+            if discharge_w is not None: metadata["device_max_discharge_power"] = discharge_w
 
         unsubs = []
         try:

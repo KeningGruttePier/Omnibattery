@@ -92,7 +92,7 @@ subscribes directly through Home Assistant.
     |---|---:|
     | Nominal capacity, one MS-A2 | `2.24 kWh` |
     | Nominal capacity, paired system | `4.48 kWh` |
-    | Maximum charge/discharge power | Keep the detected device limit |
+    | Maximum charge/discharge power | `1000 W` per unit; keep the safely detected limit |
     | Maximum SOC | `100 %` |
     | Minimum SOC | `10 %` |
     | Charge hysteresis | `2 %` |
@@ -109,11 +109,18 @@ protocol automatically:
 - negative Omnibattery power discharges it;
 - zero holds the battery idle.
 
-When control is active, the driver selects `mqtt_ctrl` and renews the command
-about every 30 seconds, varying the repeated setpoint by `1 W` because identical
-values may be ignored. A failed renewal is retried after 5 seconds. This is
-required because the MS-A2 returns to its internal logic when external MQTT
-commands stop. When Omnibattery unloads, it sends `0 W` and restores `general`.
+When control is active, the driver selects `mqtt_ctrl` and renews the exact
+command about every 30 seconds. Identical payloads renew the device timeout, so
+the requested setpoint is not altered. A failed renewal is retried after
+5 seconds. This is required because the MS-A2 returns to its internal logic
+about 62 seconds after external MQTT commands stop. When Omnibattery unloads,
+it sends `0 W` and restores `general`.
+
+Firmware `01.06.03` advertises a `-1000…+2000 W` MQTT envelope for one MS-A2
+even though the standalone hardware is limited to 1000 W in both directions.
+Omnibattery therefore derives a symmetric limit from the charge-side magnitude
+and never raises the ceiling selected during setup. A paired system whose
+retained envelope is `-2000…+2000 W` keeps its 2 kW range.
 
 SOC limits are enforced by Omnibattery software because the MQTT protocol does
 not expose writable MS-A2 SOC cutoffs. Cell-voltage balance and voltage-taper

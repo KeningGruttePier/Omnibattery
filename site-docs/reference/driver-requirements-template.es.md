@@ -173,7 +173,8 @@ clase base, el coordinador los usa y el nuevo driver debe implementarlos.
 | `has_rs485_control` | `...` | `...` |
 | `has_energy_counters` | `...` | `...` |
 | `setpoint_confirm_reliable` | `...` | `...` |
-| `actuator_latency_s` | `...` | Medida de peor caso, no promedio |
+| `actuator_latency_s` | `...` | Escala medida de la respuesta física |
+| `readback_latency_s` | `...` | Retardo de peor caso hasta telemetría asentada, si difiere |
 
 ## 4. Mapa mínimo de palancas y telemetría
 
@@ -189,7 +190,8 @@ clase base, el coordinador los usa y el nuevo driver debe implementarlos.
 | Límites máx. de potencia | B | Valores por modelo o lectura del equipo | Configuración C limitada por máximos oficiales |
 | Estado de conexión/frescura | B | Error, timestamp, disponibilidad o mecanismo equivalente | Temporizador de caducidad en el driver |
 | Eco del setpoint | R | Modo/límite aplicado o aceptado | Caché de orden solo para optimizar; no sustituye potencia medida |
-| Latencia de actuador | R | Tiempo escritura → aplicación → reflejo en telemetría | Medición sobre equipo real y margen conservador |
+| Latencia de actuador | R | Tiempo escritura → respuesta física | Medición sobre equipo real y margen conservador |
+| Latencia de readback | R | Tiempo escritura → telemetría asentada | Reutilizar la latencia del actuador solo si ambas coinciden |
 | Potencia mínima fiable | R | Mínimo no nulo sostenible y pasos aceptados | Constante C por modelo, validada físicamente |
 
 ### Telemetría y controles que amplían funciones
@@ -247,7 +249,7 @@ Zendure demuestra qué ausencias se pueden resolver dentro de Omnibattery:
 | No existe `force_mode` Marstek | `acMode` + `inputLimit`/`outputLimit` implementan el setpoint neto |
 | El límite de carga es de solo lectura | Se combina el máximo real del equipo con un techo de software del usuario |
 | Las celdas llegan como una lista de packs | El driver calcula extremos globales y publica también claves por pack |
-| El readback tarda varios segundos | Se declara `setpoint_confirm_reliable=False` y una `actuator_latency_s` conservadora |
+| El readback tarda varios segundos | Se declara `setpoint_confirm_reliable=False` y una `readback_latency_s` conservadora |
 | La escritura frecuente podría tocar flash | Los setpoints usan modo volátil; la configuración persistente usa escritura explícita a flash |
 
 Reglas para aceptar una sustitución:

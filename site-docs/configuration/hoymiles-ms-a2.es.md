@@ -95,7 +95,7 @@ se suscribe directamente a través de Home Assistant.
     |---|---:|
     | Capacidad nominal, una MS-A2 | `2,24 kWh` |
     | Capacidad nominal, sistema emparejado | `4,48 kWh` |
-    | Potencia máxima de carga/descarga | Mantén el límite detectado |
+    | Potencia máxima de carga/descarga | `1000 W` por unidad; mantén el límite detectado de forma segura |
     | SOC máximo | `100 %` |
     | SOC mínimo | `10 %` |
     | Histéresis de carga | `2 %` |
@@ -113,12 +113,19 @@ protocolo de Hoymiles:
 - potencia negativa en Omnibattery descarga la batería;
 - cero mantiene la batería en reposo.
 
-Cuando el control está activo, el driver selecciona `mqtt_ctrl` y renueva la
-orden aproximadamente cada 30 segundos, variando `1 W` el setpoint repetido
-porque los valores idénticos pueden ignorarse. Si una renovación falla, se
-reintenta después de 5 segundos. Esto es necesario porque la MS-A2 vuelve a su
-lógica interna cuando dejan de llegar órdenes MQTT externas. Al descargar
-Omnibattery se envían `0 W` y se restaura `general`.
+Cuando el control está activo, el driver selecciona `mqtt_ctrl` y renueva
+exactamente la orden aproximadamente cada 30 segundos. Los payloads idénticos
+renuevan el timeout del equipo, por lo que no se altera el setpoint solicitado.
+Si una renovación falla, se reintenta después de 5 segundos. Esto es necesario
+porque la MS-A2 vuelve a su lógica interna unos 62 segundos después de dejar de
+recibir órdenes MQTT externas. Al descargar Omnibattery se envían `0 W` y se
+restaura `general`.
+
+El firmware `01.06.03` anuncia por MQTT una envolvente `-1000…+2000 W` para una
+sola MS-A2 aunque el hardware independiente está limitado a 1000 W en ambos
+sentidos. Omnibattery deriva por ello un límite simétrico de la magnitud de
+carga y nunca eleva el techo elegido durante la configuración. Un sistema
+emparejado cuya envolvente retenida sea `-2000…+2000 W` conserva sus 2 kW.
 
 Omnibattery aplica los límites de SOC por software porque el protocolo MQTT no
 expone límites de SOC editables de la MS-A2. El balanceo por tensión de celda y

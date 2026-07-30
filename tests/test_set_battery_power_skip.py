@@ -54,6 +54,18 @@ class _SlowCoord(FakeCoordinator):
         return replace(super().capabilities, actuator_latency_s=3.0)
 
 
+class _DelayedReadbackCoord(FakeCoordinator):
+    """Physical response is fast enough for control, but telemetry settles late."""
+
+    @property
+    def capabilities(self):
+        return replace(
+            super().capabilities,
+            actuator_latency_s=1.0,
+            readback_latency_s=4.0,
+        )
+
+
 def _SlowCoordFake(data):
     return _SlowCoord(
         name="ZEN1",
@@ -555,6 +567,40 @@ async def test_readback_throttled_to_every_n_writes():
         PD_READBACK_EVERY_N_WRITES - 1
     )
     assert seen_read_back[PD_READBACK_EVERY_N_WRITES] is True
+
+
+async def test_readback_latency_is_decoupled_from_actuator_latency():
+    coord = _DelayedReadbackCoord(
+        name="MQTT1",
+        is_available=True,
+        rs485_user_disabled=False,
+        balance_hold=False,
+        min_soc=10,
+        data={
+            "force_mode": 2,
+            "set_charge_power": 0,
+            "set_discharge_power": 300,
+            "battery_power": 0,
+            "battery_soc": 80,
+            "inverter_state": None,
+        },
+        apply_power=AsyncMock(
+            return_value=SetpointResult(
+                ok=True,
+                net_power_w=-300,
+                confirmed=False,
+                battery_power_w=None,
+            )
+        ),
+    )
+    ctrl = _controller()
+
+    result = await ChargeDischargeController._set_battery_power(
+        ctrl, coord, 0, 300
+    )
+
+    assert result is True
+    coord.apply_power.assert_awaited_once_with(-300, read_back=False)
 
 
 async def test_slow_actuator_records_non_delivery_at_poll_time():

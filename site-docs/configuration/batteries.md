@@ -20,7 +20,7 @@ The brand you pick changes the connection fields below: Marstek asks for the Mod
 
 The MS-A2 uses the MQTT broker already configured in Home Assistant; Omnibattery never needs its host, port or credentials. In S-Miles Home, enable **MQTT Service** on firmware that supports it and point it at that HA broker, then enter the MQTT device ID (for example `MSA-280024341346`). MQTT integration must be configured in Home Assistant first.
 
-The setup asks for the nominal usable capacity (default `2.24 kWh`; use `4.48 kWh` for a paired system). Its signed wire power is handled internally: positive Omnibattery power means charging while the device uses negative power for charging. While Omnibattery controls the unit it renews the external `mqtt_ctrl` command about every 30 seconds, varying repeated setpoints by `1 W` and retrying failed renewals after 5 seconds. On unload it sends zero power and restores `general`, so the battery is not left in external control.
+The setup asks for the nominal usable capacity (default `2.24 kWh`; use `4.48 kWh` for a paired system). Its signed wire power is handled internally: positive Omnibattery power means charging while the device uses negative power for charging. While Omnibattery controls the unit it renews the exact external `mqtt_ctrl` command about every 30 seconds and retries failed renewals after 5 seconds. On unload it sends zero power and restores `general`, so the battery is not left in external control.
 
 See [Install and configure a Hoymiles MS-A2](hoymiles-ms-a2.md) for the physical,
 S-Miles Home, MQTT and Omnibattery setup sequence.
