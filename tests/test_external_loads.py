@@ -507,6 +507,24 @@ def test_dynamic_control_allows_residual_after_initial_yield():
 
     assert status["active"] is True
     assert status["charge_blocked"] is False
+    assert status["discharge_blocked"] is True
+    assert status["discharge_blocked_devices"] == ["sensor.dev"]
+    assert status["phases"] == {"sensor.dev": "monitoring_residual"}
+
+
+def test_dynamic_control_cover_home_allows_residual_discharge():
+    loads = _controller(
+        [_dynamic_device(cover_home_when_active=True)],
+        {"sensor.dev": _state(3600), "sensor.solar": _state(5000)},
+        solar_production_sensor="sensor.solar",
+    )
+    loads.refresh_dynamic_power_control()
+    loads._dynamic_yield_until["0:sensor.dev"] = dt_util.utcnow() - timedelta(seconds=1)
+
+    status = loads.refresh_dynamic_power_control()
+
+    assert status["charge_blocked"] is False
+    assert status["discharge_blocked"] is False
     assert status["phases"] == {"sensor.dev": "monitoring_residual"}
 
 
@@ -572,12 +590,14 @@ def test_dynamic_control_without_solar_uses_periodic_probe():
     assert status["phases"] == {"sensor.dev": "yielding"}
 
 
-def test_controller_registers_dynamic_control_charge_block():
+def test_controller_registers_dynamic_control_operation_blocks():
     status = {
         "active": True,
         "charge_blocked": True,
+        "discharge_blocked": True,
         "devices": ["sensor.dev"],
         "blocked_devices": ["sensor.dev"],
+        "discharge_blocked_devices": ["sensor.dev"],
         "phases": {"sensor.dev": "yielding"},
         "hold_remaining_s": 0,
         "yield_remaining_s": 25,
@@ -587,6 +607,8 @@ def test_controller_registers_dynamic_control_charge_block():
         _external_loads=SimpleNamespace(refresh_dynamic_power_control=lambda: status),
         set_charge_block=lambda *args, **kwargs: calls.append(("set", args, kwargs)),
         remove_charge_block=lambda *args, **kwargs: calls.append(("remove", args, kwargs)),
+        set_discharge_block=lambda *args, **kwargs: calls.append(("set_discharge", args, kwargs)),
+        remove_discharge_block=lambda *args, **kwargs: calls.append(("remove_discharge", args, kwargs)),
     )
 
     ChargeDischargeController._refresh_dynamic_power_control_block(controller)
@@ -597,14 +619,22 @@ def test_controller_registers_dynamic_control_charge_block():
         "dynamic_power_control",
     )
     assert calls[0][1][2]["devices"] == "sensor.dev"
+    assert calls[1][0] == "set_discharge"
+    assert calls[1][1][:2] == (
+        "excluded_device_dynamic_power_control",
+        "dynamic_power_control",
+    )
+    assert calls[1][1][2]["devices"] == "sensor.dev"
 
 
-def test_controller_removes_dynamic_control_charge_block_when_idle():
+def test_controller_removes_dynamic_control_operation_blocks_when_idle():
     status = {
         "active": False,
         "charge_blocked": False,
+        "discharge_blocked": False,
         "devices": [],
         "blocked_devices": [],
+        "discharge_blocked_devices": [],
         "phases": {},
         "hold_remaining_s": 0,
         "yield_remaining_s": 0,
@@ -614,11 +644,16 @@ def test_controller_removes_dynamic_control_charge_block_when_idle():
         _external_loads=SimpleNamespace(refresh_dynamic_power_control=lambda: status),
         set_charge_block=lambda *args, **kwargs: calls.append(("set", args, kwargs)),
         remove_charge_block=lambda *args, **kwargs: calls.append(("remove", args, kwargs)),
+        set_discharge_block=lambda *args, **kwargs: calls.append(("set_discharge", args, kwargs)),
+        remove_discharge_block=lambda *args, **kwargs: calls.append(("remove_discharge", args, kwargs)),
     )
 
     ChargeDischargeController._refresh_dynamic_power_control_block(controller)
 
-    assert calls == [("remove", ("excluded_device_dynamic_power_control",), {})]
+    assert calls == [
+        ("remove", ("excluded_device_dynamic_power_control",), {}),
+        ("remove_discharge", ("excluded_device_dynamic_power_control",), {}),
+    ]
 
 
 # ----------------------------------------------------------------------
