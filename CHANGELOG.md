@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.0b5] - 2026-07-30
+
+### Fixed
+- **Zendure total and stored energy could remain unknown despite a configured capacity**: Zendure now explicitly reports that nominal capacity is not available from its local API, allowing the coordinator to inject the configured kWh value. This restores the per-battery total energy, stored energy and calculated cycle sensors, and includes Zendure capacity and stored energy in the system aggregates.
+
+
 ## [1.2.0b4] - 2026-07-29
 
 ### Added

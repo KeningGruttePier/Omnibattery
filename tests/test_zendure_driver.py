@@ -135,6 +135,7 @@ def test_capabilities_flags():
     assert caps.has_mppt_pv is False
     assert caps.has_alarm_registers is True
     assert caps.has_energy_counters is False  # no kWh / capacity in the report
+    assert caps.has_nominal_capacity is False
 
 
 def test_capabilities_power_envelope():
