@@ -9,7 +9,7 @@ body:
 
         Search existing discussions before posting. If a similar idea already exists, add your use case and vote with 👍 on the original post instead of creating a duplicate.
 
-        To request support for a new battery brand or model, use the [New battery support form](https://github.com/ffunes/Omnibattery/issues/new?template=battery_support_request.yml).
+        To request support for a new battery brand or model, use the [New battery support form](https://github.com/ffunes/Omnibattery/discussions/new?category=battery-requests).
 
         > Do not publish passwords, tokens, API keys, complete serial numbers, IP addresses, or other personal information.
 
