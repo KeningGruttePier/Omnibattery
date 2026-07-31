@@ -444,3 +444,38 @@ async def test_probe_reads_soc_and_power_caps(monkeypatch):
     assert created["args"] == ("10.0.0.5", 502, 1)
     assert caps["device_max_charge_power"] == 3000
     assert caps["device_max_discharge_power"] == 2800
+
+
+@pytest.mark.asyncio
+async def test_read_telemetry_rejects_transient_zero_power_glitch():
+    """A single decoded 0 W while charging must not overwrite HA's last reading."""
+    from custom_components.omnibattery.infra.anker_modbus_client import encode_int32
+
+    client = _fake_client()
+    regs = [0] * 51
+    wire = encode_int32(-2000)  # Anker wire −charge → Omnibattery +2000
+    regs[8] = wire[0]
+    regs[9] = wire[1]
+    client.async_read_input_block = AsyncMock(return_value=regs)
+    drv = _driver(client=client)
+    drv._last_net_power_w = 2000
+
+    good = await drv.read_telemetry(["battery_power"])
+    assert good.get("battery_power") == 2000
+    assert drv._last_good_battery_power_w == 2000
+
+    regs[8] = 0
+    regs[9] = 0
+    client.async_read_input_block = AsyncMock(return_value=regs)
+
+    first = await drv.read_telemetry(["battery_power"])
+    assert "battery_power" not in first
+    assert drv._zero_power_streak == 1
+
+    second = await drv.read_telemetry(["battery_power"])
+    assert "battery_power" not in second
+    assert drv._zero_power_streak == 2
+
+    third = await drv.read_telemetry(["battery_power"])
+    assert third.get("battery_power") == 0
+    assert drv._zero_power_streak == 3

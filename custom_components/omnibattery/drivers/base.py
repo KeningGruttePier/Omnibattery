@@ -70,13 +70,20 @@ class DriverCapabilities:
     # True if external (RS485/Modbus) control mode can be toggled on this hardware.
     has_rs485_control: bool
 
-    # True if the hardware reports cumulative energy counters and a nominal
-    # capacity (Marstek battery_total_energy + total_charging/discharging_energy
-    # registers). When False the device exposes no energy, so the integration
-    # synthesises charge/discharge energy by integrating power and takes the
-    # capacity from a user-set number entity (Zendure). Defaults True so existing
-    # register-backed drivers need no change.
+    # True if the hardware reports cumulative energy counters. When False the
+    # integration synthesises charge/discharge energy by integrating power.
+    # Defaults True so existing register-backed drivers need no change.
     has_energy_counters: bool = True
+
+    # True if the hardware also reports its nominal battery capacity. Drivers
+    # such as Sessy expose lifetime energy counters but require the user to
+    # supply this value for stored-energy and equivalent-cycle calculations.
+    has_nominal_capacity: bool = True
+
+    # True when equivalent cycles are defined from cumulative discharged energy
+    # alone. Sessy exposes that lifetime counter, while the existing drivers
+    # retain their throughput-based calculation for backward compatibility.
+    cycles_from_discharge_only: bool = False
 
     # True if the hardware also reports counters that reset every day. Some
     # devices (Anker) expose only lifetime charge/discharge totals; for those the
@@ -93,16 +100,19 @@ class DriverCapabilities:
     # than warning — the retry still confirms it. Defaults True.
     setpoint_confirm_reliable: bool = True
 
-    # Approximate worst-case time (seconds) between issuing a setpoint and the
-    # device both reaching it and reflecting the new power in its telemetry. Drives
-    # the control loop's per-driver pacing: a slow actuator gets a longer grid-filter
-    # time constant and a higher minimum cycle interval (so the loop does not fire
-    # several corrections before the first one lands — dead-time-induced oscillation),
-    # skips the multi-second-settle hot-path readback, and is excluded from the
-    # measured-power feedforward (its telemetry lags the command by seconds). A
-    # register battery reaches its setpoint well within one poll; an HTTP/MQTT
-    # actuator can take seconds. Defaults to the fast (register) case.
+    # Approximate physical response time (seconds) after issuing a setpoint. The
+    # zero-cross guard uses it to avoid commanding the opposite direction while
+    # the previous command is still taking effect. Readback freshness is declared
+    # separately below because a device may begin responding quickly while its
+    # telemetry takes several more seconds to settle.
     actuator_latency_s: float = 0.5
+
+    # Worst-case time (seconds) before post-command telemetry can be trusted as a
+    # settled readback. ``None`` preserves the historical behaviour by falling
+    # back to ``actuator_latency_s``. Drivers with distinct actuation and telemetry
+    # timing should report both values so hot-path ACK checks can be skipped
+    # without changing the physical-response model.
+    readback_latency_s: Optional[float] = None
 
     # Minimum reliable operating power (watts, per unit) below which the hardware
     # will not sustain a non-zero charge/discharge. Marstek v2/v3 report 800 W (the

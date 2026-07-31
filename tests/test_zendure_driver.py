@@ -16,6 +16,11 @@ from custom_components.omnibattery.drivers.zendure import (
     SENSOR_DEFINITIONS,
     SWITCH_DEFINITIONS,
     ZendureLocalDriver,
+    ZENDURE_MODEL_SOLARFLOW_800,
+    ZENDURE_MODEL_SOLARFLOW_800_PLUS,
+    ZENDURE_MODEL_SOLARFLOW_800_PRO,
+    ZENDURE_MODEL_1600AC_PLUS,
+    detect_model,
 )
 
 
@@ -130,12 +135,52 @@ def test_capabilities_flags():
     assert caps.has_mppt_pv is False
     assert caps.has_alarm_registers is True
     assert caps.has_energy_counters is False  # no kWh / capacity in the report
+    assert caps.has_nominal_capacity is False
 
 
 def test_capabilities_power_envelope():
     caps = _driver(max_charge=1200, max_discharge=800).capabilities
     assert caps.max_charge_power_w == 1200
     assert caps.max_discharge_power_w == 800
+
+
+@pytest.mark.parametrize(("product", "model"), [
+    ("SolarFlow800", ZENDURE_MODEL_SOLARFLOW_800),
+    ("SolarFlow 800 Plus", ZENDURE_MODEL_SOLARFLOW_800_PLUS),
+    ("ZDSF800PRO", ZENDURE_MODEL_SOLARFLOW_800_PRO),
+])
+def test_detect_model_identifies_each_supported_solarflow_800(product, model):
+    assert detect_model(product) == model
+
+
+@pytest.mark.parametrize("model", [
+    ZENDURE_MODEL_SOLARFLOW_800,
+    ZENDURE_MODEL_SOLARFLOW_800_PLUS,
+    ZENDURE_MODEL_SOLARFLOW_800_PRO,
+])
+def test_solarflow_800_models_use_their_ac_power_envelope(model):
+    caps = ZendureLocalDriver("192.168.1.100", model=model).capabilities
+    assert caps.max_charge_power_w == 1000
+    assert caps.max_discharge_power_w == 800
+
+
+def test_detect_model_identifies_solarflow_1600_ac_plus():
+    assert detect_model("SolarFlow 1600 AC+") == ZENDURE_MODEL_1600AC_PLUS
+
+
+def test_solarflow_1600_ac_plus_uses_its_power_envelope():
+    caps = ZendureLocalDriver(
+        "192.168.1.100", model=ZENDURE_MODEL_1600AC_PLUS
+    ).capabilities
+    assert caps.max_charge_power_w == 1600
+    assert caps.max_discharge_power_w == 1600
+
+
+def test_solarflow_1600_ac_plus_excludes_dc_solar_entities():
+    keys = {d["key"] for d in ZendureLocalDriver(
+        "192.168.1.100", model=ZENDURE_MODEL_1600AC_PLUS
+    ).sensor_definitions}
+    assert not keys & {"solar_power", "mppt1_power", "mppt2_power", "mppt3_power", "mppt4_power"}
 
 
 # ---------------------------------------------------------------------------

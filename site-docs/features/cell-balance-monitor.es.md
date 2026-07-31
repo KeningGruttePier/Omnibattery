@@ -61,39 +61,38 @@ La carga semanal completa no usa un perfil de balanceo distinto. Solo cambia el 
 | Condición para una batería | Acción |
 |---|---:|
 | `max_cell_voltage` por debajo de 3.48 V | Límite de carga configurado normal |
-| `max_cell_voltage` igual o superior a 3.48 V | Limita la carga a 95 W |
-| `max_cell_voltage` llega a 3.58 V | Para la carga y **enclava**; no vuelve a cargar a goteo cuando la celda se relaja |
-| El SOC baja el margen de reanudación (3%) por debajo del SOC de enclavamiento | Libera el enclavamiento; vuelve a aplicar la lógica de carga normal |
+| `max_cell_voltage` igual o superior a 3.48 V | Limita la carga a 200 W |
+| `max_cell_voltage` llega a 3.60 V | La histéresis de carga configurada toma el control del umbral de parada y reanudación |
 | Tras la espera de 60 s | Registra `delta_mV = (Vmax - Vmin) * 1000` |
 
 El inicio de la reducción se basa en tensión de celda: el SOC no se usa para decidir cuándo empieza, porque cerca del final de carga los registros de tensión de celda son más fiables que el SOC reportado.
 
-Cuando la batería llega a 3.58 V, la reducción para la carga y **se enclava**. No vuelve a cargar a goteo cuando la tensión de celda se relaja — re-pausar cada ciclo dejaría la celda clavada en la tensión alta y puede impedir que algunos BMS v3 salgan de standby para descargar. El enclavamiento se libera —dejando que una recarga posterior vuelva a reducir— solo cuando el SOC ha bajado un pequeño margen (por defecto 3%, `NORMAL_BALANCE_RESUME_SOC_DROP`) por debajo del SOC al que se enclavó, es decir, la batería se ha descargado de verdad.
+Cuando la batería llega a 3.60 V, la histéresis de carga configurada evita que vuelva a cargar hasta cruzar su umbral de SOC. La medición de 60 segundos continúa como diagnóstico de mejor esfuerzo.
 
 En sistemas con varias baterías, la lógica se evalúa por batería. Una batería puede estar limitada o pausada mientras otra sigue cargando con normalidad.
 
 ### Recalibración de SOC con tensión alta atascada
 
-Algunos packs llegan al punto de pausa de 3.58 V mientras el BMS sigue reportando un SOC muy por debajo del total (por ejemplo 60–70 %). Esa diferencia indica que el contador de coulombs del BMS se ha desviado: las celdas están realmente llenas pero el SOC reportado es incorrecto.
+Algunos packs llegan al punto de pausa de 3.60 V mientras el BMS sigue reportando un SOC muy por debajo del total (por ejemplo 60–70 %). Esa diferencia puede indicar que el contador de coulombs del BMS se ha desviado, pero alcanzar el umbral de tensión no demuestra que el SOC reportado sea incorrecto.
 
-Cuando esto ocurre, quedarse en 3.58 V nunca deja que el BMS se corrija. Por eso, en vez de pausar, la integración sigue cargando a la potencia reducida de 95 W hasta que el propio BMS corta, *intentando* que recalibre el SOC al 100 %.
+Cuando esto ocurre, quedarse en 3.60 V no permite que el BMS termine su propia secuencia superior de carga. Por eso, en vez de pausar, la integración sigue cargando a la potencia reducida de 200 W hasta que el propio BMS corta, *intentando* que recalibre el SOC.
 
 Es un intento de mejor esfuerzo, no una solución garantizada. Que un corte en la parte alta de la curva realmente reinicie el SOC reportado depende del firmware del BMS: algunos packs saltan al 100 % con un corte por sobretensión, otros no. La integración solo crea las condiciones para una recalibración — no puede obligar al BMS a aplicarla.
 
 El override se activa automáticamente cuando se cumple **todo** lo siguiente:
 
 - la reducción por voltaje al 100 % está activa (`max_cell_voltage` en la zona alta), y
-- `max_cell_voltage` ha alcanzado el punto de pausa de 3.58 V, y
+- `max_cell_voltage` ha alcanzado el punto de pausa de 3.60 V, y
 - el BMS sigue reportando un SOC por debajo del 99 %.
 
 Es autolimitado:
 
-- la carga continúa solo a 95 W (la potencia suave de reducción), no a plena potencia;
-- el corte del BMS se detecta cuando la potencia de la batería cae a ≤ 10 W y el inversor reporta Standby durante 5 ciclos consecutivos (~10 s). En ese momento el override se enclava y se reanuda la pausa normal de 3.58 V, dejando que el SOC se recalibre;
-- una vez que el SOC marca 99 % o más (tras recalibrar), la condición ya no se cumple, así que el override no se vuelve a disparar;
+- la carga continúa solo a 200 W (la potencia suave de reducción), no a plena potencia;
+- el corte del BMS se detecta cuando la potencia de la batería cae a ≤ 10 W y el inversor reporta Standby durante 5 ciclos consecutivos (~10 s). En ese momento el override se enclava y se reanuda la histéresis normal; el SOC puede recalibrarse o no, según el firmware;
+- si el SOC marca 99 % o más, la condición ya no se cumple, así que el override no se vuelve a disparar;
 - el enclavamiento solo se rearma cuando la batería sale de la zona alta (`max_cell_voltage` por debajo de 3.48 V), para que una carga completa posterior pueda recalibrar de nuevo si hace falta.
 
-Llegar al punto de pausa de 3.58 V normalmente solo ocurre en una carga al 100 %, así que esto rara vez afecta al ciclado diario con un `max_soc` más bajo. **No** se ejecuta durante la [carga semanal completa](weekly-full-charge.md) — allí la pausa de 3.58 V se suprime por completo y el corte del BMS por sí solo finaliza el ciclo (ver esa página). Tampoco se ejecuta mientras el [modo de balanceo activo](#modo-de-balanceo-activo) controla la batería — ese modo tiene prioridad.
+Llegar al punto de pausa de 3.60 V normalmente solo ocurre en una carga al 100 %, así que esto rara vez afecta al ciclado diario con un `max_soc` más bajo. **No** se ejecuta durante la [carga semanal completa](weekly-full-charge.md) — allí la pausa de 3.60 V se suprime por completo y el corte del BMS por sí solo finaliza el ciclo (ver esa página). Tampoco se ejecuta mientras el [modo de balanceo activo](#modo-de-balanceo-activo) controla la batería — ese modo tiene prioridad.
 
 !!! note "Desbalance de celdas"
     El override no comprueba primero la dispersión entre celdas. En un pack muy desbalanceado, la celda más alta puede llegar al corte por sobretensión del BMS antes de que el pack esté lleno, así que la recalibración es correcta pero el balanceo queda para ciclos posteriores. El BMS sigue protegiendo cada celda de forma individual.
@@ -109,12 +108,12 @@ Cuando el switch está activado, esa batería queda excluida del control PD norm
 | Fase | Acción |
 |---|---|
 | Antes de la zona alta | Carga desde la red a la potencia máxima configurada de la batería hasta `max_cell_voltage >= 3.49 V` |
-| Carga regulada en la parte alta | Carga a 95 W hasta `max_cell_voltage >= 3.58 V` |
+| Carga regulada en la parte alta | Carga a 95 W hasta `max_cell_voltage >= 3.60 V` |
 | Espera de medición | Para carga/descarga, espera 60 s y mide el delta de celdas |
 | Si `delta_V > 0.03 V` | Descarga a 200 W hasta `max_cell_voltage <= 3.49 V` y vuelve a cargar |
 | Si `delta_V <= 0.03 V` | Descarga final a 200 W hasta `max_cell_voltage <= 3.48 V`, termina y apaga el switch |
 
-Si el BMS corta la carga antes de que `max_cell_voltage` llegue a 3.58 V, la integración lo interpreta como rechazo de carga. El rechazo solo se detecta cuando no circula corriente (potencia de batería ~0 W), así que las celdas ya están en reposo: registra una medición del delta de celdas en ese punto, en vez de terminar el ciclo sin lectura. Después descarga y baja el voltaje de reintento en 0.01 V. El voltaje de reintento rebajado **se mantiene entre ciclos de carga/descarga**, bajando otros 0.01 V en cada nuevo rechazo hasta un suelo de 3.40 V, de modo que el pack se va bajando progresivamente hasta que el BMS vuelve a aceptar carga. El voltaje de reintento se restablece a su valor por defecto solo cuando el pack llega a la parte alta de 3.58 V, o cuando el ciclo termina.
+Si el BMS corta la carga antes de que `max_cell_voltage` llegue a 3.60 V, la integración lo interpreta como rechazo de carga. Al comenzar cada tramo de carga concede primero 10 segundos para que el inversor abandone Standby y acepte la orden; después exige tres ciclos consecutivos sin corriente. El corte se conserva como diagnóstico, pero no alimenta el sensor de delta, su media ni su tendencia porque no es comparable con una medición superior tras `WAIT_MEASURE`. Después descarga y baja el voltaje de reintento en 0.01 V. El voltaje de reintento rebajado **se mantiene entre ciclos de carga/descarga**, bajando otros 0.01 V en cada nuevo rechazo hasta un suelo de 3.40 V, de modo que el pack se va bajando progresivamente hasta que el BMS vuelve a aceptar carga. El voltaje de reintento se restablece a su valor por defecto solo cuando el pack llega a la parte alta de 3.60 V, o cuando el ciclo termina.
 
 El modo de balanceo activo no tiene un límite fijo de 48 horas. Se ejecuta hasta que el delta medido en tensión alta es igual o inferior a 0.03 V, o hasta que el usuario apaga el switch.
 
@@ -125,15 +124,15 @@ Todos los cortes de tensión usados por la reducción al 100 % y por el modo de 
 | Umbral | Dónde se usa | Por qué este valor |
 |---|---|---|
 | **3,45 V** | Referencia para el inicio de la rodilla superior | Es aproximadamente donde la curva LFP abandona la meseta. Por debajo no se puede confiar en las decisiones de balanceo, porque las tensiones de las celdas están demasiado juntas para distinguirlas. |
-| **3,48 V** | Disparador para reducir la carga a 95 W | Un poco por encima de la rodilla. El pequeño margen confirma que el pack está realmente en la ventana de balanceo — y no en un rebote de tensión transitorio causado por un escalón de carga — antes de bajar la potencia. |
+| **3,48 V** | Disparador para reducir la carga normal a 200 W | Un poco por encima de la rodilla. El pequeño margen confirma que el pack está realmente en la ventana de balanceo — y no en un rebote de tensión transitorio causado por un escalón de carga — antes de bajar la potencia. |
 | **3,49 V** | Suelo de descarga entre reintentos del balanceo activo; cambio de carga "rápida" a carga regulada | Está justo dentro de la ventana de balanceo. Parar la descarga aquí mantiene el pack en la zona donde el BMS aún puede ver y drenar la celda alta. Bajar más sacaría al pack de la rodilla y desperdiciaría el tiempo ya invertido en balancear. |
-| **3,58 V** | Punto de medida superior; se para la carga y se esperan 60 s antes de leer el delta | Lo bastante alto como para que incluso la celda *más baja* esté firmemente en la rodilla y la diferencia entre celdas sea significativa. Lo bastante bajo como para que la celda *más alta* siga claramente por debajo del techo de 3,65 V que indican las hojas LFP y por debajo del corte por sobretensión del BMS. El margen de ~70 mV es intencional: la diferencia entre celdas es justo lo que se quiere medir, y hay que dejarle sitio. |
-| **3,48 V (otra vez)** | Suelo de descarga al final del ciclo — la descarga final a 200 W tras completar un balanceo activo se detiene aquí | El mismo umbral usado para entrar en la reducción se reutiliza para salir de la ventana de balanceo. Parar a 3,48 V deja al pack justo por debajo del comienzo de la rodilla superior sin devolverlo del todo a la meseta profunda. Quedarse a 3,55 – 3,58 V durante mucho tiempo acelera el envejecimiento calendario, así que la integración baja deliberadamente al borde inferior de la ventana antes de soltar el control. |
-| **3,40 V** | Límite inferior del voltaje de reintento del balanceo activo cuando se detecta rechazo de carga | La integración baja el voltaje de reintento en 0,01 V cada vez que el BMS rechaza la carga durante 3 ciclos consecutivos (~6 s, para ignorar caídas transitorias de potencia durante la rampa o el taper de carga), pero nunca por debajo de 3,40 V. Bajar más saldría completamente de la ventana de balanceo y obligaría a volver a subir toda la curva, lo que es una pérdida de tiempo. |
+| **3,60 V** | Punto de medida superior; se para la carga y se esperan 60 s antes de leer el delta | Permite que el firmware compatible alcance su comportamiento nativo de final de carga, manteniendo unos 50 mV de margen nominal respecto al techo LFP habitual de 3,65 V. El BMS de la batería conserva el corte final y puede parar antes. |
+| **3,48 V (otra vez)** | Suelo de descarga al final del ciclo — la descarga final a 200 W tras completar un balanceo activo se detiene aquí | El mismo umbral usado para entrar en la reducción se reutiliza para salir de la ventana de balanceo. Parar a 3,48 V deja al pack justo por debajo del comienzo de la rodilla superior sin devolverlo del todo a la meseta profunda. Quedarse a 3,55 – 3,60 V durante mucho tiempo acelera el envejecimiento calendario, así que la integración baja deliberadamente al borde inferior de la ventana antes de soltar el control. |
+| **3,40 V** | Límite inferior del voltaje de reintento del balanceo activo cuando se detecta rechazo de carga | La integración concede 10 s para que arranque cada nuevo tramo de carga y, si aún no ha observado potencia de carga, exige después 3 ciclos consecutivos a ~0 W antes de declarar rechazo. Entonces baja el voltaje de reintento en 0,01 V, pero nunca por debajo de 3,40 V. Bajar más saldría completamente de la ventana de balanceo y obligaría a volver a subir toda la curva, lo que es una pérdida de tiempo. |
 | **0,03 V (30 mV)** | Umbral de finalización del balanceo activo | Se considera "suficientemente equilibrado" para un pack LFP en la parte alta de la rodilla. Forzar valores más estrictos (10 mV o menos) rara vez compensa, porque las corrientes de balanceo pasivo son minúsculas — ver la sección siguiente. |
 | **0,05 V (50 mV)** | Frontera verde / amarillo | Un pack por debajo de 50 mV en la parte alta se considera sano. Es más estricto que las especificaciones típicas de fabricantes LFP (80 – 100 mV) porque la medida se toma en la ventana de balanceo, donde las diferencias entre celdas están exageradas. |
 
-La potencia de carga de 95 W está emparejada con los umbrales de carga a propósito: es lo bastante baja como para que la tensión de celda medida *durante la carga* esté dominada por la propia química de la celda y no por la caída IR (resistiva) en la celda, en las pletinas y en los shunts del BMS. Cargar a cientos de vatios en la rodilla desplazaría la lectura aparente decenas de milivoltios y arruinaría la comprobación del umbral de 3.58 V. La descarga es de 200 W porque el delta de celdas siempre se mide en **reposo** —se paran tanto la carga como la descarga durante 60 s antes de tomar la lectura—, así que la mayor potencia de descarga solo baja el pack más rápido entre mediciones y nunca contamina el delta registrado.
+La reducción normal usa 200 W para mantener la tensión suficientemente excitada y avanzar por la zona superior sin volver a plena potencia. El balanceo activo conserva una carga más suave de 95 W. Las mediciones siempre se toman en **reposo**, 60 segundos después de detener carga y descarga, por lo que ninguna de las dos potencias contamina el delta registrado.
 
 ## Por qué tarda tanto
 
@@ -161,7 +160,7 @@ Si el objetivo es recuperar un pack visiblemente desbalanceado, lo correcto es a
 
 La única lectura que alimenta el estado de balance, los avisos y la tendencia es la medición explícita en tensión alta:
 
-1. la batería llega a `max_cell_voltage >= 3.58 V`;
+1. la batería llega a `max_cell_voltage >= 3.60 V`;
 2. se detiene la carga;
 3. la integración espera 60 segundos;
 4. registra la diferencia entre `max_cell_voltage` y `min_cell_voltage`.
@@ -216,9 +215,9 @@ El sensor **Integration Status** expone un atributo `normal_balance_protection` 
 | `pause_latched_soc` | SOC al que se enclavó la pausa; la carga sigue parada hasta que el SOC baja el margen de reanudación por debajo de este valor (vacío si no está enclavada) |
 | `max_cell_voltage` / `min_cell_voltage` | Tensiones máxima y mínima actuales |
 | `delta_V` | Diferencia actual de tensión en voltios |
-| `voltage_taper_latched` | Si la reducción a 95 W está activa |
+| `voltage_taper_latched` | Si la reducción normal a 200 W está activa |
 | `active_balance_phase` | Fase actual de medición al 100 %, si existe |
-| `soc_recal_active` | Si la carga se mantiene más allá de la pausa de 3.58 V para recalibrar un SOC reportado bajo |
+| `soc_recal_active` | Si la carga se mantiene más allá de la pausa de 3.60 V para intentar recalibrar un SOC reportado bajo |
 | `soc_recal_bms_cutoff` | Si se ha alcanzado el corte del BMS durante la recalibración (override enclavado) |
 | `charge_limit_w` | Límite efectivo de carga por batería antes del reparto |
 

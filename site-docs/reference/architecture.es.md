@@ -110,7 +110,8 @@ control y entidades lo leen desde `coordinator.capabilities`:
 | `has_rs485_control` | El modo de control externo RS485/Modbus se puede conmutar |
 | `has_energy_counters` | Reporta energía acumulada + capacidad nominal; cuando es falso la integración sintetiza la energía a partir de la potencia y toma la capacidad de una entidad de usuario (Zendure) |
 | `setpoint_confirm_reliable` | Un readback refleja de forma fiable el comando recién escrito en el ciclo de confirmación |
-| `actuator_latency_s` | Tiempo de peor caso para que un setpoint se aplique y aparezca en la telemetría — gobierna el ritmo del bucle por driver |
+| `actuator_latency_s` | Escala temporal de la respuesta física usada para proteger los cambios de sentido carga/descarga |
+| `readback_latency_s` | Tiempo hasta que la telemetría posterior a una orden está asentada para un readback inmediato; por defecto usa la latencia del actuador |
 
 El coordinador selecciona el driver según la marca configurada
 ([`infra/coordinator.py`](https://github.com/ffunes/omnibattery/blob/main/custom_components/omnibattery/infra/coordinator.py)):

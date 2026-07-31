@@ -17,6 +17,7 @@ from .const import (
     DOMAIN,
     CONF_ACTIVE_BALANCE_MODE_ENABLED,
     CONF_CAPACITY_PROTECTION_ENABLED,
+    CONF_CAPACITY_PROTECTION_EXCLUDED_DEVICES,
     CONF_DELAY_SOC_SETPOINT_ENABLED,
     CONF_ENABLE_CHARGE_DELAY,
     CONF_ENABLE_TEMP_CHARGE_LIMIT,
@@ -42,7 +43,12 @@ from .const import (
     NOTIFICATION_ID_PREFIX,
 )
 from .infra.coordinator import MarstekVenusDataUpdateCoordinator
-from .infra.entity_naming import english_entity_id, system_entity_id, SYSTEM_UNIQUE_ID_PREFIX
+from .infra.entity_naming import (
+    english_entity_id,
+    excluded_device_name,
+    system_entity_id,
+    SYSTEM_UNIQUE_ID_PREFIX,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -102,6 +108,7 @@ async def async_setup_entry(
     # Add capacity protection switch (system-level, when configured, regardless of enabled state)
     if controller and CONF_CAPACITY_PROTECTION_ENABLED in entry.data:
         entities.append(CapacityProtectionSwitch(hass, entry, controller))
+        entities.append(CapacityProtectionExcludedDevicesSwitch(hass, entry, controller))
 
     # Add charge delay switch (system-level, when charge delay is configured)
     has_charge_delay_config = (
@@ -401,10 +408,7 @@ class BatteryFullChargeVoltageTaperSwitch(SwitchEntity):
         self.coordinator.persist_battery_config(CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED, enabled)
 
     def _clear_runtime_state(self) -> None:
-        self.controller._normal_balance_charge_paused.pop(self.coordinator, None)
         self.controller._normal_balance_voltage_tapered.pop(self.coordinator, None)
-        self.controller._normal_balance_pause_latch_soc.pop(self.coordinator, None)
-        self.controller.remove_charge_block("normal_balance_pause", coordinator=self.coordinator)
 
     async def async_turn_on(self, **kwargs) -> None:
         self._persist(True)
@@ -707,6 +711,62 @@ class CapacityProtectionSwitch(SwitchEntity):
         }
 
 
+class CapacityProtectionExcludedDevicesSwitch(SwitchEntity):
+    """Let peak shaving cover only the above-limit part of excluded demand."""
+
+    def __init__(self, hass: HomeAssistant, entry: ConfigEntry, controller) -> None:
+        """Initialize the excluded-device peak-shaving switch."""
+        self.hass = hass
+        self.entry = entry
+        self.controller = controller
+
+        self._attr_has_entity_name = True
+        self._attr_translation_key = "capacity_protection_excluded_devices"
+        self._attr_unique_id = (
+            f"{SYSTEM_UNIQUE_ID_PREFIX}capacity_protection_excluded_devices"
+        )
+        self.entity_id = system_entity_id(
+            "switch", "capacity_protection_excluded_devices"
+        )
+        self._attr_icon = "mdi:transmission-tower-import"
+        self._attr_should_poll = False
+
+    @property
+    def is_on(self) -> bool:
+        """Return whether excluded-device peak shaving is enabled."""
+        return self.controller.capacity_protection_excluded_devices
+
+    async def _update_enabled(self, enabled: bool) -> None:
+        """Persist and apply the runtime setting."""
+        self.controller.capacity_protection_excluded_devices = enabled
+        new_data = dict(self.entry.data)
+        new_data[CONF_CAPACITY_PROTECTION_EXCLUDED_DEVICES] = enabled
+        self.hass.config_entries.async_update_entry(self.entry, data=new_data)
+        _LOGGER.info(
+            "Peak shaving for excluded devices %s",
+            "ENABLED" if enabled else "DISABLED",
+        )
+        self.async_write_ha_state()
+
+    async def async_turn_on(self, **kwargs) -> None:
+        """Enable peak shaving for excluded devices."""
+        await self._update_enabled(True)
+
+    async def async_turn_off(self, **kwargs) -> None:
+        """Disable peak shaving for excluded devices."""
+        await self._update_enabled(False)
+
+    @property
+    def device_info(self):
+        """Return device information for the system."""
+        return {
+            "identifiers": {(DOMAIN, "marstek_venus_system")},
+            "name": "Omnibattery System",
+            "manufacturer": "Omnibattery",
+            "model": "Multi-Battery System",
+        }
+
+
 class ChargeDelaySwitch(SwitchEntity):
     """Switch to enable/disable the charge delay feature at runtime."""
 
@@ -965,12 +1025,6 @@ class WeeklyFullChargeDelaySwitch(SwitchEntity):
         }
 
 
-def _excluded_device_friendly_name(device: dict) -> str:
-    """Derive a readable name from either excluded-device sensor field."""
-    sensor_id = device.get("power_sensor") or device.get("activity_sensor") or "device"
-    return sensor_id.split(".", 1)[-1].replace("_", " ").title()
-
-
 class ExcludedDeviceEnabledSwitch(SwitchEntity):
     """Switch to enable/disable an individual excluded device at runtime.
 
@@ -985,7 +1039,7 @@ class ExcludedDeviceEnabledSwitch(SwitchEntity):
         self._device_index = index
 
         device = entry.data.get("excluded_devices", [])[index]
-        friendly = _excluded_device_friendly_name(device)
+        friendly = excluded_device_name(hass, device)
 
         self._attr_has_entity_name = True
         self._attr_translation_key = "excluded_device_enabled"
@@ -1066,8 +1120,7 @@ class ExcludedDeviceSolarSurplusSwitch(SwitchEntity):
         self._device_index = index
 
         device = entry.data.get("excluded_devices", [])[index]
-        # Derive a friendly name from the configured sensor entity ID.
-        friendly = _excluded_device_friendly_name(device)
+        friendly = excluded_device_name(hass, device)
 
         self._attr_has_entity_name = True
         self._attr_translation_key = "excluded_device_solar_surplus"
@@ -1143,7 +1196,7 @@ class ExcludedDeviceDynamicPowerControlSwitch(SwitchEntity):
         self._device_index = index
 
         device = entry.data.get("excluded_devices", [])[index]
-        friendly = _excluded_device_friendly_name(device)
+        friendly = excluded_device_name(hass, device)
 
         self._attr_has_entity_name = True
         self._attr_translation_key = "excluded_device_dynamic_power_control"
@@ -1228,7 +1281,7 @@ class ExcludedDeviceCoverHomeSwitch(SwitchEntity):
         self._device_index = index
 
         device = entry.data.get("excluded_devices", [])[index]
-        friendly = _excluded_device_friendly_name(device)
+        friendly = excluded_device_name(hass, device)
 
         self._attr_has_entity_name = True
         self._attr_translation_key = "excluded_device_cover_home"
@@ -1372,6 +1425,9 @@ class ManualModeSwitch(SwitchEntity):
             self.controller.sign_changes = 0
             self.controller._active_discharge_batteries = []
             self.controller._active_charge_batteries = []
+            for coordinator in self.controller.coordinators:
+                coordinator.manual_force_mode = "None"
+                coordinator.persist_battery_config("manual_force_mode", "None")
 
         _LOGGER.info("Manual Mode DISABLED - resuming automatic control")
 

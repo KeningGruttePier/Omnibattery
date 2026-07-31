@@ -109,7 +109,8 @@ these from `coordinator.capabilities`:
 | `has_rs485_control` | External RS485/Modbus control mode can be toggled |
 | `has_energy_counters` | Reports cumulative energy + nominal capacity; when false the integration synthesises energy from power and takes capacity from a user entity (Zendure) |
 | `setpoint_confirm_reliable` | A readback reliably reflects the just-written command on the confirmation cycle |
-| `actuator_latency_s` | Worst-case time for a setpoint to land and show in telemetry — drives per-driver loop pacing |
+| `actuator_latency_s` | Physical response timescale used to guard charge/discharge direction changes |
+| `readback_latency_s` | Time before post-command telemetry is settled enough for a hot-path readback; defaults to actuator latency |
 
 The coordinator selects the driver from the configured brand
 ([`infra/coordinator.py`](https://github.com/ffunes/omnibattery/blob/main/custom_components/omnibattery/infra/coordinator.py)):

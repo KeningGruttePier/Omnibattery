@@ -176,17 +176,20 @@ def test_capabilities_use_version_loaded_definitions():
     assert v2.has_alarm_registers is True
 
 
-def test_v3_daily_energy_is_derived_from_lifetime_counters():
-    """v3 avoids its unreliable daily registers, like Anker does."""
-    drv = MarstekModbusDriver("1.2.3.4", 502, "v3", client=_fake_client())
+@pytest.mark.parametrize("version", ["v2", "v3", "vA", "vD"])
+def test_marstek_daily_energy_is_derived_from_lifetime_counters(version):
+    """Every Marstek model uses the same software-derived daily counters."""
+    drv = MarstekModbusDriver("1.2.3.4", 502, version, client=_fake_client())
 
     assert drv.capabilities.has_daily_energy_counters is False
+    sensor_keys = {definition["key"] for definition in drv.sensor_definitions}
+    assert sensor_keys.isdisjoint(
+        {"total_daily_charging_energy", "total_daily_discharging_energy"}
+    )
     assert {
-        definition["key"] for definition in drv.sensor_definitions
-    }.isdisjoint({"total_daily_charging_energy", "total_daily_discharging_energy"})
-
-    v2 = MarstekModbusDriver("1.2.3.4", 502, "v2", client=_fake_client())
-    assert v2.capabilities.has_daily_energy_counters is True
+        "total_charging_energy",
+        "total_discharging_energy",
+    }.issubset(sensor_keys)
 
 
 # ----------------------------------------------------------------------
@@ -487,6 +490,18 @@ async def test_write_control_resolves_key_to_register():
     assert ok is True
     reg = REGISTER_MAP["v3"]["force_mode"]
     client.async_write_register.assert_awaited_once_with(reg, 2)
+
+
+@pytest.mark.parametrize("version", ["v2", "v3", "vA", "vD"])
+async def test_write_control_writes_user_work_mode(version):
+    """User work mode is a writable register on every supported model."""
+    client = _fake_client()
+    drv = _driver(version, client=client)
+
+    ok = await drv.write_control("user_work_mode", 1)
+
+    assert ok is True
+    client.async_write_register.assert_awaited_once_with(43000, 1)
 
 
 async def test_write_control_addresses_configured_slave():

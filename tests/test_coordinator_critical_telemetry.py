@@ -100,6 +100,20 @@ async def test_aggregate_and_critical_failures_trigger_only_one_reconnect():
     coordinator.async_reconnect_fresh.assert_awaited_once()
 
 
+async def test_configured_capacity_is_injected_for_drivers_without_nominal_capacity():
+    coordinator, _ = _coordinator(critical_succeeds=True)
+    coordinator.capabilities = SimpleNamespace(
+        has_energy_counters=False,
+        has_nominal_capacity=False,
+        has_daily_energy_counters=False,
+    )
+    coordinator.battery_capacity_kwh = 5.28
+
+    await MarstekVenusDataUpdateCoordinator._async_update_data(coordinator)
+
+    assert coordinator.data["battery_total_energy"] == 5.28
+
+
 async def test_lifetime_energy_totals_are_dependencies_for_derived_daily_energy():
     """Daily v3/Anker sensors must work when lifetime entities are disabled."""
     total_group = ReadGroup("low", ("total_charging_energy",))

@@ -3,7 +3,8 @@
   "name": "Omnibattery",
   "after_dependencies": [
     "recorder",
-    "esphome"
+    "esphome",
+    "mqtt"
   ],
   "codeowners": [
     "@ffunes"
@@ -22,7 +23,7 @@
     "pymodbus>=3.8.0",
     "pyserial>=3.5"
   ],
-  "version": "1.1.0",
+  "version": "1.2.0",
   "zeroconf": [
     "_modbus._tcp.local."
   ]

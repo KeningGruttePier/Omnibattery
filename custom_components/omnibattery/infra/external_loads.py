@@ -71,7 +71,9 @@ class ExternalLoads:
         self.dynamic_power_control_status: dict[str, Any] = {
             "active": False,
             "charge_blocked": False,
+            "discharge_blocked": False,
             "devices": [],
+            "discharge_blocked_devices": [],
             "phases": {},
         }
 
@@ -98,7 +100,7 @@ class ExternalLoads:
         return bool(sensor_id) and self._state_is_active(self._hass.states.get(sensor_id))
 
     def refresh_dynamic_power_control(self) -> dict[str, Any]:
-        """Refresh dynamic-load latches and return the current charge block.
+        """Refresh dynamic-load latches and return current operation blocks.
 
         Activity is inferred from the existing numeric power sensor. An optional
         activity sensor may request priority before numeric demand appears:
@@ -110,6 +112,9 @@ class ExternalLoads:
         * without a solar sensor, a 20-second probe runs every five minutes;
         * when power drops: charging remains blocked for five minutes so the
           external controller can restart after clouds or a phase transition.
+        * with Cover Home disabled: discharge remains blocked throughout every
+          active phase so stale telemetry cannot hide grid import from the
+          external controller.
 
         Only devices with both Allow Solar Surplus and Dynamic Power Control ON
         participate.  The returned mapping is also exposed in diagnostics.
@@ -121,6 +126,7 @@ class ExternalLoads:
         eligible_keys: set[str] = set()
         priority_devices: list[str] = []
         blocked_devices: list[str] = []
+        discharge_blocked_devices: list[str] = []
         phases: dict[str, str] = {}
         max_hold_remaining = 0
         max_yield_remaining = 0
@@ -148,9 +154,12 @@ class ExternalLoads:
             drawing = device_power is not None and device_power > DYNAMIC_CONTROL_ACTIVE_POWER_W
             activity_requested = self._activity_sensor_is_active(activity_sensor_id)
             was_drawing = self._dynamic_was_drawing.get(key, False)
+            block_discharge = not device.get("cover_home_when_active", False)
 
             if drawing:
                 priority_devices.append(sensor_id)
+                if block_discharge:
+                    discharge_blocked_devices.append(sensor_id)
                 self._dynamic_hold_until[key] = now + DYNAMIC_CONTROL_HOLD
 
                 if not was_drawing:
@@ -211,6 +220,8 @@ class ExternalLoads:
                 self._dynamic_was_drawing[key] = False
                 priority_devices.append(sensor_id)
                 blocked_devices.append(sensor_id)
+                if block_discharge:
+                    discharge_blocked_devices.append(sensor_id)
                 phases[sensor_id] = "waiting_for_load"
             else:
                 self._dynamic_was_drawing[key] = False
@@ -223,6 +234,8 @@ class ExternalLoads:
                 if hold_until is not None and now < hold_until:
                     priority_devices.append(sensor_id)
                     blocked_devices.append(sensor_id)
+                    if block_discharge:
+                        discharge_blocked_devices.append(sensor_id)
                     phases[sensor_id] = "restart_hold"
                     max_hold_remaining = max(
                         max_hold_remaining,
@@ -240,8 +253,10 @@ class ExternalLoads:
         status = {
             "active": bool(priority_devices),
             "charge_blocked": bool(blocked_devices),
+            "discharge_blocked": bool(discharge_blocked_devices),
             "devices": priority_devices,
             "blocked_devices": blocked_devices,
+            "discharge_blocked_devices": discharge_blocked_devices,
             "phases": phases,
             "hold_remaining_s": max_hold_remaining,
             "yield_remaining_s": max_yield_remaining,

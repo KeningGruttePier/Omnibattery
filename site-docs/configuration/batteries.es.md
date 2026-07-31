@@ -6,6 +6,15 @@ Cada batería se añade bajo una **marca** — **Marstek** (Venus, por Modbus TC
 
 Los campos documentados en esta página son para baterías **Marstek**. El control y los sliders de SOC/potencia se comportan igual para Zendure; solo difieren la conexión y una capacidad fijada por el usuario.
 
+## Hoymiles MS-A2 (MQTT)
+
+La MS-A2 usa el broker MQTT ya configurado en Home Assistant; Omnibattery no solicita host, puerto ni credenciales. En S-Miles Home activa **MQTT Service** en un firmware compatible y apúntalo al broker de HA. Después introduce el ID MQTT del equipo, por ejemplo `MSA-280024341346`. La integración MQTT debe estar configurada previamente en Home Assistant.
+
+El asistente pide la capacidad nominal utilizable (por defecto `2,24 kWh`; `4,48 kWh` para un sistema encadenado). Los signos se adaptan internamente: para Omnibattery positivo es carga, mientras que para el equipo carga es potencia negativa. Mientras controla la batería, Omnibattery renueva exactamente la orden `mqtt_ctrl` aproximadamente cada 30 s y reintenta una renovación fallida después de 5 s; al descargar la integración manda potencia cero y restaura explícitamente `general`.
+
+Consulta [Instalar y configurar una Hoymiles MS-A2](hoymiles-ms-a2.md) para
+seguir paso a paso la instalación física, S-Miles Home, MQTT y Omnibattery.
+
 ## Número de baterías
 
 Selecciona cuántas unidades de batería tienes (1–6). La integración te pedirá configurar cada una por separado.
@@ -49,7 +58,7 @@ Selecciona cuántas unidades de batería tienes (1–6). La integración te pedi
 
 Los valores de SOC máximo/mínimo y potencia máxima de carga/descarga se pueden ajustar en cualquier momento desde los sliders de la integración sin necesidad de reconfigurar. Los cambios se persisten y se restauran en cada reinicio de Home Assistant.
 
-Si elevas el **SOC máximo** de una batería al `100 %`, esa batería usa protección superior por tensión: throttle de carga a 95 W desde `max_cell_voltage >= 3,48 V`, luego la carga se detiene a 3,58 V y la integración espera 60 s para registrar la medición de balance. La carga queda entonces parada (no vuelve a cargar a goteo ni fuerza descarga) hasta que el SOC baja un pequeño margen — así la celda se relaja desde la parte alta en vez de quedar clavada ahí. Consulta [Monitor de equilibrio de celdas](../features/cell-balance-monitor.md#reduccion-por-voltaje-al-100) para las condiciones exactas de entrada y salida.
+Si elevas el **SOC máximo** de una batería al `100 %`, esa batería usa protección superior por tensión: reducción de carga a 200 W desde `max_cell_voltage >= 3,48 V`, luego la carga se detiene a 3,60 V y la integración espera 60 s para registrar la medición de balance. La carga queda entonces parada (no vuelve a cargar a goteo ni fuerza descarga) hasta que se cruza el umbral de histéresis de carga configurado — así la celda se relaja desde la parte alta en vez de quedar clavada ahí. Consulta [Monitor de equilibrio de celdas](../features/cell-balance-monitor.md#reduccion-por-voltaje-al-100) para las condiciones exactas de entrada y salida.
 
 ![Sliders de SOC y potencia](../assets/screenshots/configuration/battery-runtime-sliders.png){ width="650"  style="display: block; margin: 0 auto;"}
 

@@ -4,7 +4,7 @@ The control loop runs every ~2 s. When the battery is already in the commanded
 state, re-writing force_mode + charge/discharge power (and reading 4 registers
 back) every cycle is pure bus traffic. The guard skips that redundant write.
 
-Crucially it must NOT skip when a discharge command is no longer being delivered
+Crucially it must NOT skip when a move command is no longer being delivered
 (the v3 non-responsive failure mode), otherwise the non-responsive tracker would
 never see the battery stop. These tests pin both behaviours.
 
@@ -54,6 +54,18 @@ class _SlowCoord(FakeCoordinator):
         return replace(super().capabilities, actuator_latency_s=3.0)
 
 
+class _DelayedReadbackCoord(FakeCoordinator):
+    """Physical response is fast enough for control, but telemetry settles late."""
+
+    @property
+    def capabilities(self):
+        return replace(
+            super().capabilities,
+            actuator_latency_s=1.0,
+            readback_latency_s=4.0,
+        )
+
+
 def _SlowCoordFake(data):
     return _SlowCoord(
         name="ZEN1",
@@ -81,6 +93,7 @@ def _controller():
         get_discharge_blockers=lambda c: {},
         _log_low_power_delivery=lambda coordinator, **k: None,
         _last_commanded_net_sign={},
+        _charge_engage_started={},
         _discharge_engage_started={},
         _idle_commanded_started={},
         _non_responsive=SimpleNamespace(
@@ -89,6 +102,7 @@ def _controller():
             set_wake_attempted=lambda *a, **k: None,
         ),
         _idle_runaway_handled={},
+        _weekly_charge_mgr=SimpleNamespace(is_battery_full=lambda c: False),
     )
     # The non-delivery judgment is a real method on the controller; bind it to
     # the stub so the readback and poll-time paths exercise the real logic.
@@ -261,13 +275,121 @@ async def test_discharge_wrong_direction_is_not_treated_as_delivery():
 
 
 async def test_skip_when_charge_unchanged():
-    coord = _Coord({"force_mode": 1, "set_charge_power": 500, "set_discharge_power": 0})
+    coord = _Coord({
+        "force_mode": 1,
+        "set_charge_power": 500,
+        "set_discharge_power": 0,
+        "battery_power": 500,
+    })
     ctrl = _controller()
 
     result = await ChargeDischargeController._set_battery_power(ctrl, coord, 500, 0)
 
     assert result is True
     coord.apply_power.assert_not_called()
+
+
+async def test_no_skip_when_charge_unchanged_but_not_delivering():
+    """The v3 may keep echoing charge set-points after RS485 control drops."""
+    coord = _Coord({
+        "force_mode": 1,
+        "set_charge_power": 1250,
+        "set_discharge_power": 0,
+        "battery_power": -8,
+        "battery_soc": 74,
+        "inverter_state": 1,
+    })
+    coord.apply_power = AsyncMock(return_value=_ok(1250, battery_power_w=-8))
+    ctrl = _controller()
+    ctrl._last_commanded_net_sign[coord] = 1
+    record = MagicMock(return_value=None)
+    ctrl._non_responsive.record_non_delivery = record
+
+    result = await ChargeDischargeController._set_battery_power(
+        ctrl, coord, 1250, 0,
+    )
+
+    assert result is True
+    coord.apply_power.assert_awaited_once()
+    record.assert_called_once_with(
+        coord,
+        1250,
+        0.0,
+        reason="charge_standby_no_delivery",
+        retry_attempted=False,
+    )
+
+
+async def test_no_record_during_charge_engage_grace():
+    coord = _Coord({
+        "force_mode": 1,
+        "set_charge_power": 1250,
+        "set_discharge_power": 0,
+        "battery_power": 0,
+        "battery_soc": 74,
+        "inverter_state": 1,
+    })
+    coord.apply_power = AsyncMock(return_value=_ok(1250, battery_power_w=0))
+    ctrl = _controller()
+    ctrl._last_commanded_net_sign[coord] = 0
+    record = MagicMock(return_value=None)
+    ctrl._non_responsive.record_non_delivery = record
+
+    result = await ChargeDischargeController._set_battery_power(
+        ctrl, coord, 1250, 0,
+    )
+
+    assert result is True
+    record.assert_not_called()
+
+
+async def test_bms_full_charge_cutoff_is_not_non_responsive():
+    coord = _Coord({
+        "battery_power": 0,
+        "battery_soc": 100,
+        "inverter_state": 1,
+    })
+    ctrl = _controller()
+    ctrl._weekly_charge_mgr.is_battery_full = lambda c: True
+    record = MagicMock(return_value=None)
+    clear = MagicMock()
+    ctrl._non_responsive.record_non_delivery = record
+    ctrl._non_responsive.clear = clear
+
+    await ctrl._check_non_delivery(
+        coord, 1250, 0, attempt=0, direction="charge",
+    )
+
+    record.assert_not_called()
+    clear.assert_called_once_with(coord)
+
+
+async def test_charge_standby_non_delivery_wakes_then_excludes():
+    """A stalled charge must use the same fresh-reconnect recovery as discharge."""
+    coord = _Coord({
+        "battery_power": 0,
+        "battery_soc": 74,
+        "inverter_state": 1,
+    })
+    ctrl = _controller()
+    ctrl._non_responsive = NonResponsiveTracker(fail_threshold=3)
+    ctrl._attempt_wake = AsyncMock(return_value=True)
+
+    for _ in range(3):
+        await ctrl._check_non_delivery(
+            coord, 1250, 0, attempt=0, direction="charge",
+        )
+
+    assert ctrl._non_responsive.is_excluded(coord) is False
+    ctrl._attempt_wake.assert_awaited_once_with(coord, is_standby=True)
+
+    for _ in range(3):
+        await ctrl._check_non_delivery(
+            coord, 1250, 0, attempt=0, direction="charge",
+        )
+
+    assert ctrl._non_responsive.is_excluded(coord) is True
+    assert ctrl._non_responsive.excluded_names() == ["BAT1"]
 
 
 async def test_no_skip_when_discharge_unchanged_but_not_delivering():
@@ -335,8 +457,6 @@ async def test_high_soc_standby_after_taper_reaches_wake_and_exclusion():
     ctrl = _controller()
     ctrl._non_responsive = NonResponsiveTracker(fail_threshold=3)
     ctrl._attempt_wake = AsyncMock(return_value=True)
-    ctrl._normal_balance_pause_latch_soc = {coord: 99.0}
-
     for _ in range(3):
         await ctrl._check_non_delivery(coord, 600, 0, attempt=0)
 
@@ -447,6 +567,40 @@ async def test_readback_throttled_to_every_n_writes():
         PD_READBACK_EVERY_N_WRITES - 1
     )
     assert seen_read_back[PD_READBACK_EVERY_N_WRITES] is True
+
+
+async def test_readback_latency_is_decoupled_from_actuator_latency():
+    coord = _DelayedReadbackCoord(
+        name="MQTT1",
+        is_available=True,
+        rs485_user_disabled=False,
+        balance_hold=False,
+        min_soc=10,
+        data={
+            "force_mode": 2,
+            "set_charge_power": 0,
+            "set_discharge_power": 300,
+            "battery_power": 0,
+            "battery_soc": 80,
+            "inverter_state": None,
+        },
+        apply_power=AsyncMock(
+            return_value=SetpointResult(
+                ok=True,
+                net_power_w=-300,
+                confirmed=False,
+                battery_power_w=None,
+            )
+        ),
+    )
+    ctrl = _controller()
+
+    result = await ChargeDischargeController._set_battery_power(
+        ctrl, coord, 0, 300
+    )
+
+    assert result is True
+    coord.apply_power.assert_awaited_once_with(-300, read_back=False)
 
 
 async def test_slow_actuator_records_non_delivery_at_poll_time():

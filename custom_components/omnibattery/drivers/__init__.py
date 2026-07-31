@@ -11,6 +11,7 @@ Drivers:
   - ``zendure``: local HTTP REST, property based, polled (SolarFlow series).
   - ``esphome``: HA-entity based, push (Marstek behind a LilyGo RS485 bridge).
   - ``anker``: Modbus-TCP, register based, polled (SOLIX Solarbank Max AC / 4 E5000 Pro).
+  - ``hoymiles``: HA MQTT based, push telemetry (MS-A2).
 
 See ``docs/plans/driver_abstraction.md`` for the phased extraction plan.
 """
@@ -26,6 +27,8 @@ from .esphome import EsphomeEntityDriver
 from .marstek import MarstekModbusDriver
 from .zendure import ZendureLocalDriver
 from .anker import AnkerModbusDriver
+from .sessy import SessyLocalDriver
+from .hoymiles import HoymilesMqttDriver
 
 __all__ = [
     "BatteryDriver",
@@ -37,4 +40,6 @@ __all__ = [
     "MarstekModbusDriver",
     "ZendureLocalDriver",
     "AnkerModbusDriver",
+    "SessyLocalDriver",
+    "HoymilesMqttDriver",
 ]

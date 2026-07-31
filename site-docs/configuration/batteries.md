@@ -16,6 +16,15 @@ Each battery is added under a **brand** — **Marstek** (Venus, over Modbus TCP/
 
 The brand you pick changes the connection fields below: Marstek asks for the Modbus host/port (or a serial path) and battery version; Zendure auto-detects the model and only needs the device's local IP. The rest of the integration — control loop, sensors, dashboard, predictive charging — is shared.The fields documented on this page are for **Marstek** batteries. The control and SOC/power sliders behave the same for Zendure; only the connection and a user-set capacity differ.
 
+## Hoymiles MS-A2 (MQTT)
+
+The MS-A2 uses the MQTT broker already configured in Home Assistant; Omnibattery never needs its host, port or credentials. In S-Miles Home, enable **MQTT Service** on firmware that supports it and point it at that HA broker, then enter the MQTT device ID (for example `MSA-280024341346`). MQTT integration must be configured in Home Assistant first.
+
+The setup asks for the nominal usable capacity (default `2.24 kWh`; use `4.48 kWh` for a paired system). Its signed wire power is handled internally: positive Omnibattery power means charging while the device uses negative power for charging. While Omnibattery controls the unit it renews the exact external `mqtt_ctrl` command about every 30 seconds and retries failed renewals after 5 seconds. On unload it sends zero power and restores `general`, so the battery is not left in external control.
+
+See [Install and configure a Hoymiles MS-A2](hoymiles-ms-a2.md) for the physical,
+S-Miles Home, MQTT and Omnibattery setup sequence.
+
 ---
 
 ## Per-battery Marstek parameters
@@ -33,7 +42,7 @@ The brand you pick changes the connection fields below: Marstek asks for the Mod
 | **Min SOC (%)** | Stop discharging at this percentage | `12 %` |
 | **Charge hysteresis (%)** | Always on (minimum 2 %). After the battery reaches the top it won't charge again until SOC drops by this margin — avoids rapid cycling and absorbs SOC-reading drift | `2 %` |
 | **Backup offgrid threshold (W)** | Minimum offgrid load (W) to be considered an active backup event | `50 W` |
-| **Enable 100% charge voltage taper** | When target is 100%, limit charge to 95W from 3.48V max cell voltage and stop at 3.58V to measure imbalance after 60 seconds | `on` |
+| **Enable 100% charge voltage taper** | When target is 100%, limit charge to 200 W from 3.48 V max cell voltage and stop at 3.60 V to measure imbalance after 60 seconds | `on` |
 
 ### Battery versions
 
@@ -57,7 +66,7 @@ The brand you pick changes the connection fields below: Marstek asks for the Mod
 
 Max/min SOC and max charge/discharge power values can be adjusted at any time using the integration's sliders without reconfiguring. Changes are persisted and restored on every Home Assistant restart.
 
-If you raise a battery's **Max SOC** to `100 %`, that battery uses voltage-based top protection: 95 W charge throttle from `max_cell_voltage >= 3.48 V`, then charging stops at 3.58 V and the integration waits 60 s to record the balance measurement. Charging then stays stopped (it does not re-trickle and there is no forced discharge) until SOC drops a small margin — so the cell relaxes off the top instead of being held there. See [Cell balance monitor](../features/cell-balance-monitor.md#100-charge-voltage-taper) for the exact entry and exit conditions.
+If you raise a battery's **Max SOC** to `100 %`, that battery uses voltage-based top protection: 200 W charge throttle from `max_cell_voltage >= 3.48 V`, then charging stops at 3.60 V and the integration waits 60 s to record the balance measurement. Charging then stays stopped (it does not re-trickle and there is no forced discharge) until the configured charge-hysteresis threshold is crossed — so the cell relaxes off the top instead of being held there. See [Cell balance monitor](../features/cell-balance-monitor.md#100-charge-voltage-taper) for the exact entry and exit conditions.
 
 ![SOC and power sliders](../assets/screenshots/configuration/battery-runtime-sliders.png){ width="650"  style="display: block; margin: 0 auto;"}
 

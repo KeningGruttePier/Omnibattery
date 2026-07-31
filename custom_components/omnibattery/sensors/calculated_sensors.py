@@ -125,17 +125,6 @@ class MarstekVenusEfficiencySensor(CoordinatorEntity, RestoreEntity, SensorEntit
         charge_energy = self.coordinator.data.get(self._dependency_keys["charge"], 0)
         discharge_energy = self.coordinator.data.get(self._dependency_keys["discharge"], 0)
 
-        # Anker and Venus E v3 only expose lifetime energy registers. Their
-        # derived daily counters share a common midnight baseline, unlike the
-        # independent lifetime counters that can retain different historical
-        # baselines. Prefer that like-for-like pair when it is available.
-        if not self.coordinator.capabilities.has_daily_energy_counters:
-            daily_charge = self.coordinator.data.get("total_daily_charging_energy")
-            daily_discharge = self.coordinator.data.get("total_daily_discharging_energy")
-            if daily_charge is not None and daily_discharge is not None:
-                charge_energy = daily_charge
-                discharge_energy = daily_discharge
-
         if charge_energy <= 0:
             return None
 
@@ -275,7 +264,7 @@ class MarstekVenusStoredEnergySensor(CoordinatorEntity, SensorEntity):
 
 
 class MarstekVenusCycleSensor(CoordinatorEntity, SensorEntity):
-    """Calculated battery cycle count: total_discharge / battery_capacity."""
+    """Calculated battery cycle count."""
 
     def __init__(
         self, coordinator: MarstekVenusDataUpdateCoordinator, definition: dict
@@ -296,7 +285,7 @@ class MarstekVenusCycleSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def native_value(self):
-        """Return calculated cycle count: (discharge + charge) / 2 / capacity."""
+        """Return the driver's configured equivalent-cycle calculation."""
         if self.coordinator.data is None:
             return None
 
@@ -307,6 +296,8 @@ class MarstekVenusCycleSensor(CoordinatorEntity, SensorEntity):
         if not capacity or capacity <= 0:
             return None
 
+        if getattr(self.coordinator.capabilities, "cycles_from_discharge_only", False):
+            return round(discharge / capacity, 1)
         return round((discharge + charge) / 2 / capacity, 1)
 
     @property
@@ -442,8 +433,8 @@ class _CumulativeDailyEnergyData(ExtraStoredData):
 def _legacy_daily_energy_value(last_state: State | None, today: str) -> float | None:
     """Return today's value from the daily-register entity this replaces.
 
-    The v3 migration keeps the entity ID but changes its implementation from a
-    Modbus register sensor to a derived sensor.  The old sensor has no extra
+    The Marstek migration keeps the entity ID but changes its implementation
+    from a Modbus register sensor to a derived sensor. The old sensor has no extra
     restore data, so retain its last numeric state if Home Assistant recorded it
     today.  A state from an earlier local day must not leak into a new day's
     counter.
@@ -500,6 +491,10 @@ class CumulativeDailyEnergySensor(CoordinatorEntity, RestoreEntity, SensorEntity
             last_total=None,
             reset_date=dt_util.now().date().isoformat(),
         )
+        # CoordinatorEntity registers its listener before the asynchronous
+        # RestoreEntity/Recorder recovery below finishes. Ignore callbacks in
+        # that window so a reload cannot publish a transient zero.
+        self._restore_complete = False
 
     async def async_added_to_hass(self) -> None:
         """Restore today's accumulator and cumulative-counter baseline."""
@@ -509,7 +504,7 @@ class CumulativeDailyEnergySensor(CoordinatorEntity, RestoreEntity, SensorEntity
         today = dt_util.now().date().isoformat()
         if restored is not None and restored.reset_date == today:
             self._energy_data = restored
-        # On migration from v3's register sensor there is no extra restore
+        # On migration from a Marstek daily-register sensor there is no extra restore
         # payload: that sensor did not inherit RestoreEntity. A previous release
         # may also have persisted a small post-migration value before this
         # recovery runs. Read today's recorder history in either case and keep
@@ -525,6 +520,7 @@ class CumulativeDailyEnergySensor(CoordinatorEntity, RestoreEntity, SensorEntity
             self._energy_data = _CumulativeDailyEnergyData(
                 recovered_value, self._energy_data.last_total, today
             )
+        self._restore_complete = True
         self._publish_daily()
 
     async def _recover_daily_value_from_recorder(self, today: str) -> float | None:
@@ -553,6 +549,8 @@ class CumulativeDailyEnergySensor(CoordinatorEntity, RestoreEntity, SensorEntity
     @callback
     def _handle_coordinator_update(self) -> None:
         """Consume the newest hardware total and publish the daily delta."""
+        if not self._restore_complete:
+            return
         self._accumulate()
         self._publish_daily()
         super()._handle_coordinator_update()
@@ -574,6 +572,9 @@ class CumulativeDailyEnergySensor(CoordinatorEntity, RestoreEntity, SensorEntity
         """Make the derived key available to system aggregates and the panel."""
         if self.coordinator.data is not None:
             self.coordinator.data[self._key] = self._energy_data.kwh
+            self.coordinator.data[f"{self._key}_reset_date"] = (
+                self._energy_data.reset_date
+            )
 
     @property
     def native_value(self) -> float:
@@ -667,6 +668,9 @@ class SyntheticEnergySensor(CoordinatorEntity, RestoreEntity, SensorEntity):
         self._backup = None
         self._restored_from_entity = False
         self._backup_restore_done = False
+        # See CumulativeDailyEnergySensor: coordinator callbacks may arrive
+        # while RestoreEntity is still awaiting storage.
+        self._restore_complete = False
 
     async def async_added_to_hass(self) -> None:
         """Restore the accumulated energy on startup.
@@ -709,6 +713,7 @@ class SyntheticEnergySensor(CoordinatorEntity, RestoreEntity, SensorEntity):
 
         # Seed the running total into coordinator.data immediately so the cycle /
         # efficiency sensors can read it before the first poll re-publishes it.
+        self._restore_complete = True
         self._publish_total()
 
     @callback
@@ -760,10 +765,16 @@ class SyntheticEnergySensor(CoordinatorEntity, RestoreEntity, SensorEntity):
         """
         if self.coordinator.data is not None:
             self.coordinator.data[self._key] = self._kwh
+            if self._daily and self._reset_date is not None:
+                self.coordinator.data[f"{self._key}_reset_date"] = (
+                    self._reset_date.isoformat()
+                )
 
     @callback
     def _handle_coordinator_update(self) -> None:
         """Integrate battery_power on each coordinator update, then write state."""
+        if not self._restore_complete:
+            return
         self._maybe_restore_from_backup()
         self._accumulate()
         self._publish_total()

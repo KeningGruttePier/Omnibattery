@@ -180,10 +180,10 @@ BALANCE_NOTIFY_COOLDOWN_DAYS = 7    # min days between cell-imbalance notificati
 # ignored because some batteries report it unreliably near the top.
 NORMAL_BALANCE_TAPER_CELL_VOLTAGE = 3.48
 # Hysteresis: taper latch releases only after cell drops this far below entry.
-# Prevents oscillation: at 95 W the cell relaxes slightly below 3.48 V but not
+# Prevents oscillation: at low taper power the cell can relax below 3.48 V but not
 # to 3.44 V, so the latch stays active until the battery is meaningfully discharged.
 NORMAL_BALANCE_TAPER_EXIT_CELL_VOLTAGE = 3.44
-NORMAL_BALANCE_PAUSE_CELL_VOLTAGE = 3.58
+NORMAL_BALANCE_PAUSE_CELL_VOLTAGE = 3.60
 NORMAL_BALANCE_CHARGE_POWER_W = 200
 NORMAL_BALANCE_MEASURE_WAIT_SECONDS = 60
 # Once the top voltage is reached the taper stops charging and latches. It does
@@ -191,17 +191,15 @@ NORMAL_BALANCE_MEASURE_WAIT_SECONDS = 60
 # voltage and keep some v3 BMSs from leaving standby to discharge). The latch
 # releases — allowing a later top-up to taper again — only after the battery has
 # actually been discharged by this SOC margin from where it latched.
-NORMAL_BALANCE_RESUME_SOC_DROP = 3             # %: SOC must fall this far below the latch SOC before charging may resume
-
 # SOC recalibration on a stuck top voltage.
 # A pack that hits the top cell voltage (pause point) while the BMS reports a SOC
-# below full is miscalibrated: these BMSs do not correct the coulomb counter until
-# they perform the charge cutoff themselves (users see e.g. 70% — or 96% — with a
-# cell already at 3.58 V). In that case, instead of holding at the pause voltage,
-# keep charging at the tapered power until the BMS itself cuts off, which forces it
-# to recalibrate SOC to 100%. Threshold is just below full so the whole drifted
-# range (not only "far below full") gets one recalibrating cutoff.
-NORMAL_BALANCE_RECAL_SOC_THRESHOLD = 99        # %: reported SOC below this at the pause voltage = miscalibration
+# below full may have a drifted coulomb counter. Some BMS firmware only corrects
+# that counter after performing the charge cutoff itself (users see e.g. 70% or 96% with a
+# cell already at 3.60 V). In that case, instead of holding at the pause voltage,
+# keep charging at the tapered power until the BMS itself cuts off, attempting to
+# recalibrate SOC. The firmware may keep reporting the old SOC after cutoff, so
+# recalibration is explicitly best-effort rather than a completion guarantee.
+NORMAL_BALANCE_RECAL_SOC_THRESHOLD = 99        # %: below this, make one best-effort recalibration attempt
 NORMAL_BALANCE_RECAL_CUTOFF_POWER_W = 10       # W: charge collapsed (BMS terminated)
 NORMAL_BALANCE_RECAL_CUTOFF_CYCLES = 5         # consecutive cycles to confirm the BMS cutoff
 NORMAL_BALANCE_RECAL_INVERTER_STANDBY = 1      # inverter_state raw value for Standby
@@ -279,12 +277,27 @@ MAX_SENSOR_STALE_S = 65.0
 # gap from flagging an otherwise fast sensor.
 SLOW_SENSOR_WARN_INTERVALS = 3
 
-# An actuator at or below this latency (seconds, DriverCapabilities.actuator_latency_s)
-# reaches its setpoint and reflects it in telemetry within one poll. Such drivers do
-# the hot-path readback and use the measured-power feedforward; slower ones (Zendure
-# HTTP, ~2.5 s settle) skip both so their multi-second latency can't block or destabilise
-# the shared control loop. Set to the coordinator poll interval.
-FAST_ACTUATOR_MAX_LATENCY_S = 1.5
+# How often the dynamic-pricing handler re-parses the price sensor purely to
+# refresh _price_data_status for the health check. The parse itself is cheap but
+# pointless every 2.5 s control cycle, and price attributes change hourly at most.
+PRICE_HEALTH_CHECK_INTERVAL_S = 900.0
+
+# How long price parsing must keep failing before a Repairs issue is raised.
+# Long enough to ride out an integration reload, a provider outage or the
+# day-ahead publication gap; short enough that a broken sensor is noticed the
+# same day instead of silently disabling price-aware charging for weeks.
+PRICE_DATA_ISSUE_DELAY_S = 7200.0
+
+# How long a configured solar-forecast sensor must stay unreadable before a
+# Repairs issue is raised. Same reasoning as the price feed: long enough to ride
+# out a provider outage, short enough to catch a dead sensor the same day.
+FORECAST_DATA_ISSUE_DELAY_S = 7200.0
+
+# A readback at or below this settle latency (seconds,
+# DriverCapabilities.readback_latency_s with actuator_latency_s as fallback)
+# reflects the new command within one poll. Slower telemetry paths skip the
+# hot-path ACK readback so they cannot block the shared control loop.
+HOT_PATH_READBACK_MAX_LATENCY_S = 1.5
 
 # Discharge engage grace: a slow inverter (e.g. Zendure HTTP) takes seconds to
 # reverse from charge/idle into discharge — measured up to ~20-30 s on a cold
@@ -323,18 +336,20 @@ DISCHARGE_MIN_SOC_REENTRY_MARGIN = 2
 # Once the battery has reached the top, keep the cells in the balancing window
 # with gentle charge/discharge micro-cycles instead of only resting at 100% SOC.
 ACTIVE_BALANCE_CHARGE_RESUME_CELL_VOLTAGE = 3.49
-ACTIVE_BALANCE_CHARGE_STOP_CELL_VOLTAGE = 3.58
+ACTIVE_BALANCE_CHARGE_STOP_CELL_VOLTAGE = 3.60
 ACTIVE_BALANCE_DISCHARGE_STOP_CELL_VOLTAGE = 3.49
 ACTIVE_BALANCE_FINAL_DISCHARGE_STOP_CELL_VOLTAGE = 3.48
 ACTIVE_BALANCE_MEASURE_WAIT_SECONDS = 60
 ACTIVE_BALANCE_ADAPTIVE_RESUME_STEP_V = 0.01
 ACTIVE_BALANCE_ADAPTIVE_MIN_RESUME_CELL_VOLTAGE = 3.40
-# Consecutive ~0 W charge-rejection detections required before treating a charge
-# below the stop voltage as a real BMS cut. The control loop runs every ~2 s, so
-# a single transient (charge ramp-up after escape discharge, or natural current
-# taper approaching the stop voltage) clears within 1-2 cycles and must not be
-# logged as a real cutoff measurement. 3 cycles (~6 s) means the cells are truly
-# at rest before recording a delta and ratcheting the retry voltage down.
+# Give a new active-balance charge leg time to engage before a near-zero power
+# sample can count as BMS rejection. DISCHARGE -> CHARGE briefly reports Standby
+# and residual ~0 W while the new 95 W command is taking effect; without this
+# grace, repeated control ticks over that transition are mistaken for a cutoff.
+ACTIVE_BALANCE_CHARGE_ENGAGE_GRACE_S = 10
+# Consecutive ~0 W charge-rejection detections required after the engage grace
+# (or after charge has first been observed) before treating a below-stop charge
+# as a real BMS cut.
 ACTIVE_BALANCE_CHARGE_REJECT_DEBOUNCE_CYCLES = 3
 ACTIVE_BALANCE_CHARGE_POWER_W = 95
 ACTIVE_BALANCE_DISCHARGE_POWER_W = 200
@@ -429,6 +444,7 @@ WEEKDAY_MAP = {
 
 # Capacity Protection Mode Configuration
 CONF_CAPACITY_PROTECTION_ENABLED = "capacity_protection_enabled"
+CONF_CAPACITY_PROTECTION_EXCLUDED_DEVICES = "capacity_protection_excluded_devices"
 CONF_CAPACITY_PROTECTION_SOC_THRESHOLD = "capacity_protection_soc_threshold"
 CONF_CAPACITY_PROTECTION_LIMIT = "capacity_protection_limit"
 

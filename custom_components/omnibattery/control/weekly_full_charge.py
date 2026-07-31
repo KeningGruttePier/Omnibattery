@@ -478,10 +478,6 @@ class WeeklyFullChargeManager:
         ctrl._weekly_charge_saved_max_soc.clear()
 
         # Clear the normal top-charge pause so next week starts fresh.
-        if hasattr(ctrl, "_normal_balance_pause_latch_soc"):
-            ctrl._normal_balance_pause_latch_soc.clear()
-        for coordinator in ctrl.coordinators:
-            ctrl.remove_charge_block("normal_balance_pause", coordinator=coordinator)
 
         # Fire a one-shot delta-V capture for batteries that did not complete
         # the 60-second diagnostic measurement (measurement is best-effort).

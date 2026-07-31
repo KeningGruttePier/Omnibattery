@@ -30,6 +30,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
+from homeassistant.core import State
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.util import dt as dt_util
 
@@ -125,6 +126,7 @@ def test_flip_accumulates_across_stale_cycles_on_slow_sensor():
 
 def _cadence_ctrl():
     return SimpleNamespace(
+        _last_sensor_report_time=None,
         _slow_sensor_issue_created=False,
         _slow_sensor_intervals=0,
         _fast_sensor_intervals=0,
@@ -136,6 +138,10 @@ def _cadence_ctrl():
 
 def _cadence(ctrl, elapsed_s):
     ChargeDischargeController._check_sensor_cadence(ctrl, elapsed_s)
+
+
+def _track_report(ctrl, state):
+    return ChargeDischargeController._track_sensor_report(ctrl, state)
 
 
 def _capture_repairs(monkeypatch):
@@ -152,6 +158,45 @@ def _capture_repairs(monkeypatch):
         lambda *args, **kwargs: deleted.append((args, kwargs)),
     )
     return created, deleted
+
+
+def test_unchanged_four_second_reports_do_not_create_slow_sensor_repair(monkeypatch):
+    """P1 reports remain fresh even when several consecutive values are identical."""
+    ctrl = _cadence_ctrl()
+    created, deleted = _capture_repairs(monkeypatch)
+    first_report = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+    for report_number in range(6):
+        report_time = first_report + timedelta(seconds=4 * report_number)
+        state = State(
+            "sensor.grid_power",
+            "123",
+            last_changed=first_report,
+            last_reported=report_time,
+            last_updated=first_report,
+        )
+
+        tracked_time, elapsed_s, is_stale = _track_report(ctrl, state)
+        assert tracked_time == report_time
+        assert is_stale is False
+        _cadence(ctrl, elapsed_s)
+
+    assert created == []
+    assert len(deleted) == 1
+    assert ctrl._slow_sensor_intervals == 0
+
+
+def test_sensor_report_tracking_falls_back_to_last_updated():
+    """Retain compatibility with State-like objects without last_reported."""
+    ctrl = _cadence_ctrl()
+    update_time = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    legacy_state = SimpleNamespace(last_updated=update_time)
+
+    tracked_time, elapsed_s, is_stale = _track_report(ctrl, legacy_state)
+
+    assert tracked_time == update_time
+    assert elapsed_s is None
+    assert is_stale is False
 
 
 def test_sustained_slow_cadence_creates_one_repair_without_log_spam(caplog, monkeypatch):
@@ -179,7 +224,7 @@ def test_sustained_slow_cadence_creates_one_repair_without_log_spam(caplog, monk
 def test_single_outage_gap_does_not_warn(caplog, monkeypatch):
     """A sensor unavailable for minutes leaves one huge gap; that is not a slow sensor.
 
-    ``_last_sensor_update_time`` is not advanced while the sensor reads unavailable,
+    ``_last_sensor_report_time`` is not advanced while the sensor reads unavailable,
     so the first sample after any downtime measures the whole outage.
     """
     ctrl = _cadence_ctrl()

@@ -87,15 +87,7 @@ def _load_definitions(version: str) -> dict[str, list[dict]]:
             BINARY_SENSOR_DEFINITIONS_V3,
             BUTTON_DEFINITIONS_V3,
         )
-        # Venus E v3 firmware's daily energy registers are unreliable.  Do not
-        # expose or poll them; the sensor platform derives the same entity keys
-        # from the lifetime counters, as it does for Anker.
-        sensor = [
-            definition
-            for definition in SENSOR_DEFINITIONS_V3
-            if definition["key"]
-            not in {"total_daily_charging_energy", "total_daily_discharging_energy"}
-        ]
+        sensor = SENSOR_DEFINITIONS_V3
         number = NUMBER_DEFINITIONS_V3
         select = SELECT_DEFINITIONS_V3
         switch = SWITCH_DEFINITIONS_V3
@@ -269,9 +261,9 @@ class MarstekModbusDriver(BatteryDriver):
             has_alarm_registers="alarm_status" in self._telemetry_index,
             has_rs485_control=REGISTER_MAP.get(version, {}).get("rs485_control") is not None,
             has_energy_counters=True,  # battery_total_energy + total_*_energy registers
-            # v3's hardware daily registers are unreliable.  The entity layer
-            # derives them from the reliable lifetime counters instead.
-            has_daily_energy_counters=version != "v3",
+            # All Marstek models use software-derived daily counters so their
+            # reset and same-day migration behaviour stays consistent.
+            has_daily_energy_counters=False,
             # v3/vA/vD pace at 150 ms/frame through a single TCP slot, so a setpoint
             # write + the inverter engaging settles slower than v2's 50 ms/frame.
             actuator_latency_s=0.8 if self._is_v3_family else 0.3,

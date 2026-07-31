@@ -9,23 +9,23 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.helpers.storage import Store
 
 from ..const import (
-    DOMAIN,
+    BALANCE_BASELINE_OFFSET_MV,
+    BALANCE_HISTORY_MAX,
+    BALANCE_NOTIFY_COOLDOWN_DAYS,
+    BALANCE_RED_CONSECUTIVE_ALERT,
     BALANCE_STORAGE_KEY,
     BALANCE_STORAGE_VERSION,
-    BALANCE_BASELINE_OFFSET_MV,
-    BALANCE_THRESHOLD_YELLOW,
     BALANCE_THRESHOLD_ORANGE,
     BALANCE_THRESHOLD_RED,
-    BALANCE_HISTORY_MAX,
-    BALANCE_RED_CONSECUTIVE_ALERT,
+    BALANCE_THRESHOLD_YELLOW,
     BALANCE_TREND_ALERT_AVG_MV,
-    BALANCE_NOTIFY_COOLDOWN_DAYS,
+    DOMAIN,
     NOTIFICATION_ID_PREFIX,
 )
 
 if TYPE_CHECKING:
-    from homeassistant.core import HomeAssistant
     from homeassistant.config_entries import ConfigEntry
+    from homeassistant.core import HomeAssistant
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -162,10 +162,9 @@ class BalanceMonitor:
     ) -> None:
         """Record a delta reading when the active-balance mode switches phase.
 
-        The current use case is the CHARGE/HOLD -> DISCHARGE transition, which is
-        the natural inflection point to observe the cell delta. Saved with type
-        ``active_balance_transition`` so it does not feed the top-charge evaluator
-        or trend alerts; it just shows up in the cell-delta sensor history.
+        The current use case is the CHARGE/HOLD -> DISCHARGE transition. It is
+        persisted as ``active_balance_transition`` for diagnostics, but does not
+        feed the Cell Delta entity, its average, trend or top-charge evaluator.
         """
         try:
             vmax_f = float(vmax)
@@ -196,7 +195,7 @@ class BalanceMonitor:
         soc: float | None,
         phase: str | None = None,
     ) -> None:
-        """Record the explicit active-balance delta measurement."""
+        """Record the explicit active-balance top delta measurement."""
         try:
             vmax_f = float(vmax)
             vmin_f = float(vmin)
@@ -225,7 +224,7 @@ class BalanceMonitor:
         soc: float | None,
         phase: str | None = None,
     ) -> None:
-        """Record the explicit 3.55 V top-charge delta measurement."""
+        """Record the explicit 3.60 V top-charge delta measurement."""
         try:
             vmax_f = float(vmax)
             vmin_f = float(vmin)
@@ -248,8 +247,8 @@ class BalanceMonitor:
         )
 
     def get_recent_readings(self, host: str, limit: int = 10) -> list[dict]:
-        """Return the most-recent stored readings (newest last)."""
-        readings = self._data.get(host, {}).get("readings", [])
+        """Return the most-recent comparable readings (newest last)."""
+        readings = self._comparable_readings(host)
         return list(readings[-limit:])
 
     # ------------------------------------------------------------------
@@ -289,6 +288,7 @@ class BalanceMonitor:
         if reading_type == "top_balance_measurement" and coordinator is not None:
             status, severe = self._evaluate(delta_mv, bat, issues)
 
+        comparable = self._is_comparable_reading(entry)
         trend = self._trend(host)
         if reading_type == "top_balance_measurement" and coordinator is not None:
             self._check_trend_alert(trend, issues)
@@ -296,7 +296,8 @@ class BalanceMonitor:
                 self._maybe_notify(host, coordinator.name, bat, issues, severe)
 
         await self._store.async_save(self._data)
-        self._push_sensors(host, delta_mv, status, trend, entry["ts"])
+        if comparable:
+            self._push_sensors(host, delta_mv, status, trend, entry["ts"])
         return status
 
     def _evaluate(
@@ -333,8 +334,7 @@ class BalanceMonitor:
         return status, severe
 
     def _trend(self, host: str) -> dict:
-        readings = self._data.get(host, {}).get("readings", [])
-        delta_readings = [r for r in readings if r.get("delta_mV") is not None]
+        delta_readings = self._comparable_readings(host)
         if not delta_readings:
             return {"trend": "unknown", "avg_4w": None}
 
@@ -419,8 +419,7 @@ class BalanceMonitor:
 
     def get_initial_state(self, host: str) -> dict:
         """Return state derived from store — used by sensors at startup."""
-        readings = self._data.get(host, {}).get("readings", [])
-        delta_readings = [r for r in readings if r.get("delta_mV") is not None]
+        delta_readings = self._comparable_readings(host)
         if not delta_readings:
             return {
                 "delta_mV": None,
@@ -442,6 +441,30 @@ class BalanceMonitor:
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _is_comparable_reading(reading: dict) -> bool:
+        """Return whether a reading belongs to the repeatable top-voltage series."""
+        if reading.get("delta_mV") is None:
+            return False
+        reading_type = reading.get("type")
+        if reading_type == "active_balance_transition":
+            return False
+        if reading_type == "active_balance_measurement":
+            # Older valid readings may predate the phase attribute. Explicit
+            # CHARGE readings are below-stop rejection diagnostics and must not
+            # affect the sensor, four-reading average or trend.
+            return reading.get("phase") in {None, "WAIT_MEASURE"}
+        return True
+
+    def _comparable_readings(self, host: str) -> list[dict]:
+        """Return stored readings suitable for like-for-like balance analysis."""
+        readings = self._data.get(host, {}).get("readings", [])
+        return [
+            reading
+            for reading in readings
+            if self._is_comparable_reading(reading)
+        ]
 
     @staticmethod
     def _effective_delta(delta_mv: float) -> float:

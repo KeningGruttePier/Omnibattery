@@ -43,7 +43,7 @@ def format_predictive_notification_message(
     )
     effective_power = min(max_contracted_power, max_charge_capacity)
     power_str = (
-        f"{effective_power}W (ICP: {max_contracted_power}W, batteries: {max_charge_capacity}W)"
+        f"{effective_power}W (contracted: {max_contracted_power}W, batteries: {max_charge_capacity}W)"
     )
 
     # Safe mode: no solar forecast
@@ -88,7 +88,7 @@ def format_predictive_notification_message(
             if slot_str else "⏰ Charging now from grid\n"
         )
 
-    grid_charge = decision_data.get("grid_charge_kwh")
+    planned_grid_charge = decision_data.get("planned_grid_charge_kwh")
     solar_surplus = decision_data.get("solar_surplus_kwh")
     if decision_data.get("floor_active"):
         # Charge is driven by the guaranteed-minimum-SOC floor, not the daily
@@ -98,11 +98,15 @@ def format_predictive_notification_message(
         charge_split_line = (
             f"🔌 Grid: {energy_deficit:.2f} kWh to reach guaranteed minimum SOC\n"
         )
-    elif grid_charge is not None and solar_surplus is not None:
-        # solar_surplus is capped at battery headroom, so it's the amount solar
-        # can actually add; grid covers the rest of the gap.
+    elif planned_grid_charge is not None and solar_surplus is not None:
+        # The predictive SOC target is based on planned_grid_charge_kwh.  Do not
+        # report the complementary headroom calculation here: it can differ
+        # from the actual grid target when a grid-charge margin is configured.
+        # Solar surplus is a whole-day energy-balance estimate, not a promise
+        # that the remainder of today's battery headroom will be solar-charged.
         charge_split_line = (
-            f"🔌 Grid: {grid_charge:.2f} kWh — solar will charge the remaining {solar_surplus:.2f} kWh\n"
+            f"🔌 Planned grid charge: {planned_grid_charge:.2f} kWh\n"
+            f"☀️ Forecast solar surplus: {solar_surplus:.2f} kWh (after expected consumption)\n"
         )
     else:
         charge_split_line = f"⚡ Deficit: {energy_deficit:.2f} kWh\n"

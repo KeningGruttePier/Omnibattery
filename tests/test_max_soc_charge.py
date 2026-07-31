@@ -61,29 +61,17 @@ class _Coord:
 def _controller(coords, **overrides):
     """Stub controller exposing only the state dicts/collaborators the manager
     reads. ``_blocks`` records charge-block sources per coordinator so tests can
-    assert the ``normal_balance_pause`` block was set/removed."""
-    blocks: dict = {}
-
-    def _set_block(source, reason, details=None, coordinator=None):
-        blocks.setdefault(coordinator, set()).add(source)
-
-    def _remove_block(source, coordinator=None):
-        blocks.get(coordinator, set()).discard(source)
-
+tracks the manager's runtime state."""
     base = dict(
         coordinators=list(coords),
         _normal_balance_date=dt_util.now().date(),
-        _normal_balance_charge_paused={},
         _normal_balance_voltage_tapered={},
         _normal_active_balance_phases={},
         _normal_balance_measure_started={},
         _normal_balance_last_delta_v={},
-        _normal_balance_pause_latch_soc={},
         _normal_balance_recal_override={},
         _normal_balance_recal_cutoff_count={},
         _normal_balance_recal_latched={},
-        set_charge_block=_set_block,
-        remove_charge_block=_remove_block,
         _is_active_balance_mode_running=lambda coordinator: False,
         _weekly_charge_mgr=object(),
         _weekly_full_charge_unlocked=lambda: False,
@@ -93,16 +81,11 @@ def _controller(coords, **overrides):
     )
     base.update(overrides)
     ctrl = SimpleNamespace(**base)
-    ctrl._blocks = blocks
     return ctrl
 
 
 def _mgr(ctrl):
     return MaxSocChargeManager(SimpleNamespace(), ctrl)
-
-
-def _paused(ctrl, coord):
-    return "normal_balance_pause" in ctrl._blocks.get(coord, set())
 
 
 # ----------------------------------------------------------------------
@@ -214,90 +197,53 @@ def test_apply_charge_taper_stays_latched_in_hysteresis_band():
 def test_reset_if_new_day_noop_same_day():
     c = _Coord()
     ctrl = _controller([c])
-    ctrl._normal_balance_charge_paused[c] = True
+    ctrl._normal_balance_voltage_tapered[c] = True
     _mgr(ctrl).reset_if_new_day()
-    assert ctrl._normal_balance_charge_paused == {c: True}
+    assert ctrl._normal_balance_voltage_tapered == {c: True}
 
 
-def test_reset_if_new_day_clears_state_and_blocks_on_rollover():
+def test_reset_if_new_day_clears_taper_state_on_rollover():
     c = _Coord()
     ctrl = _controller([c])
     ctrl._normal_balance_date = dt_util.now().date() - timedelta(days=1)
-    ctrl._normal_balance_charge_paused[c] = True
-    ctrl._normal_balance_pause_latch_soc[c] = 95.0
-    ctrl._blocks.setdefault(c, set()).add("normal_balance_pause")
+    ctrl._normal_balance_voltage_tapered[c] = True
 
     _mgr(ctrl).reset_if_new_day()
 
     assert ctrl._normal_balance_date == dt_util.now().date()
-    assert ctrl._normal_balance_charge_paused == {}
-    assert ctrl._normal_balance_pause_latch_soc == {}
-    assert not _paused(ctrl, c)
+    assert ctrl._normal_balance_voltage_tapered == {}
 
 
 # ----------------------------------------------------------------------
 # refresh_blocks
 # ----------------------------------------------------------------------
 
-def test_refresh_blocks_clears_when_taper_not_applicable():
+def test_refresh_blocks_clears_taper_state_when_not_applicable():
     c = _Coord(taper_enabled=False, data={"max_cell_voltage": 3.60})
     ctrl = _controller([c])
-    ctrl._normal_balance_charge_paused[c] = True
-    ctrl._blocks.setdefault(c, set()).add("normal_balance_pause")
+    ctrl._normal_balance_voltage_tapered[c] = True
 
     _mgr(ctrl).refresh_blocks()
 
-    assert c not in ctrl._normal_balance_charge_paused
-    assert not _paused(ctrl, c)
+    assert c not in ctrl._normal_balance_voltage_tapered
 
 
-def test_refresh_blocks_latches_pause_at_top_voltage():
-    # SOC at 100 so the recal override does not keep charging (a low SOC at the
-    # top voltage would instead trigger recalibration and skip the pause).
+def test_refresh_blocks_does_not_add_a_second_top_charge_block():
     c = _Coord(data={"max_cell_voltage": 3.60, "battery_soc": 100})
     ctrl = _controller([c])
 
     _mgr(ctrl).refresh_blocks()
 
-    assert _paused(ctrl, c)
-    assert ctrl._normal_balance_pause_latch_soc[c] == 100.0
-    assert ctrl._normal_balance_charge_paused.get(c) is True
+    assert ctrl._normal_balance_recal_override[c] is False
 
 
-def test_refresh_blocks_pause_holds_until_soc_drop_margin():
-    c = _Coord(data={"max_cell_voltage": 3.60, "battery_soc": 100})
-    ctrl = _controller([c])
-    m = _mgr(ctrl)
-    m.refresh_blocks()  # latch at soc 100
-
-    # Cell relaxed below the pause voltage but still in the taper zone; SOC has
-    # only dropped 1% (resume margin is 3%) -> still paused.
-    c.data.update(max_cell_voltage=3.50, battery_soc=99)
-    m.refresh_blocks()
-    assert _paused(ctrl, c)
-    assert ctrl._normal_balance_pause_latch_soc[c] == 100.0
-
-
-def test_refresh_blocks_pause_releases_after_soc_drop_margin():
-    c = _Coord(data={"max_cell_voltage": 3.60, "battery_soc": 95})
-    ctrl = _controller([c])
-    m = _mgr(ctrl)
-    m.refresh_blocks()  # latch at soc 95
-
-    c.data.update(max_cell_voltage=3.50, battery_soc=91)  # 95 - 91 = 4 >= 3
-    m.refresh_blocks()
-    assert not _paused(ctrl, c)
-    assert c not in ctrl._normal_balance_pause_latch_soc
-
-
-def test_refresh_blocks_latches_on_bms_cutoff_signature_below_pause_voltage():
-    # A commanded charge collapsed to <=10 W with the inverter in standby.
+def test_refresh_blocks_starts_recalibration_at_top_voltage_on_low_soc():
     c = _Coord(
         data={
-            "max_cell_voltage": 3.50,
-            "battery_soc": 100,
-            "battery_power": 5,
-            "inverter_state": 1,
+            "max_cell_voltage": 3.60,
+            "battery_soc": 95,
+            "battery_power": 200,
+            "inverter_state": 0,
         },
         commanded_charge_power=200,
     )
@@ -305,25 +251,7 @@ def test_refresh_blocks_latches_on_bms_cutoff_signature_below_pause_voltage():
 
     _mgr(ctrl).refresh_blocks()
 
-    assert _paused(ctrl, c)
-
-
-def test_refresh_blocks_does_not_latch_pause_on_idle_battery():
-    c = _Coord(
-        data={
-            "max_cell_voltage": 3.50,
-            "battery_soc": 92,
-            "battery_power": 0,
-            "inverter_state": 1,
-        },
-        commanded_charge_power=0,
-    )
-    ctrl = _controller([c])
-
-    _mgr(ctrl).refresh_blocks()
-
-    assert not _paused(ctrl, c)
-    assert c not in ctrl._normal_balance_pause_latch_soc
+    assert ctrl._normal_balance_recal_override[c] is True
 
 
 # ----------------------------------------------------------------------
@@ -412,7 +340,6 @@ def test_get_status_reports_per_battery_diagnostics():
                      "battery_soc": 95})
     empty = _Coord(name="empty", data={})  # skipped: no data
     ctrl = _controller([c, empty])
-    ctrl._normal_balance_charge_paused[c] = True
 
     status = _mgr(ctrl).get_status()
 
@@ -420,7 +347,6 @@ def test_get_status_reports_per_battery_diagnostics():
     s = status["bat"]
     assert s["enabled"] is True
     assert s["in_zone"] is True
-    assert s["paused"] is True
     assert s["delta_V"] == 0.05
     assert s["charge_limit_w"] == 800
 
@@ -446,7 +372,6 @@ async def test_handle_measurement_enters_hold_and_takes_over():
     assert len(calls) == 1
     name, charge, discharge, kw = calls[0]
     assert (charge, discharge) == (0, 0)
-    assert "normal_balance_pause" in kw["ignore_charge_blockers"]
 
 
 async def test_handle_measurement_records_delta_after_wait():
@@ -499,7 +424,7 @@ async def test_handle_measurement_skips_during_soc_recalibration():
 
 
 async def test_handle_measurement_skips_during_weekly_full_charge():
-    """Weekly full charge owns the taper to the BMS cutoff — no 3.58 V hold."""
+    """Weekly full charge owns the taper to the BMS cutoff — no 3.60 V hold."""
     c = _Coord(data={"max_cell_voltage": 3.60, "min_cell_voltage": 3.55,
                      "battery_soc": 94})
     calls = []

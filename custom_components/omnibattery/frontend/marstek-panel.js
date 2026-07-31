@@ -89,7 +89,7 @@ const I18N = {
     secManual: "Manual mode", itemEnable: "Enable",
     secTempLimit: "Temperature charge limit", itemTempLimitC: "Temperature limit", itemTempLimitBand: "Ramp band", itemTempLimitFloor: "Minimum charge power", itemTempApplyDischarge: "Also throttle discharge",
     itemMaxContracted: "Max contracted power", itemSolarSafety: "Solar safety margin", itemGridChargeMargin: "Grid charge margin", itemMinSocFloorEnable: "SOC floor", itemMinSocFloor: "Guaranteed minimum SOC",
-    itemSocThreshold: "SOC threshold", itemPeakLimit: "Peak limit",
+    itemSocThreshold: "SOC threshold", itemPeakLimit: "Peak limit", itemExcludedPeakShaving: "Peak shaving for excluded devices",
     itemArbitrageMargin: "Min. arbitrage margin", itemRoundTripEfficiency: "Round-trip efficiency", itemMaxPrice: "Max price (charge)", itemDischargePrice: "Discharge price floor", itemPriceDischarge: "Discharge only above price", itemReevaluatePrices: "Re-evaluate prices now",
     itemDelaySafety: "Safety margin", itemDelaySoc: "Delay target SOC", itemDelaySocEnable: "Delay target SOC enabled", itemDelayDeadband: "Balance deadband",
     secHourly: "Hourly balance", hourlyEsOnly: "Only useful in Spain (RD 244/2019) · detected country: {c}", secWeeklyFull: "Weekly full charge", itemWeeklyDay: "Full charge day", itemWeeklyDelay: "Wait for solar charge delay", itemHourlyTarget: "Target net balance", itemHourlyMaxOffset: "Max power offset", itemHourlyDeadband: "Deadband", itemHourlyHysteresis: "Hysteresis",
@@ -159,7 +159,7 @@ const I18N = {
     secManual: "Modo manual", itemEnable: "Activar",
     secTempLimit: "Límite de carga por temperatura", itemTempLimitC: "Límite de temperatura", itemTempLimitBand: "Banda de reducción", itemTempLimitFloor: "Potencia de carga mínima", itemTempApplyDischarge: "Reducir también la descarga",
     itemMaxContracted: "Potencia contratada máx.", itemSolarSafety: "Margen de seguridad solar", itemGridChargeMargin: "Margen de carga de red", itemMinSocFloorEnable: "Suelo de SOC", itemMinSocFloor: "SOC mínimo garantizado",
-    itemSocThreshold: "Umbral de SOC", itemPeakLimit: "Límite de pico",
+    itemSocThreshold: "Umbral de SOC", itemPeakLimit: "Límite de pico", itemExcludedPeakShaving: "Reducción de picos para dispositivos excluidos",
     itemArbitrageMargin: "Margen mínimo de arbitraje", itemRoundTripEfficiency: "Eficiencia de ciclo completo", itemMaxPrice: "Precio máximo (carga)", itemDischargePrice: "Precio mínimo de descarga", itemPriceDischarge: "Descargar solo si precio alto", itemReevaluatePrices: "Reevaluar precios ahora",
     itemDelaySafety: "Margen de seguridad", itemDelaySoc: "SOC objetivo de retardo", itemDelaySocEnable: "SOC objetivo de retardo activo", itemDelayDeadband: "Banda muerta de balance",
     secHourly: "Balance horario", hourlyEsOnly: "Solo útil en España (RD 244/2019) · país detectado: {c}", secWeeklyFull: "Carga semanal completa", itemWeeklyDay: "Día de carga completa", itemWeeklyDelay: "Esperar al retraso por solar", itemHourlyTarget: "Objetivo de balance neto", itemHourlyMaxOffset: "Offset máx. de potencia", itemHourlyDeadband: "Banda muerta", itemHourlyHysteresis: "Histéresis",
@@ -226,7 +226,7 @@ const I18N = {
     secManual: "Mode manual", itemEnable: "Activar",
     secTempLimit: "Límit de càrrega per temperatura", itemTempLimitC: "Límit de temperatura", itemTempLimitBand: "Banda de reducció", itemTempLimitFloor: "Potència de càrrega mínima", itemTempApplyDischarge: "Redueix també la descàrrega",
     itemMaxContracted: "Potència contractada màx.", itemSolarSafety: "Marge de seguretat solar", itemGridChargeMargin: "Marge de càrrega de xarxa", itemMinSocFloorEnable: "SOC Mínim", itemMinSocFloor: "SOC mínim garantit",
-    itemSocThreshold: "Llindar de SOC", itemPeakLimit: "Límit de pic",
+    itemSocThreshold: "Llindar de SOC", itemPeakLimit: "Límit de pic", itemExcludedPeakShaving: "Reducció de pics per a dispositius exclosos",
     itemArbitrageMargin: "Marge mínim d'arbitratge", itemRoundTripEfficiency: "Eficiència de cicle complet", itemMaxPrice: "Preu màxim (càrrega)", itemDischargePrice: "Preu mínim de descàrrega", itemPriceDischarge: "Descarregar només si preu alt", itemReevaluatePrices: "Reavaluar preus ara",
     itemDelaySafety: "Marge de seguretat", itemDelaySoc: "SOC objectiu de retard", itemDelaySocEnable: "SOC objectiu de retard actiu", itemDelayDeadband: "Banda morta de balanç",
     secHourly: "Balanç horari", hourlyEsOnly: "Només útil a Espanya (RD 244/2019) · país detectat: {c}", secWeeklyFull: "Càrrega setmanal completa", itemWeeklyDay: "Dia de càrrega completa", itemWeeklyDelay: "Espera el retard per solar", itemHourlyTarget: "Objectiu de balanç net", itemHourlyMaxOffset: "Offset màx. de potència", itemHourlyDeadband: "Banda morta", itemHourlyHysteresis: "Histèresi",
@@ -293,7 +293,7 @@ const I18N = {
     secManual: "Manueller Modus", itemEnable: "Aktivieren",
     secTempLimit: "Temperaturbasierte Ladebegrenzung", itemTempLimitC: "Temperaturgrenze", itemTempLimitBand: "Drosselbereich", itemTempLimitFloor: "Minimale Ladeleistung", itemTempApplyDischarge: "Auch Entladung drosseln",
     itemMaxContracted: "Max. Vertragsleistung", itemSolarSafety: "Sicherheitspuffer Solar", itemGridChargeMargin: "Netzladungs-Marge", itemMinSocFloorEnable: "SOC-Untergrenze", itemMinSocFloor: "Garantierter Mindest-SOC",
-    itemSocThreshold: "SOC-Schwelle", itemPeakLimit: "Spitzenlimit",
+    itemSocThreshold: "SOC-Schwelle", itemPeakLimit: "Spitzenlimit", itemExcludedPeakShaving: "Spitzenlastkappung für ausgeschlossene Geräte",
     itemArbitrageMargin: "Min. Arbitragemarge", itemRoundTripEfficiency: "Round-Trip-Wirkungsgrad", itemMaxPrice: "Max. Preis (Laden)", itemDischargePrice: "Entlade-Preisuntergrenze", itemPriceDischarge: "Nur über Preis entladen", itemReevaluatePrices: "Preise jetzt neu bewerten",
     itemDelaySafety: "Sicherheitspuffer", itemDelaySoc: "Verzögerungs-Ziel-SOC", itemDelaySocEnable: "Verzögerungs-Ziel-SOC aktiv", itemDelayDeadband: "Bilanz-Totband",
     secHourly: "Stündliche Balance", hourlyEsOnly: "Nur in Spanien sinnvoll (RD 244/2019) · erkanntes Land: {c}", secWeeklyFull: "Wöchentliche Vollladung", itemWeeklyDay: "Tag der Vollladung", itemWeeklyDelay: "Auf Solar-Ladeverzögerung warten", itemHourlyTarget: "Ziel-Nettobalance", itemHourlyMaxOffset: "Max. Leistungs-Offset", itemHourlyDeadband: "Totband", itemHourlyHysteresis: "Hysterese",
@@ -360,7 +360,7 @@ const I18N = {
     secManual: "Mode manuel", itemEnable: "Activer",
     secTempLimit: "Limite de charge par température", itemTempLimitC: "Limite de température", itemTempLimitBand: "Plage de réduction", itemTempLimitFloor: "Puissance de charge minimale", itemTempApplyDischarge: "Réduire aussi la décharge",
     itemMaxContracted: "Puissance contractuelle max.", itemSolarSafety: "Marge de sécurité solaire", itemGridChargeMargin: "Marge de charge réseau", itemMinSocFloorEnable: "Plancher SOC", itemMinSocFloor: "SOC minimum garanti",
-    itemSocThreshold: "Seuil SOC", itemPeakLimit: "Limite de pointe",
+    itemSocThreshold: "Seuil SOC", itemPeakLimit: "Limite de pointe", itemExcludedPeakShaving: "Écrêtement des pointes pour appareils exclus",
     itemArbitrageMargin: "Marge d'arbitrage min.", itemRoundTripEfficiency: "Rendement aller-retour", itemMaxPrice: "Prix max. (charge)", itemDischargePrice: "Prix plancher de décharge", itemPriceDischarge: "Décharger si prix élevé", itemReevaluatePrices: "Réévaluer les prix",
     itemDelaySafety: "Marge de sécurité", itemDelaySoc: "SOC cible du délai", itemDelaySocEnable: "SOC cible du délai actif", itemDelayDeadband: "Bande morte de bilan",
     secHourly: "Bilan horaire", hourlyEsOnly: "Utile uniquement en Espagne (RD 244/2019) · pays détecté : {c}", secWeeklyFull: "Charge complète hebdomadaire", itemWeeklyDay: "Jour de charge complète", itemWeeklyDelay: "Attendre le délai de charge solaire", itemHourlyTarget: "Cible bilan net", itemHourlyMaxOffset: "Décalage max. puissance", itemHourlyDeadband: "Bande morte", itemHourlyHysteresis: "Hystérésis",
@@ -427,7 +427,7 @@ const I18N = {
     secManual: "Handmatige modus", itemEnable: "Inschakelen",
     secTempLimit: "Temperatuurbegrenzing laden", itemTempLimitC: "Temperatuurlimiet", itemTempLimitBand: "Afbouwband", itemTempLimitFloor: "Minimaal laadvermogen", itemTempApplyDischarge: "Ook ontladen terugregelen",
     itemMaxContracted: "Max. gecontracteerd vermogen", itemSolarSafety: "Veiligheidsmarge zon", itemGridChargeMargin: "Netladingsmarge", itemMinSocFloorEnable: "SOC-vloer", itemMinSocFloor: "Gegarandeerde min. SOC",
-    itemSocThreshold: "SOC-drempel", itemPeakLimit: "Pieklimiet",
+    itemSocThreshold: "SOC-drempel", itemPeakLimit: "Pieklimiet", itemExcludedPeakShaving: "Piekbegrenzing voor uitgesloten apparaten",
     itemArbitrageMargin: "Min. arbitragemarge", itemRoundTripEfficiency: "Retourrendement", itemMaxPrice: "Max. prijs (laden)", itemDischargePrice: "Ontlaad-prijsondergrens", itemPriceDischarge: "Alleen ontladen bij hoge prijs", itemReevaluatePrices: "Prijzen nu herberekenen",
     itemDelaySafety: "Veiligheidsmarge", itemDelaySoc: "Doel-SOC vertraging", itemDelaySocEnable: "Doel-SOC vertraging actief", itemDelayDeadband: "Balans dode band",
     secHourly: "Uurbalans", hourlyEsOnly: "Alleen nuttig in Spanje (RD 244/2019) · gedetecteerd land: {c}", secWeeklyFull: "Wekelijkse volledige lading", itemWeeklyDay: "Dag volledige lading", itemWeeklyDelay: "Wachten op zonne-laadvertraging", itemHourlyTarget: "Doel nettosaldo", itemHourlyMaxOffset: "Max. vermogensoffset", itemHourlyDeadband: "Dodeband", itemHourlyHysteresis: "Hysterese",
@@ -765,6 +765,7 @@ const SYS_SECTIONS = [
     icon: "mdi:flash-alert",
     items: [
       { key: "capacity_protection", domain: "switch", lk: "itemEnable", icon: "mdi:flash-alert", gate: true },
+      { key: "capacity_protection_excluded_devices", domain: "switch", lk: "itemExcludedPeakShaving", icon: "mdi:transmission-tower-import" },
       { key: "capacity_protection_soc_threshold", lk: "itemSocThreshold", icon: "mdi:battery-alert-variant-outline" },
       { key: "capacity_protection_limit", lk: "itemPeakLimit", icon: "mdi:flash" },
     ],
@@ -871,6 +872,7 @@ const SYS_HELP = {
     delay_soc_setpoint: "The SOC the battery must reach before the solar delay kicks in. Minimum is 12 % — the Venus battery minimum discharge SOC.",
     capacity_protection_soc_threshold: "When average battery SOC drops below this value, capacity protection activates. The battery will stop discharging for normal consumption and only cover peaks above the limit.",
     capacity_protection_limit: "Grid import power threshold. When house consumption exceeds this value and protection is active, the battery discharges only the excess above this limit.",
+    capacity_protection_excluded_devices: "When enabled, the battery also covers the portion of excluded-device demand that would push grid import above the peak limit. Normal home coverage and battery safety limits remain unchanged.",
     secTempLimit: "When enabled, charge power is reduced when a battery gets hot: full power at or below the temperature limit, ramping down to the minimum over the band, and back up as it cools.",
     temp_charge_limit_c: "Charging runs at full power at or below this temperature; above it the derate begins.",
     temp_charge_limit_band_c: "Temperature range above the limit over which charge power ramps down to the minimum.",
@@ -934,6 +936,7 @@ const SYS_HELP = {
     delay_soc_setpoint: "SOC mínimo que debe alcanzar la batería antes de que el retraso solar entre en funcionamiento. El valor mínimo es el 12 % (SOC mínimo de descarga de las baterías Venus).",
     capacity_protection_soc_threshold: "Cuando el SOC medio de las baterías baje de este valor, se activa la reducción de picos. La batería dejará de descargar para consumo normal y solo cubrirá picos por encima del límite.",
     capacity_protection_limit: "Umbral de potencia de importación de red. Cuando el consumo de la casa supere este valor y la reducción de picos esté activa, la batería solo descargará el exceso por encima de este límite.",
+    capacity_protection_excluded_devices: "Si se activa, la batería también cubre la parte de la demanda excluida que haría superar el límite de pico de la red. La cobertura normal del hogar y las protecciones de la batería no cambian.",
     secTempLimit: "Cuando está activado, la potencia de carga se reduce cuando una batería se calienta: plena potencia al límite de temperatura o por debajo, bajando hasta el mínimo a lo largo de la banda y subiendo de nuevo al enfriarse.",
     temp_charge_limit_c: "La carga funciona a plena potencia a esta temperatura o por debajo; por encima empieza la reducción.",
     temp_charge_limit_band_c: "Rango de temperatura por encima del límite a lo largo del cual la potencia de carga baja hasta el mínimo.",
@@ -996,6 +999,7 @@ const SYS_HELP = {
     delay_soc_setpoint: "SOC mínim que ha d'assolir la bateria abans que el retard solar entri en funcionament. El valor mínim és el 12 % (SOC mínim de descàrrega de les bateries Venus).",
     capacity_protection_soc_threshold: "Quan el SOC mitjà de les bateries baixi d'aquest valor, s'activa la reducció de pics. La bateria deixarà de descarregar per a consum normal i només cobrirà pics per sobre del límit.",
     capacity_protection_limit: "Llindar de potència d'importació de xarxa. Quan el consum de la casa superi aquest valor i la reducció de pics estigui activa, la bateria només descarregarà l'excés per sobre d'aquest límit.",
+    capacity_protection_excluded_devices: "Si s'activa, la bateria també cobreix la part de la demanda exclosa que faria superar el límit de pic de la xarxa. La cobertura normal de la llar i les proteccions de la bateria no canvien.",
     secTempLimit: "Quan està activat, la potència de càrrega es redueix quan una bateria s'escalfa: plena potència al límit de temperatura o per sota, baixant fins al mínim al llarg de la banda i pujant de nou en refredar-se.",
     temp_charge_limit_c: "La càrrega funciona a plena potència a aquesta temperatura o per sota; per sobre comença la reducció.",
     temp_charge_limit_band_c: "Rang de temperatura per sobre del límit al llarg del qual la potència de càrrega baixa fins al mínim.",
@@ -1058,6 +1062,7 @@ const SYS_HELP = {
     delay_soc_setpoint: "Der SOC, den die Batterie erreichen muss, bevor die Solarverzögerung greift. Minimum ist 12 % — der minimale Entlade-SOC der Venus-Batterie.",
     capacity_protection_soc_threshold: "Wenn der durchschnittliche Batterie-SOC unter diesen Wert fällt, wird die Kapazitätsschutzfunktion aktiviert. Die Batterie entlädt nicht mehr für den normalen Verbrauch und deckt nur Spitzen über dem Limit ab.",
     capacity_protection_limit: "Netzimport-Leistungsschwelle. Wenn der Hausverbrauch diesen Wert überschreitet und der Schutz aktiv ist, entlädt die Batterie nur den Überschuss über diesem Limit.",
+    capacity_protection_excluded_devices: "Wenn aktiviert, deckt die Batterie auch den Anteil ausgeschlossener Lasten, der den Netzbezug über das Spitzenlimit treiben würde. Normale Hausversorgung und Batterieschutz bleiben unverändert.",
     secTempLimit: "Wenn aktiviert, wird die Ladeleistung reduziert, wenn eine Batterie heiß wird: volle Leistung an oder unter der Temperaturgrenze, absinkend bis zum Minimum über den Bereich und wieder ansteigend beim Abkühlen.",
     temp_charge_limit_c: "Die Ladung läuft mit voller Leistung an oder unter dieser Temperatur; darüber beginnt die Drosselung.",
     temp_charge_limit_band_c: "Temperaturbereich oberhalb der Grenze, über den die Ladeleistung bis zum Minimum absinkt.",
@@ -1120,6 +1125,7 @@ const SYS_HELP = {
     delay_soc_setpoint: "Le SOC que la batterie doit atteindre avant que le délai solaire ne s'active. Le minimum est 12 % — le SOC de décharge minimal de la batterie Venus.",
     capacity_protection_soc_threshold: "Quand le SOC moyen des batteries descend sous cette valeur, l'écrêtage des pics s'active. La batterie cesse de décharger pour la consommation normale et ne couvre que les pics au-dessus de la limite.",
     capacity_protection_limit: "Seuil de puissance d'import réseau. Quand la consommation de la maison dépasse cette valeur et que la protection est active, la batterie ne décharge que l'excédent au-dessus de cette limite.",
+    capacity_protection_excluded_devices: "Si activé, la batterie couvre aussi la part de la demande exclue qui ferait dépasser la limite de pointe du réseau. La couverture normale du foyer et les protections de la batterie restent inchangées.",
     secTempLimit: "Lorsque activé, la puissance de charge est réduite quand une batterie chauffe : pleine puissance à la limite de température ou en dessous, diminuant jusqu'au minimum sur la plage, puis remontant au refroidissement.",
     temp_charge_limit_c: "La charge fonctionne à pleine puissance à cette température ou en dessous ; au-dessus, la réduction commence.",
     temp_charge_limit_band_c: "Plage de température au-dessus de la limite sur laquelle la puissance de charge diminue jusqu'au minimum.",
@@ -1182,6 +1188,7 @@ const SYS_HELP = {
     delay_soc_setpoint: "De SOC die de batterij moet bereiken voordat de zonnevertraging ingaat. Minimum is 12 % — de minimale ontlaad-SOC van de Venus-batterij.",
     capacity_protection_soc_threshold: "Wanneer de gemiddelde batterij-SOC onder deze waarde zakt, wordt capaciteitsbescherming geactiveerd. De batterij stopt met ontladen voor normaal verbruik en dekt alleen pieken boven de limiet.",
     capacity_protection_limit: "Netimport-vermogensdrempel. Wanneer het huisverbruik deze waarde overschrijdt en de bescherming actief is, ontlaadt de batterij alleen het overschot boven deze limiet.",
+    capacity_protection_excluded_devices: "Indien ingeschakeld dekt de batterij ook het deel van uitgesloten verbruik dat de netafname boven de pieklimiet zou brengen. Normale huisdekking en batterijbeveiligingen blijven ongewijzigd.",
     secTempLimit: "Indien ingeschakeld wordt het laadvermogen verlaagd als een batterij warm wordt: vol vermogen op of onder de temperatuurlimiet, aflopend tot het minimum over de band en weer oplopend bij afkoelen.",
     temp_charge_limit_c: "Laden gebeurt op vol vermogen op of onder deze temperatuur; daarboven begint de terugregeling.",
     temp_charge_limit_band_c: "Temperatuurbereik boven de limiet waarover het laadvermogen tot het minimum afbouwt.",
@@ -1210,15 +1217,16 @@ class MarstekVenusPanel extends HTMLElement {
     this._powerSeries = null; // { t:[...], solar/home/grid/battery:[...] } kW, 24h
     this._weekly = null; // { days:[..7], charge/discharge/import/export:[..7] } kWh
     this._histTimer = null;
+    this._historyRefresh = null;
+    this._historyStarted = false;
   }
 
   // --- HA-injected properties ------------------------------------------------
   set hass(hass) {
-    const first = !this._hass;
     this._hass = hass;
     this._applyTheme();
     this._update();
-    if (first) this._startHistory();
+    this._ensureHistoryStarted();
   }
   get hass() {
     return this._hass;
@@ -1234,9 +1242,12 @@ class MarstekVenusPanel extends HTMLElement {
   connectedCallback() {
     this._injectFonts();
     this._update();
+    this._ensureHistoryStarted();
   }
   disconnectedCallback() {
     if (this._histTimer) clearInterval(this._histTimer);
+    this._histTimer = null;
+    this._historyStarted = false;
   }
 
   // --- config / theme --------------------------------------------------------
@@ -2976,10 +2987,25 @@ class MarstekVenusPanel extends HTMLElement {
     this._histTimer = setInterval(() => this._refreshHistory(), 5 * 60 * 1000);
   }
 
+  /** Start recorder queries only after the Resumen cards exist. HA can inject
+   *  `hass` before connecting this element, in which case a fast response used
+   *  to draw into no plot and left Potencias empty until a later UI repaint. */
+  _ensureHistoryStarted() {
+    if (this._historyStarted || !this._hass || !this._built || !this.isConnected) return;
+    this._historyStarted = true;
+    this._startHistory();
+  }
+
   _refreshHistory() {
-    this._fetchHistory();
-    this._fetchPowerHistory();
-    this._fetchWeeklyEnergy();
+    // A slow recorder must not accumulate another three queries every five
+    // minutes.  Keep one refresh in flight and prioritize the two visible
+    // charts; the auxiliary SOC sparkline can follow afterwards.
+    if (this._historyRefresh) return this._historyRefresh;
+    this._historyRefresh = (async () => {
+      await Promise.all([this._fetchPowerHistory(), this._fetchWeeklyEnergy()]);
+      await this._fetchHistory();
+    })().finally(() => { this._historyRefresh = null; });
+    return this._historyRefresh;
   }
 
   async _fetchHistory() {
@@ -3074,6 +3100,57 @@ class MarstekVenusPanel extends HTMLElement {
     return out;
   }
 
+  /** Resample Recorder statistics onto a grid.  Statistics rows are already
+   *  condensed by Home Assistant, so using them avoids shipping every raw
+   *  state transition to the browser. */
+  _sampleStatisticsToGrid(res, id, grid, field = "mean") {
+    const arr = res && res[id];
+    if (!Array.isArray(arr) || !arr.length) return null;
+    const so = this._hass.states[id];
+    const unit = ((so && so.attributes.unit_of_measurement) || "").toLowerCase();
+    const toKw = unit === "kw" ? 1 : 0.001;
+    const pts = [];
+    for (const it of arr) {
+      const v = Number(it[field]);
+      // Statistics WebSocket timestamps are milliseconds since epoch.  Accept
+      // seconds too, so the panel remains tolerant of older HA responses.
+      const rawT = Number(it.start);
+      const t = rawT > 1e11 ? rawT / 1000 : rawT;
+      if (!Number.isFinite(t) || Number.isNaN(v)) continue;
+      pts.push([t, v * toKw]);
+    }
+    if (!pts.length) return null;
+    pts.sort((a, b) => a[0] - b[0]);
+    const out = [];
+    let j = 0, cur = null;
+    for (const gt of grid) {
+      while (j < pts.length && pts[j][0] <= gt) { cur = pts[j][1]; j++; }
+      out.push(cur);
+    }
+    return out;
+  }
+
+  /** Fetch a bounded Recorder statistics series.  The caller falls back to
+   *  raw history only for entities which do not publish statistics. */
+  async _fetchStatistics(ids, startISO, endISO, period, types) {
+    if (!ids.length || !this._hass || !this._hass.callWS) return null;
+    try {
+      return await this._hass.callWS({
+        type: "recorder/statistics_during_period",
+        start_time: startISO,
+        end_time: endISO,
+        statistic_ids: ids,
+        period,
+        types,
+      });
+    } catch (e) {
+      // Some externally configured sensors have no statistics metadata.  The
+      // regular history endpoint below preserves their charts.
+      console.debug("[mvem] statistics fetch failed; using history fallback", e);
+      return null;
+    }
+  }
+
   /** 24 h power history for the Potencias chart (Solar/Casa/Batería/Red, kW). */
   async _fetchPowerHistory() {
     if (!this._hass || !this._hass.callWS) return;
@@ -3096,36 +3173,43 @@ class MarstekVenusPanel extends HTMLElement {
     acIds.forEach((x) => x && ids.add(x));
     if (!ids.size) { this._powerSeries = null; this._drawPowerHistory(); return; }
     const { grid, startISO } = this._historyGrid();
-    let res;
-    try {
-      res = await this._hass.callWS({
-        type: "history/history_during_period",
-        start_time: startISO,
-        end_time: new Date().toISOString(),
-        entity_ids: [...ids],
-        minimal_response: true,
-        no_attributes: true,
-      });
-    } catch (e) {
-      console.debug("[mvem] power history fetch failed", e);
-      return;
+    const idList = [...ids];
+    const endISO = new Date().toISOString();
+    const statistics = await this._fetchStatistics(idList, startISO, endISO, "5minute", ["mean"]);
+    const hasStatistics = (id) => Array.isArray(statistics && statistics[id]) && statistics[id].length;
+    const fallbackIds = idList.filter((id) => !hasStatistics(id));
+    let history = null;
+    if (fallbackIds.length) {
+      try {
+        history = await this._hass.callWS({
+          type: "history/history_during_period",
+          start_time: startISO,
+          end_time: endISO,
+          entity_ids: fallbackIds,
+          minimal_response: true,
+          no_attributes: true,
+        });
+      } catch (e) {
+        console.debug("[mvem] power history fallback failed", e);
+      }
     }
-    if (!res) return;
-    const solar = cfg.solar_entity ? this._sampleToGrid(res, cfg.solar_entity, grid) : null;
-    const home = homeEid ? this._sampleToGrid(res, homeEid, grid) : null;
-    let gridS = cfg.grid_entity ? this._sampleToGrid(res, cfg.grid_entity, grid) : null;
+    const sample = (id) =>
+      this._sampleStatisticsToGrid(statistics, id, grid) || this._sampleToGrid(history, id, grid);
+    const solar = cfg.solar_entity ? sample(cfg.solar_entity) : null;
+    const home = homeEid ? sample(homeEid) : null;
+    let gridS = cfg.grid_entity ? sample(cfg.grid_entity) : null;
     // Match the integration's +import / -export convention for an inverted meter.
     if (gridS && cfg.grid_inverted) gridS = gridS.map((v) => (v == null ? v : -v));
     let battery = null;
     if (sysCh || sysDis) {
-      const ch = sysCh ? this._sampleToGrid(res, sysCh, grid) : null;
-      const di = sysDis ? this._sampleToGrid(res, sysDis, grid) : null;
+      const ch = sysCh ? sample(sysCh) : null;
+      const di = sysDis ? sample(sysDis) : null;
       if (ch || di) battery = grid.map((_, i) => ((ch && ch[i]) || 0) - ((di && di[i]) || 0));
     }
     // Fall back to per-battery ac_power when the system aggregate has no history
     // (sign in ac_power is - charge / + discharge, so negate to + charge / - discharge).
     if (battery == null && acIds.length) {
-      const samples = acIds.map((id) => this._sampleToGrid(res, id, grid)).filter(Boolean);
+      const samples = acIds.map(sample).filter(Boolean);
       if (samples.length) battery = grid.map((_, i) => -samples.reduce((a, s) => a + (s[i] || 0), 0));
     }
     this._powerSeries = { t: grid, solar, home, grid: gridS, battery };
@@ -3153,41 +3237,65 @@ class MarstekVenusPanel extends HTMLElement {
     start.setHours(0, 0, 0, 0);
     start.setDate(start.getDate() - (days - 1));
     const allIds = [...new Set([...chIds, ...diIds, ...impIds, ...expIds])];
-    let res;
-    try {
-      res = await this._hass.callWS({
-        type: "history/history_during_period",
-        start_time: start.toISOString(),
-        end_time: new Date().toISOString(),
-        entity_ids: allIds,
-        minimal_response: true,
-        no_attributes: true,
-      });
-    } catch (e) {
-      console.debug("[mvem] weekly fetch failed", e);
-      return;
+    const startISO = start.toISOString();
+    const endISO = new Date().toISOString();
+    // These sources reset at midnight.  Their Recorder ``sum`` is a
+    // lifetime-normalized value, so its daily ``change`` can include reset
+    // corrections and wildly overstate the day's energy.  The final daily
+    // state is the counter's true total, matching the former history maximum.
+    const statistics = await this._fetchStatistics(allIds, startISO, endISO, "day", ["state"]);
+    const hasStatistics = (id) =>
+      Array.isArray(statistics && statistics[id]) &&
+      statistics[id].some((row) => Number.isFinite(Number(row.state)));
+    const fallbackIds = allIds.filter((id) => !hasStatistics(id));
+    let history = null;
+    if (fallbackIds.length) {
+      try {
+        history = await this._hass.callWS({
+          type: "history/history_during_period",
+          start_time: startISO,
+          end_time: endISO,
+          entity_ids: fallbackIds,
+          minimal_response: true,
+          no_attributes: true,
+        });
+      } catch (e) {
+        console.debug("[mvem] weekly history fallback failed", e);
+      }
     }
-    if (!res) return;
+    if (!statistics && !history) return;
     const startMs = start.getTime();
     const dayIndex = (ms) => Math.floor((ms - startMs) / 86400000);
-    // per-id daily max, then sum across ids → daily total per day
+    // Prefer each entity's final daily statistics state, then sum across ids.
+    // Raw history fallbacks retain the former daily-maximum calculation.
     const dailyTotals = (entIds) => {
       const total = new Array(days).fill(null);
       for (const id of entIds) {
-        const arr = res[id];
-        if (!Array.isArray(arr)) continue;
         const perDay = new Array(days).fill(null);
-        for (const it of arr) {
-          const v = Number(it.s != null ? it.s : it.state);
-          const t =
-            it.lu != null ? it.lu * 1000
-              : it.last_updated ? Date.parse(it.last_updated)
-                : it.last_changed ? Date.parse(it.last_changed)
-                  : null;
-          if (t == null || Number.isNaN(v)) continue;
-          const k = dayIndex(t);
-          if (k < 0 || k >= days) continue;
-          if (perDay[k] == null || v > perDay[k]) perDay[k] = v;
+        const statRows = statistics && statistics[id];
+        if (Array.isArray(statRows) && statRows.length) {
+          for (const it of statRows) {
+            const v = Number(it.state);
+            const t = Number(it.start);
+            if (!Number.isFinite(t) || Number.isNaN(v)) continue;
+            const k = dayIndex(t);
+            if (k >= 0 && k < days) perDay[k] = v;
+          }
+        } else {
+          const arr = history && history[id];
+          if (!Array.isArray(arr)) continue;
+          for (const it of arr) {
+            const v = Number(it.s != null ? it.s : it.state);
+            const t =
+              it.lu != null ? it.lu * 1000
+                : it.last_updated ? Date.parse(it.last_updated)
+                  : it.last_changed ? Date.parse(it.last_changed)
+                    : null;
+            if (t == null || Number.isNaN(v)) continue;
+            const k = dayIndex(t);
+            if (k < 0 || k >= days) continue;
+            if (perDay[k] == null || v > perDay[k]) perDay[k] = v;
+          }
         }
         for (let k = 0; k < days; k++) if (perDay[k] != null) total[k] = (total[k] || 0) + perDay[k];
       }
@@ -3198,6 +3306,31 @@ class MarstekVenusPanel extends HTMLElement {
     // grid import/export: per-day total = daily-reset sensor's max for that day
     const impTot = impIds.length ? dailyTotals(impIds) : null;
     const expTot = expIds.length ? dailyTotals(expIds) : null;
+
+    // The current day has an authoritative live value in hass.states. Prefer it
+    // over the historical maximum: a transient bad reading stored earlier today
+    // must not make the weekly bar disagree with the Energía hoy card.
+    const liveTotal = (entIds) => {
+      let total = 0;
+      let hasData = false;
+      for (const id of entIds) {
+        const value = this._num(this._hass.states[id]);
+        if (value != null) {
+          total += value;
+          hasData = true;
+        }
+      }
+      return hasData ? total : null;
+    };
+    const todayIndex = days - 1;
+    const liveCharge = liveTotal(chIds);
+    const liveDischarge = liveTotal(diIds);
+    const liveImport = liveTotal(impIds);
+    const liveExport = liveTotal(expIds);
+    if (liveCharge != null) charge[todayIndex] = liveCharge;
+    if (liveDischarge != null) discharge[todayIndex] = liveDischarge;
+    if (impTot && liveImport != null) impTot[todayIndex] = liveImport;
+    if (expTot && liveExport != null) expTot[todayIndex] = liveExport;
     const labels = [];
     for (let k = 0; k < days; k++) {
       const dd = new Date(startMs + k * 86400000);
@@ -4085,6 +4218,17 @@ class MarstekVenusPanel extends HTMLElement {
             rows.push({ item, id, multi: ids.length > 1 });
           }
         }
+      }
+      // Excluded-device controls arrive grouped by their translation key (all
+      // "Enabled" switches, then all "Solar surplus" switches, etc.). Sort
+      // their live entities by the displayed name instead, so adding a device
+      // does not leave the card in registry/control-type order.
+      if (sec.tk === "secExcluded") {
+        rows.sort((a, b) => {
+          const aName = this._entityShortName(this._hass.states[a.id], a.id);
+          const bName = this._entityShortName(this._hass.states[b.id], b.id);
+          return aName.localeCompare(bName, this._lang()) || a.id.localeCompare(b.id);
+        });
       }
       if (rows.length) {
         sections.push({ sec, rows });

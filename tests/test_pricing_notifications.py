@@ -81,7 +81,27 @@ def test_predictive_started():
     )
     assert title == "Predictive Charging: STARTED"
     assert "06:00" in message  # end of charging slot
-    assert "ICP: 5000W, batteries: 3000W" in message
+    assert "contracted: 5000W, batteries: 3000W" in message
+
+
+def test_predictive_started_reports_the_actual_planned_grid_charge():
+    """The notification must match the energy used to calculate the SOC target."""
+    _, message = notifications.format_predictive_notification_message(
+        _decision(
+            should_charge=True,
+            energy_deficit_kwh=4.63,
+            planned_grid_charge_kwh=5.55,
+            # This is the old complementary-headroom value.  It must not be
+            # presented as the grid charge or as a guaranteed solar top-up.
+            grid_charge_kwh=4.03,
+            solar_surplus_kwh=2.99,
+        ),
+        **_CFG,
+    )
+    assert "Planned grid charge: 5.55 kWh" in message
+    assert "Forecast solar surplus: 2.99 kWh (after expected consumption)" in message
+    assert "Grid: 4.03 kWh" not in message
+    assert "solar will charge the remaining" not in message
 
 
 def test_predictive_floor_charge_reports_grid_deficit_not_solar():

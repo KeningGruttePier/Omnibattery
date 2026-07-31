@@ -3,6 +3,14 @@
     "slow_main_sensor": {
       "title": "Le capteur de puissance réseau se met à jour trop lentement",
       "description": "Le capteur réseau configuré {sensor} se met à jour environ toutes les {observed_interval} secondes. Des intervalles de {warning_interval} secondes ou plus sont plus lents que recommandé et peuvent réduire la qualité de régulation. Omnibattery suit la dernière mesure jusqu'à ce qu'elle date de plus de {stale_limit} secondes. Utilisez un capteur plus rapide si vous avez besoin d'un contrôle temps réel plus précis."
+    },
+    "price_data_unusable": {
+      "title": "Données tarifaires inutilisables",
+      "description": "Omnibattery n'a pas pu lire de créneaux tarifaires exploitables depuis {sensor} pendant plus de {minutes} minutes (état : {status}). La charge pilotée par les prix est inactive : la planification en tarification dynamique et la libération du report de charge selon le prix reviennent à leur comportement sans prix. Vérifiez que le capteur est disponible et que son attribut de prix est une liste d'entrées ; un capteur de type template doit produire des horodatages ISO-8601, car un datetime Python rendu ne peut pas être reconverti en liste."
+    },
+    "solar_forecast_unusable": {
+      "title": "Prévision solaire inutilisable",
+      "description": "Le capteur de prévision solaire configuré {sensor} est indisponible ou illisible depuis plus de {minutes} minutes. Omnibattery continue de fonctionner, mais tout ce qui dépend de la prévision avance à l'aveugle : le report de charge se libère pour le reste de la journée, les décisions de charge depuis le réseau supposent une absence totale de soleil et peuvent réserver des créneaux inutiles, et l'estimation du solaire restant indique 0 kWh. Vérifiez le capteur ou l'intégration qui le fournit."
     }
   },
   "config": {
@@ -43,7 +51,7 @@
           "brand": "Marque de la batterie"
         },
         "data_description": {
-          "brand": "Marstek Venus: Modbus TCP. Zendure SolarFlow: local HTTP (enable HEMS in the Zendure app first). Anker SOLIX Solarbank Max AC / 4 E5000 Pro: Modbus TCP (enable Modbus TCP under Third-Party Control in the Anker app; only one Modbus client at a time)."
+          "brand": "Marstek Venus: Modbus TCP. Zendure SolarFlow: local HTTP (enable HEMS in the Zendure app first). Anker SOLIX Solarbank Max AC / 4 E5000 Pro: Modbus TCP (enable Modbus TCP under Third-Party Control in the Anker app; only one Modbus client at a time). Sessy: local HTTP."
         }
       },
       "battery_connection": {
@@ -80,6 +88,12 @@
           "port": "Port HTTP (par défaut 80)"
         }
       },
+      "battery_connection_hoymiles": {
+        "title": "Configurer la batterie {battery_num} — Connexion (Hoymiles)",
+        "description": "Activez MQTT Service dans S-Miles Home et utilisez le broker MQTT configuré dans Home Assistant.",
+        "data": {"name": "Nom", "device_id": "ID d'appareil MQTT"},
+        "data_description": {"device_id": "ID MQTT MS-A2, par exemple MSA-280024341346."}
+      },
       "battery_connection_esphome": {
         "title": "Configurer la batterie {battery_num} — Connexion (LilyGo/ESPHome)",
         "description": "Sélectionnez l'appareil ESPHome (pont LilyGo RS485) qui expose la batterie Marstek {battery_num}. Il doit exécuter le firmware marstek-lilygo-rs485 avec les noms d'entités d'origine.",
@@ -112,8 +126,8 @@
           "min_soc": "État de charge minimum - la batterie ne se déchargera pas en dessous de cette valeur",
           "charge_hysteresis_percent": "Toujours active (minimum 2%). Une fois le maximum atteint, la batterie ne se recharge pas tant que le SOC ne descend pas à (SOC max − hystérésis). Ex : SOC max 100% avec 2% = pas de charge avant 98%.",
           "backup_offgrid_threshold": "Une charge hors réseau supérieure à cette valeur est traitée comme un événement de secours actif, excluant la batterie du contrôle PD. Augmenter si des charges permanentes (routeur, caméras) sont connectées au port hors réseau.",
-          "full_charge_voltage_taper_enabled": "Lorsque la cible est 100%, limite la charge à 95 W à partir de 3.48 V de tension maximale de cellule et s'arrête à 3.58 V pour mesurer le déséquilibre après 60 secondes.",
-          "battery_capacity_kwh": "Capacité utilisable nominale du pack de batteries. Utilisée pour calculer l'énergie stockée et l'efficacité à partir du SOC. Laisser à 0 si inconnue."
+          "full_charge_voltage_taper_enabled": "Lorsque la cible est 100%, limite la charge à 200 W à partir de 3.48 V de tension maximale de cellule et s'arrête à 3.60 V pour mesurer le déséquilibre après 60 secondes.",
+          "battery_capacity_kwh": "Capacité utilisable nominale du pack de batteries. Elle sert à calculer l'énergie stockée et l'efficacité à partir du SOC. Pour Sessy, saisissez la capacité réelle ; pour les autres batteries, laissez 0 si elle est inconnue."
         }
       },
       "time_slots": {
@@ -493,6 +507,12 @@
           "port": "Port HTTP (par défaut 80)"
         }
       },
+      "reconfigure_battery_sessy": {
+        "title": "Reconfigurer la batterie {battery_num} — Connexion (Sessy)",
+        "description": "Mettez à jour les informations de connexion de la batterie Sessy {battery_num}. Tous les autres réglages sont conservés.",
+        "data": {"name": "Nom", "host": "Adresse IP", "port": "Port HTTP", "username": "Nom d’utilisateur", "password": "Mot de passe"},
+        "data_description": {"name": "Nom descriptif permettant identifier cette batterie", "host": "Adresse IP du dispositif Sessy sur le réseau local", "port": "Port HTTP (80 par défaut)", "username": "Nom d’utilisateur local imprimé sur le dongle Sessy", "password": "Mot de passe local imprimé sur le dongle Sessy"}
+      },
       "reconfigure_battery_anker": {
         "title": "Reconfigure battery {battery_num} — Connection (Anker)",
         "description": "Update connection details for Anker SOLIX Solarbank Max AC / 4 E5000 Pro battery {battery_num}. All other settings are preserved.",
@@ -508,6 +528,11 @@
           "port": "Modbus TCP port (default 502)",
           "slave_id": "Modbus slave/unit id (default 1)"
         }
+      },
+      "reconfigure_battery_hoymiles": {
+        "title": "Reconfigurer la batterie {battery_num} — MQTT Hoymiles",
+        "description": "Saisissez l'ID MQTT de la MS-A2 ; Home Assistant gère le broker.",
+        "data": {"name": "Nom", "device_id": "ID d'appareil MQTT"}
       },
       "reconfigure_battery_esphome": {
         "title": "Reconfigurer la batterie {battery_num} — Connexion (LilyGo/ESPHome)",
@@ -527,6 +552,12 @@
         "data": {
           "restore": "Restaurer la configuration précédente"
         }
+      },
+      "battery_connection_sessy": {
+        "title": "Configurer la batterie {battery_num} — Connexion (Sessy)",
+        "description": "Saisissez les informations de connexion et les identifiants locaux imprimés sur le dongle Sessy de la batterie {battery_num}.",
+        "data": {"name": "Nom", "host": "Adresse IP", "port": "Port HTTP", "username": "Nom d’utilisateur", "password": "Mot de passe"},
+        "data_description": {"name": "Nom descriptif permettant identifier cette batterie", "host": "Adresse IP du dispositif Sessy sur le réseau local", "port": "Port HTTP (80 par défaut)", "username": "Nom d’utilisateur local imprimé sur le dongle Sessy", "password": "Mot de passe local imprimé sur le dongle Sessy"}
       },
       "battery_connection_anker": {
         "title": "Configure battery {battery_num} — Connection (Anker)",
@@ -621,7 +652,7 @@
           "brand": "Marque de la batterie"
         },
         "data_description": {
-          "brand": "Marstek Venus: Modbus TCP. Zendure SolarFlow: local HTTP (enable HEMS in the Zendure app first). Anker SOLIX Solarbank Max AC / 4 E5000 Pro: Modbus TCP (enable Modbus TCP under Third-Party Control in the Anker app; only one Modbus client at a time)."
+          "brand": "Marstek Venus: Modbus TCP. Zendure SolarFlow: local HTTP (enable HEMS in the Zendure app first). Anker SOLIX Solarbank Max AC / 4 E5000 Pro: Modbus TCP (enable Modbus TCP under Third-Party Control in the Anker app; only one Modbus client at a time). Sessy: local HTTP."
         }
       },
       "battery_connection": {
@@ -690,8 +721,8 @@
           "min_soc": "État de charge minimum",
           "charge_hysteresis_percent": "Toujours active (minimum 2%). Une fois le maximum atteint, la batterie ne se recharge pas tant que le SOC ne descend pas à (SOC max − hystérésis). Ex : SOC max 100% avec 2% = pas de charge avant 98%.",
           "backup_offgrid_threshold": "Une charge hors réseau supérieure à cette valeur est traitée comme un événement de secours actif, excluant la batterie du contrôle PD. Augmenter si des charges permanentes (routeur, caméras) sont connectées au port hors réseau.",
-          "full_charge_voltage_taper_enabled": "Lorsque la cible est 100%, limite la charge à 95 W à partir de 3.48 V de tension maximale de cellule et s'arrête à 3.58 V pour mesurer le déséquilibre après 60 secondes.",
-          "battery_capacity_kwh": "Capacité utilisable nominale du pack de batteries. Utilisée pour calculer l'énergie stockée et l'efficacité à partir du SOC. Laisser à 0 si inconnue."
+          "full_charge_voltage_taper_enabled": "Lorsque la cible est 100%, limite la charge à 200 W à partir de 3.48 V de tension maximale de cellule et s'arrête à 3.60 V pour mesurer le déséquilibre après 60 secondes.",
+          "battery_capacity_kwh": "Capacité utilisable nominale du pack de batteries. Elle sert à calculer l'énergie stockée et l'efficacité à partir du SOC. Pour Sessy, saisissez la capacité réelle ; pour les autres batteries, laissez 0 si elle est inconnue."
         }
       },
       "time_slots": {
@@ -1037,6 +1068,12 @@
           "hourly_balance_hysteresis_w": "Variation minimale du décalage nécessaire pour appliquer une nouvelle correction. Évite les micro-ajustements à chaque cycle. 0 = appliquer toujours. Par défaut : 15 W."
         }
       },
+      "battery_connection_sessy": {
+        "title": "Configurer la batterie {battery_num} — Connexion (Sessy)",
+        "description": "Modifiez les informations de connexion et les identifiants locaux du dongle de la batterie Sessy {battery_num}.",
+        "data": {"name": "Nom", "host": "Adresse IP", "port": "Port HTTP", "username": "Nom d’utilisateur", "password": "Mot de passe"},
+        "data_description": {"name": "Nom descriptif permettant identifier cette batterie", "host": "Adresse IP du dispositif Sessy sur le réseau local", "port": "Port HTTP (80 par défaut)", "username": "Nom d’utilisateur local imprimé sur le dongle Sessy", "password": "Mot de passe local imprimé sur le dongle Sessy"}
+      },
       "battery_connection_anker": {
         "title": "Configure battery {battery_num} — Connection (Anker)",
         "description": "Modify connection details for Anker SOLIX Solarbank Max AC / 4 E5000 Pro battery {battery_num}. Enable Modbus TCP under Third-Party Control in the Anker app first. Only one Modbus client can connect at a time.",
@@ -1147,6 +1184,9 @@
       },
       "capacity_protection": {
         "name": "Écrêtement de Pointe"
+      },
+      "capacity_protection_excluded_devices": {
+        "name": "Écrêtement des Pointes pour Appareils Exclus"
       },
       "backup_function": {
         "name": "Fonction de Secours"
@@ -1387,7 +1427,7 @@
         "name": "Puissance de cellule batterie"
       },
       "round_trip_efficiency_total": {
-        "name": "Rendement Total Aller-Retour"
+        "name": "Rendement sur la durée de vie"
       },
       "stored_energy": {
         "name": "Énergie Stockée"
