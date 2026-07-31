@@ -7,7 +7,7 @@
 - Marstek Venus E and C (v2 and v3), Venus D and Venus A via Modbus TCP
 - Zendure Solarflow 2400 AC+, 2400 AC 2400 Pro, 1600 AC+, 800 Pro, 800 Plus and 800 (Local API)
 - Anker SOLIX Solarbank Max AC and Solarbank 4 E5000 Pro via Modbus TCP (thanks @wouterbouvy!)
-- Sessy Home Battery
+- Sessy Home Battery (Looking for testers!!!)
 - Hoymiles MS-A2
 
 It provides advanced energy management features including predictive grid charging, customizable time slots for discharge control, and device load exclusion logic.
