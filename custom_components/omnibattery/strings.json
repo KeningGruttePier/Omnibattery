@@ -1409,7 +1409,7 @@
         "name": "Battery Cell Power"
       },
       "round_trip_efficiency_total": {
-        "name": "Round-Trip Efficiency"
+        "name": "Lifetime Efficiency"
       },
       "stored_energy": {
         "name": "Stored Energy"

@@ -1427,7 +1427,7 @@
         "name": "Batteriezellenleistung"
       },
       "round_trip_efficiency_total": {
-        "name": "Gesamtwirkungsgrad"
+        "name": "Lebensdauerwirkungsgrad"
       },
       "stored_energy": {
         "name": "Gespeicherte Energie"

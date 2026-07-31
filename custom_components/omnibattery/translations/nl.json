@@ -1427,7 +1427,7 @@
         "name": "Batterijcelvermogen"
       },
       "round_trip_efficiency_total": {
-        "name": "Totaal Rendement"
+        "name": "Levensduurrendement"
       },
       "stored_energy": {
         "name": "Opgeslagen Energie"

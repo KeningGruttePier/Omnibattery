@@ -1427,7 +1427,7 @@
         "name": "Puissance de cellule batterie"
       },
       "round_trip_efficiency_total": {
-        "name": "Rendement Total Aller-Retour"
+        "name": "Rendement sur la durée de vie"
       },
       "stored_energy": {
         "name": "Énergie Stockée"
