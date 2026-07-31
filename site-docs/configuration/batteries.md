@@ -74,6 +74,8 @@ If you raise a battery's **Max SOC** to `100 %`, that battery uses voltage-based
 
 ## System power limits (all batteries combined)
 
+Configure these limits from the Omnibattery Dashboard. Enable the switch to cap the combined charge or discharge power of all active batteries. Each battery's individual limit still applies, and setting either system cap to `0 W` disables that cap.
+
 ![system power limits](../assets/screenshots/configuration/battery-system-power-limits-config.png){ width="650"  style="display: block; margin: 0 auto;"}
 
 ---
