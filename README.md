@@ -10,7 +10,19 @@
 - Sessy Home Battery (Looking for testers!!!)
 - Hoymiles MS-A2
 
-It provides advanced energy management features including predictive grid charging, customizable time slots for discharge control, and device load exclusion logic.
+## Key Features
+
+- **Mix and match different battery brands**: Marstek, Zendure, Anker Solix, Sessy, Hoymiles MS-A2 and more to come!
+- **Zero Export/Import PD Controller**: Keeps grid exchange near zero using a Proportional-Derivative algorithm.
+- **Integrated dashboard**: All the controls and adjustments from a single place. Graphs and power flow diagram included!
+- **One-Click PD Profiles + Quality Sensor**: Pick a tuning profile (Very smooth → Very aggressive) instead of tuning gains by hand; a control-quality sensor reports whether the result is stable, oscillating or sluggish.
+- **Multi-Battery Support**: Manage up to 6 batteries with intelligent load sharing and SOC-based priority.
+- **Predictive Grid Charging**: Automatically charges from the grid when solar forecast + battery won't cover tomorrow's consumption. Supports fixed time slots, dynamic pricing, and real-time pricing modes. An optional grid-charge margin (%) tops up the grid amount to hedge optimistic solar forecasts.
+- **Time Slots**: Per-battery windows with independent charge/discharge ticks, optional SOC and power overrides, and a manual mode that forces a fixed charge or discharge power. Up to 8 slots per integration.
+- **Weekly Full Charge**: Forces 100% SOC once a week for LFP cell balancing.
+- **Solar-Aware Charge Delay**: Holds back grid charging while solar can still cover the required energy.
+- **Peak Shaving**: Reserves battery capacity to cover demand spikes above a configurable power threshold, keeping energy in reserve rather than covering all consumption.
+- **Load Exclusion**: Mask high-power devices (e.g. EV chargers) so the battery doesn't try to cover them.
 
 > [!CAUTION]
 > **LIABILITY DISCLAIMER:**
@@ -35,20 +47,6 @@ If you find this integration useful, you can support my work:
 Full documentation (configuration, features, entities, troubleshooting) is available at:
 
 **[https://ffunes.github.io/Omnibattery/](https://ffunes.github.io/Omnibattery/)**
-
-## Key Features
-
-- **Mix and match different battery brands**: Marstek, Zendure and more to come!
-- **Zero Export/Import PD Controller**: Keeps grid exchange near zero using a Proportional-Derivative algorithm.
-- **Integrated dashboard**: All the controls and adjustments from a single place. Graphs and power flow diagram included!
-- **One-Click PD Profiles + Quality Sensor**: Pick a tuning profile (Very smooth → Very aggressive) instead of tuning gains by hand; a control-quality sensor reports whether the result is stable, oscillating or sluggish.
-- **Multi-Battery Support**: Manage up to 6 batteries with intelligent load sharing and SOC-based priority.
-- **Predictive Grid Charging**: Automatically charges from the grid when solar forecast + battery won't cover tomorrow's consumption. Supports fixed time slots, dynamic pricing, and real-time pricing modes. An optional grid-charge margin (%) tops up the grid amount to hedge optimistic solar forecasts.
-- **Time Slots**: Per-battery windows with independent charge/discharge ticks, optional SOC and power overrides, and a manual mode that forces a fixed charge or discharge power. Up to 8 slots per integration.
-- **Weekly Full Charge**: Forces 100% SOC once a week for LFP cell balancing.
-- **Solar-Aware Charge Delay**: Holds back grid charging while solar can still cover the required energy.
-- **Peak Shaving**: Reserves battery capacity to cover demand spikes above a configurable power threshold, keeping energy in reserve rather than covering all consumption.
-- **Load Exclusion**: Mask high-power devices (e.g. EV chargers) so the battery doesn't try to cover them.
 
 ## Requirements
 
