@@ -1,8 +1,5 @@
 blank_issues_enabled: false
 contact_links:
-  - name: "🔋 New battery support"
-    url: https://github.com/ffunes/Omnibattery/discussions/new?category=battery-requests
-    about: Request support for a new battery brand or model through Discussions.
   - name: "🆘 Help with setup or configuration"
     url: https://github.com/ffunes/Omnibattery/discussions/new?category=q-a
     about: >
@@ -13,4 +10,7 @@ contact_links:
     url: https://github.com/ffunes/Omnibattery/discussions/new?category=feature-ideas
     about: >
       General ideas go through community voting in Discussions. To request support
-      for a new battery model, use the Battery Support link above instead.
+      for a new battery model, use the Battery Support link below instead.
+  - name: "🔋 New battery support"
+    url: https://github.com/ffunes/Omnibattery/discussions/new?category=battery-requests
+    about: Request support for a new battery brand or model through Discussions.
