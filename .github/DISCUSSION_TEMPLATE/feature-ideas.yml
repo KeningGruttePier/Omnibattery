@@ -1,0 +1,98 @@
+title: "[FEATURE] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Feature idea
+
+        Use this form to propose an improvement that could benefit Omnibattery users. Explain the problem first so the community can compare possible solutions.
+
+        Search existing discussions before posting. If a similar idea already exists, add your use case and vote with 👍 on the original post instead of creating a duplicate.
+
+        To request support for a new battery brand or model, use the [New battery support form](https://github.com/ffunes/Omnibattery/issues/new?template=battery_support_request.yml).
+
+        > Do not publish passwords, tokens, API keys, complete serial numbers, IP addresses, or other personal information.
+
+  - type: dropdown
+    id: affected_area
+    attributes:
+      label: Area of the proposal
+      options:
+        - Energy management or control strategy
+        - Battery communication or driver behavior
+        - Sensors, entities, or statistics
+        - Configuration or usability
+        - Dashboard or user interface
+        - Automations or blueprints
+        - Diagnostics or troubleshooting
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Describe the limitation or recurring situation. Focus on the need rather than the implementation.
+      placeholder: Currently, when..., users have to...
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed_solution
+    attributes:
+      label: Proposed solution
+      description: Explain how you think Omnibattery could address the problem. You do not need to provide technical details.
+      placeholder: Omnibattery could...
+    validations:
+      required: true
+
+  - type: textarea
+    id: use_case
+    attributes:
+      label: Example use case
+      description: Give a concrete example showing when the feature would be useful and what the expected result would be.
+      placeholder: For example, when..., the feature would...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: expected_scope
+    attributes:
+      label: Who would benefit from this?
+      options:
+        - Most Omnibattery users
+        - Users of several battery brands or drivers
+        - Users of one existing battery driver
+        - Users with a specific installation or workflow
+        - I am not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives or workarounds
+      description: Optional. Describe anything you already tried or another way the problem could be solved.
+      placeholder: I currently work around this by...
+
+  - type: textarea
+    id: additional_context
+    attributes:
+      label: Additional context
+      description: Optional. Add mockups, examples from other projects, relevant documentation, or technical details.
+
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Confirmations
+      options:
+        - label: I searched existing discussions and did not find the same proposal.
+          required: true
+        - label: This is a general feature idea, not a request to support a new battery brand or model.
+          required: true
+        - label: I understand that community interest and technical feasibility influence prioritization, and that no delivery date is guaranteed.
+          required: true
+        - label: I removed passwords, tokens, API keys, complete serial numbers, IP addresses, and other sensitive information.
+          required: true

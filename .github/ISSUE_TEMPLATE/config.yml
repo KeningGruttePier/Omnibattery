@@ -7,7 +7,7 @@ contact_links:
       GitHub Discussions. Please do not open a bug report unless you can describe
       an unexpected behavior after completing the setup.
   - name: 💡 General Feature Request / Idea
-    url: https://github.com/ffunes/Omnibattery/discussions/categories/feature-ideas
+    url: https://github.com/ffunes/Omnibattery/discussions/new?category=feature-ideas
     about: >
       General ideas go through community voting in Discussions. To request support
       for a new battery model, use the Battery Support form above instead.
