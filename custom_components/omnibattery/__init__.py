@@ -2687,7 +2687,11 @@ class ChargeDischargeController:
         # === STEP 4: Get Solar Forecast ===
         # Use the live sensor value directly — today's forecast updates throughout the day
         # and reflects improving accuracy as actual weather conditions develop.
-        forecast_state = self.hass.states.get(self.solar_forecast_sensor)
+        forecast_state = (
+            self.hass.states.get(self.solar_forecast_sensor)
+            if self.solar_forecast_sensor
+            else None
+        )
         if forecast_state is None or forecast_state.state in ("unknown", "unavailable"):
             # Conservative mode: assume zero solar, compare usable vs consumption
             total_available_kwh = usable_energy_kwh
