@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 import voluptuous as vol
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from custom_components.omnibattery.config_flow import (
     MarstekVenusConfigFlow,
@@ -169,7 +170,10 @@ def test_sessy_reports_counters_but_not_nominal_capacity():
     assert capabilities.cycles_from_discharge_only is True
 
 
-def test_coordinator_clamps_legacy_sessy_power_limits_before_allocation():
+def test_coordinator_clamps_legacy_sessy_power_limits_before_allocation(monkeypatch):
+    """The clamp is coordinator logic; no Home Assistant runtime is needed."""
+    monkeypatch.setattr(DataUpdateCoordinator, "__init__", lambda *_args, **_kwargs: None)
+
     coordinator = MarstekVenusDataUpdateCoordinator(
         MagicMock(),
         "Garage Sessy",
