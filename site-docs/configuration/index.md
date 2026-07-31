@@ -1,8 +1,10 @@
 # Configuration
 
-The integration is configured entirely from the Home Assistant UI through a multi-step wizard.
+The integration is configured from :
+ - the Home Assistant UI through a multi-step wizard
+ - the Omnibattery Dashboard
 
-## Wizard steps
+## Home Assistant wizard configuration
 
 ```mermaid
 flowchart TD
@@ -17,35 +19,23 @@ flowchart TD
     G --> H{Predictive charging?}
     H -- Yes --> I[6. Predictive charging mode config]
     H -- No --> J
-    I --> J{Weekly full charge?}
-    J -- Yes --> K[7. Weekly full charge day]
-    J -- No --> L
-    K --> L{Solar charge delay?}
-    L -- Yes --> M[8. Solar charge delay config]
-    L -- No --> N
-    M --> N{Temperature charge limit?}
-    N -- Yes --> O[9. Temperature charge limit]
-    N -- No --> P  
-    O --> P{Capacity protection?}
-    P -- Yes --> Q[10. Capacity protection config]
-    P -- No --> R
-    Q --> R{Hourly net balance?}
-    R -- Yes --> S[11. Hourly net balance config]
-    R -- No --> T
-    S --> T{PD controller advanced?}
-    T -- Yes --> U[12. PD controller advanced config]
-    T -- No --> W
-    U --> W[Done]
+    I --> J
+    J[Done]
 ```
 
-| Step | Description | Required |
+| Features | Description | Required |
 |------|-------------|:--------:|
-| [Main sensor](main-sensor.md) | Grid consumption sensor and solar sensor (home consumption is derived) | ✅ |
+| [Sensors](main-sensor.md) | Grid consumption sensor and solar sensor (home consumption is derived) | ✅ |
 | Batteries | Number of battery units | ✅ |
 | [Batteries](batteries.md) | Per-battery config : name, IP, port, version, power limits and SOC | ✅ |
 | [Time slots](time-slots.md) | Discharge/charge windows with per-slot parameters | ❌ |
 | [Excluded devices](excluded-devices.md) | Heavy loads to ignore | ❌ |
 | [Predictive charging](predictive-charging/index.md) | Grid charging when solar forecast is insufficient | ❌ |
+
+## Omnibattery dashboard configuration
+
+| Features | Description | Required |
+|------|-------------|:--------:|
 | [Weekly full charge](advanced.md) | Charge batteries to 100% once a week to balance the cells | ❌ |
 | [Solar charge delay](advanced.md) | Avoid to charge the batteries early if expected solar production will suffice | ❌ |
 | [Temperature charge limit](advanced.md) | Linear derate charge/discharge power based on battery temperature | ❌ |
