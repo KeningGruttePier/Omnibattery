@@ -1,67 +1,23 @@
 # Changelog
 
-## [1.2.0b5] - 2026-07-30
+## [1.2.0] - 2026-07-31
+
+### Added
+- **Sessy local API driver**: added support for Sessy batteries through their local API.
+- **Hoymiles MS-A2 MQTT driver**: added MQTT-based support for Hoymiles MS-A2 batteries.
+- **Zendure SolarFlow 800-series and 1600 AC+ profiles**: local HTTP onboarding now identifies the supported 800-series and 1600 AC+ models with their appropriate capabilities.
+- **Peak shaving for excluded devices** (#107): an opt-in control lets the battery cover only the excluded-device demand above the configured grid-import limit.
+- **Home Assistant blueprints**: optional automations are available for Capacity Protection, webhook reporting and dismissing predictive-charging notifications, with English and Spanish documentation.
+
+### Changed
+- **Dashboard history and top-cell control**: history charts use compact Recorder statistics and deferred loading; the normal voltage taper and Active Cell Balance now use a 3.60 V top-cell threshold.
 
 ### Fixed
 - **Integration could remain "initializing" with predictive charging disabled** (#217): legacy paused configurations could retain an enabled flag while their runtime override was active. Startup now treats that combination as disabled, preventing a lookup of an unset solar forecast sensor.
-- **Sessy discharge limit matched to the published hardware envelope**: setup and options now expose separate 2,200 W charge and 1,700 W discharge ceilings. The HTTP driver also clamps legacy configurations that may still contain the former 2,200 W discharge value, preventing impossible setpoints from distorting power distribution and responsiveness checks.
-- **Round-Trip Efficiency could switch to daily charge/discharge data**: AC-only batteries now always calculate efficiency from their lifetime charge and discharge counters, keeping the metric on one consistent long-term basis across battery models.
-- **Zendure total and stored energy could remain unknown despite a configured capacity**: Zendure now explicitly reports that nominal capacity is not available from its local API, allowing the coordinator to inject the configured kWh value. This restores the per-battery total energy, stored energy and calculated cycle sensors, and includes Zendure capacity and stored energy in the system aggregates.
-- **Active Cell Balance could inject low-voltage glitches into Cell Delta history**: the discharge-to-charge transition briefly reports Standby and near-zero residual power before the 95 W charge command engages, which could be mistaken for a BMS rejection and publish a 90–100 mV reading between valid top-voltage measurements. New charge legs now receive a 10-second engage grace, and below-stop rejection diagnostics no longer feed the Cell Delta sensor, four-reading average or trend. Existing stored rejection readings are filtered when balance entities are restored.
-
-
-## [1.2.0b4] - 2026-07-29
-
-### Added
-- **New Home Assistant blueprints**: added optional automations to synchronize the Capacity Protection Limit with a monthly peak sensor, periodically report selected installation states to a central webhook, and automatically dismiss predictive-charging notifications. English and Spanish documentation is included.
-
-### Changed
-- **Top-cell voltage raised to 3.60 V**: both the normal 100% voltage taper and Active Cell Balance now use 3.60 V, instead of 3.58 V, for their upper stop and 60-second measurement point. Low-power charging still starts earlier and the battery BMS remains the final cutoff. SOC recalibration after a real BMS cutoff is documented and logged as best-effort because some firmware keeps the previous SOC.
-
-### Fixed
-- **Dynamic excluded loads could keep the battery discharging after solar production dropped** (#205): Dynamic Power Control now blocks battery discharge while an active excluded device has Cover Home disabled. The block is registered before the controller's deadband return, so a fast grid meter can no longer leave a stale discharge command hiding import from a self-regulating wallbox.
-- **Hoymiles MQTT control could expire after one failed keepalive**: the MS-A2 command now renews the exact setpoint every 30 seconds and retries a failed publication after 5 seconds, keeping normal broker hiccups inside the measured ~62-second control timeout. Identical payloads were confirmed to renew the timeout, so the former 1 W alternation has been removed.
-- **Hoymiles standalone units could be assigned an undeliverable 2 kW discharge setpoint** (#200): firmware `01.06.03` advertises `-1000…+2000 W` even though one MS-A2 is symmetric at 1 kW. Discovery now derives a safe symmetric cap from the charge-side magnitude and never raises the user's configured ceiling; paired `-2000…+2000 W` systems retain their 2 kW range. Physical response latency (1.8 s) and settled readback latency (4.0 s) are now modelled separately.
-- **Active Cell Balance could release Solar Charge Delay for every battery**: enabling balancing on one battery now bypasses the delay only for that battery's explicit balance commands. Other batteries remain blocked from grid charging, including during the per-battery minimum-SOC floor phase.
-- **System daily charge/discharge energy could briefly drop during an integration reload**: per-battery accumulators now suppress coordinator callbacks until same-day restoration finishes, and the system aggregates restore their prior value, wait for every source to report the current local date, and reject same-day decreases. This prevents false meter resets and inflated Home Assistant Energy Dashboard statistics.
-- **Fast P1 meters could be reported as slow when consecutive readings were identical**: grid-sensor cadence and stale-data health now use Home Assistant's publication timestamp instead of the last value-change timestamp, so a meter reporting every 4 seconds no longer appears to update every 12–20 seconds while its power value remains unchanged.
-- **Anker battery power could briefly report 0 W while actively charging or discharging**: isolated near-zero Modbus readings are now ignored while a non-zero power setpoint remains active. A genuine idle state is still published after three consecutive near-zero readings. Thanks to @wouterbouvy.
-- **Marstek daily charge/discharge energy now follows one consistent reset path**: Venus E v2/v3, Venus A and Venus D derive their daily sensors from the reliable lifetime counters and reset them at local midnight. Updating mid-day preserves the greatest value already recorded for the current day.
-
-
-## [1.2.0b3] - 2026-07-28
-
-### Fixed
-- **Sessy control authentication and device information**: local API calls now use the username and password printed on the Sessy dongle, with credential fields available during setup, options and reconfiguration. This prevents control writes from being rejected and subsequently reported as “No response”. The dashboard now exposes the Sessy model, dongle firmware and Wi-Fi RSSI when available, links to the local device UI, and keeps a manually selected force direction visible while its power is still 0 W.
-- **Sessy SOC limits**: setup and options now accept a 0–30% software minimum with a conservative 5% default instead of inheriting Marstek's 12% floor. The software maximum remains 80–100% with a 100% default and ceiling, matching Sessy's full visible SOC range.
-
-## [1.2.0b2] - 2026-07-28
-
-### Added
-- **Zendure SolarFlow 800-series and 1600 AC+ profiles**: local HTTP onboarding now identifies SolarFlow 800, 800 Plus, 800 Pro and 1600 AC+ from the device API without a manual model selector. Each receives its correct AC control envelope; the AC-coupled 1600 AC+ also omits irrelevant DC MPPT/solar entities.
-
-### Fixed
-- **Sessy configuration flows completed**: Sessy is now available from the Options Flow battery selector and uses its dedicated local HTTP connection form for both options and reconfiguration, including connection probing and existing-value defaults. Charge and discharge configuration received a consistent 2,200 W ceiling. Nominal capacity is required for Sessy without inventing a fallback value for legacy entries, so stored-energy and cycle calculations use the real battery capacity. Setup, options and reconfiguration labels and capacity guidance are included in all supported translations.
-- **Time-slot predictive-charging notifications could report an incorrect grid-charge amount**: the notification now reports the planned grid energy that actually determines the predictive SOC target. Forecast solar surplus is shown as an energy-balance estimate after expected consumption, rather than as a guaranteed battery top-up.
-- **Excluded-device control labels now use the configured entity name** (#187): Enabled, Solar Surplus, Dynamic Power Control, Cover Home and Exclusion % controls now prefix their labels with the source entity's Home Assistant name instead of its `entity_id`. If the source entity is unavailable, the previous readable ID-derived label remains as a fallback.
-
-## [1.2.0b1] - 2026-07-27
-
-### Added
-- **Hoymiles MS-A2 MQTT driver**: adds broker-native telemetry and signed external power control through Home Assistant MQTT, including a command watchdog that restores autonomous `general` mode on unload. Added complete English and Spanish setup guides covering physical commissioning, S-Miles Home MQTT configuration, Omnibattery onboarding, verification, safety and troubleshooting.
-- **Sessy local API driver**: adds local HTTP support for Sessy batteries through the Sessy dongle, including battery and energy telemetry, signed power control with the required Sessy strategy selection, and integration with the standard Omnibattery setup flow, coordinator and dashboard entities.
-- **Peak shaving for excluded devices** (#107): a new opt-in runtime switch inside Peak Shaving lets the battery cover only the portion of excluded-device demand that would otherwise push grid import above the configured peak limit. Normal home coverage is preserved, inverter and battery discharge limits still apply, and existing installations remain disabled by default.
-
-### Changed
-- **Faster dashboard history charts**: the Power chart now reads compact five-minute Recorder statistics and Weekly Energy reads daily statistics, falling back to raw history only for entities without statistics. History refreshes are coalesced so a slow Recorder cannot overlap repeated requests, and the SOC sparkline loads after the visible charts.
-
-### Fixed
-- **Top-voltage charge control used two competing hysteresis margins**: reaching 3.58 V previously armed both the configurable charge hysteresis and a separate fixed 3% `normal_balance_pause`. The fixed pause has been removed, so the configured charge hysteresis is now the sole recharge threshold after a top-voltage stop.
-- **Marstek User Work Mode was not written to the battery**: changing Manual, Self Consumption or AI Optimization now writes Modbus register 43000 on Venus E v2/v3, Venus A and Venus D.
-- **Unusable price and solar-forecast data is now surfaced in Home Assistant Repairs** (#173): after two hours of sustained failure, Omnibattery warns when price slots cannot be parsed or a configured solar forecast is unavailable or invalid. The issue clears automatically when the feed recovers, preventing price-aware charging and solar-dependent decisions from failing silently.
-- **Dashboard history charts could render before their cards existed**: Recorder requests now start only after the Summary cards are mounted, so a fast response cannot leave the Power chart blank until a later UI repaint.
-- **Weekly Energy could show massively inflated daily charge/discharge values**: daily counters reset at midnight, while Recorder normalizes their cumulative sum. The chart now uses each day's final counter state instead of that normalized change, preserving the real daily total.
-- **Non-responsive batteries during charging are now detected and recovered**: charge commands that are acknowledged but do not deliver power now use the same retry, wake and exclusion flow as failed discharge commands. A direction-change grace period avoids false positives while slow inverters engage, and batteries at a legitimate BMS full-charge cutoff are not flagged as unresponsive.
+- **Control and energy reporting**: corrected excluded-load discharge handling (#205), Active Cell Balance isolation, daily and weekly energy accounting, P1 sensor health, transient Anker power readings, Marstek User Work Mode writes, and lifetime efficiency calculations.
+- **Predictive charging and diagnostics**: corrected time-slot notification energy and surface unusable price and solar forecast feeds in Repairs (#173).
+- **Dashboard and configuration entities**: corrected excluded-device labels, chart initialization and daily totals, plus Zendure configured-capacity reporting.
+- **Non-responsive charging detection**: acknowledged charge commands that do not deliver power now follow the existing recovery and exclusion flow.
 
 ## [1.1.0] - 2026-07-25
 
