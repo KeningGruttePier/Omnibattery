@@ -3,6 +3,7 @@
 ## [1.2.0b5] - 2026-07-30
 
 ### Fixed
+- **Integration could remain "initializing" with predictive charging disabled** (#217): legacy paused configurations could retain an enabled flag while their runtime override was active. Startup now treats that combination as disabled, preventing a lookup of an unset solar forecast sensor.
 - **Sessy discharge limit matched to the published hardware envelope**: setup and options now expose separate 2,200 W charge and 1,700 W discharge ceilings. The HTTP driver also clamps legacy configurations that may still contain the former 2,200 W discharge value, preventing impossible setpoints from distorting power distribution and responsiveness checks.
 - **Round-Trip Efficiency could switch to daily charge/discharge data**: AC-only batteries now always calculate efficiency from their lifetime charge and discharge counters, keeping the metric on one consistent long-term basis across battery models.
 - **Zendure total and stored energy could remain unknown despite a configured capacity**: Zendure now explicitly reports that nominal capacity is not available from its local API, allowing the coordinator to inject the configured kWh value. This restores the per-battery total energy, stored energy and calculated cycle sensors, and includes Zendure capacity and stored energy in the system aggregates.
