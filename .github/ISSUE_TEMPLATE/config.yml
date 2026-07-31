@@ -1,5 +1,11 @@
 blank_issues_enabled: false
 contact_links:
+  - name: "🆘 Help with setup or configuration"
+    url: https://github.com/ffunes/Omnibattery/discussions
+    about: >
+      Questions about installing, configuring, or using the integration belong in
+      GitHub Discussions. Please do not open a bug report unless you can describe
+      an unexpected behavior after completing the setup.
   - name: 💡 General Feature Request / Idea
     url: https://github.com/ffunes/Omnibattery/discussions/categories/feature-ideas
     about: >
