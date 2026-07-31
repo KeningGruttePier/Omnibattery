@@ -7,7 +7,7 @@ body:
 
         Use this form for help installing, configuring, or using Omnibattery. Support is provided by the community when someone is available.
 
-        Before posting, check the documentation and search existing discussions. If the integration is correctly configured and you can describe reproducible unexpected behavior, open a [bug report](https://github.com/ffunes/Omnibattery/issues/new?template=bug_report.md) instead.
+        Before posting, check the documentation and search existing discussions. If the integration is correctly configured and you can describe reproducible unexpected behavior, open a [bug report](https://github.com/ffunes/Omnibattery/issues/new?template=bug_report.yml) instead.
 
         > Do not publish passwords, tokens, API keys, complete serial numbers, or other personal information.
 

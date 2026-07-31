@@ -1,0 +1,134 @@
+name: "🐛 Bug report"
+description: Report reproducible unexpected behavior in a configured Omnibattery installation
+title: "[BUG] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Before opening a bug report
+
+        A bug means that **Omnibattery behaves unexpectedly after it has been installed and configured successfully**.
+
+        If you need help installing the integration, connecting a battery, choosing settings, or understanding how something works, please [ask in Q&A](https://github.com/ffunes/Omnibattery/discussions/new?category=q-a) instead.
+
+        Search existing issues first and test with the latest Omnibattery release. Reports without enough information to reproduce or investigate the problem may be moved to Discussions or closed.
+
+        > Do not publish passwords, tokens, API keys, complete serial numbers, IP addresses, or other personal information.
+
+  - type: dropdown
+    id: affected_area
+    attributes:
+      label: Affected area
+      description: Select the area that best matches the problem.
+      options:
+        - Battery communication or availability
+        - Sensor value or entity state
+        - Charging, discharging, or power control
+        - Energy management logic or strategy
+        - Configuration flow or options
+        - Dashboard or user interface
+        - Update or regression from an earlier version
+        - Other reproducible behavior
+    validations:
+      required: true
+
+  - type: input
+    id: integration_version
+    attributes:
+      label: Omnibattery version
+      description: Find this in HACS or the Omnibattery integration information.
+      placeholder: 1.2.0
+    validations:
+      required: true
+
+  - type: input
+    id: home_assistant_version
+    attributes:
+      label: Home Assistant version
+      description: Find this under Settings → About.
+      placeholder: 2026.7.3
+    validations:
+      required: true
+
+  - type: textarea
+    id: setup
+    attributes:
+      label: Installation details
+      description: Copy the list and complete everything you know. Write "I don't know" where necessary.
+      value: |
+        Battery brand and exact model:
+        Battery firmware version:
+        Connection method or adapter:
+        Number of batteries:
+        Consumption sensor and update interval:
+        Installation type (single-phase or three-phase):
+    validations:
+      required: true
+
+  - type: textarea
+    id: current_behavior
+    attributes:
+      label: What happened?
+      description: Describe the observed behavior, when it started, and how often it occurs.
+      placeholder: After..., Omnibattery...
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction_steps
+    attributes:
+      label: Steps to reproduce
+      description: Provide the shortest sequence that reliably causes the problem.
+      placeholder: |
+        1. Open...
+        2. Set...
+        3. Wait...
+        4. Observe...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected_behavior
+    attributes:
+      label: Expected behavior
+      description: Explain what you expected Omnibattery to do instead.
+      placeholder: Omnibattery should...
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Home Assistant logs
+      description: Paste the complete relevant warning or error, including a few lines before and after it. Write "No relevant log entries" if nothing appears. Remove sensitive information first.
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics file
+      description: Optional. In Home Assistant, open Settings → Devices & services → Omnibattery, choose Download diagnostics, and drag the downloaded file here. Review it before uploading.
+
+  - type: textarea
+    id: additional_context
+    attributes:
+      label: Additional context
+      description: Optional. Add screenshots, a minimal automation, or anything else that may help reproduce the problem.
+
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Confirmations
+      options:
+        - label: I am using the latest available Omnibattery release and restarted Home Assistant after updating.
+          required: true
+        - label: I searched the documentation, existing issues, and existing discussions.
+          required: true
+        - label: I can reproduce this unexpected behavior; this is not a request for installation or configuration help.
+          required: true
+        - label: I removed passwords, tokens, API keys, complete serial numbers, IP addresses, and other sensitive information.
+          required: true
