@@ -1,6 +1,6 @@
 # Opciones avanzadas
 
-Tras configurar la carga predictiva, el asistente ofrece cinco pasos opcionales adicionales que ajustan el comportamiento de la integración en situaciones específicas.
+Tras la configuración inicial, el dashboard de Omnibattery ofrece controles opcionales para funciones que ajustan el comportamiento de la integración en situaciones específicas.
 
 ---
 
