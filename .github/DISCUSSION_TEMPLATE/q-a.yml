@@ -1,0 +1,87 @@
+title: "[HELP] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Configuration and usage help
+
+        Use this form for help installing, configuring, or using Omnibattery. Support is provided by the community when someone is available.
+
+        Before posting, check the documentation and search existing discussions. If the integration is correctly configured and you can describe reproducible unexpected behavior, open a [bug report](https://github.com/ffunes/Omnibattery/issues/new?template=bug_report.md) instead.
+
+        > Do not publish passwords, tokens, API keys, complete serial numbers, or other personal information.
+
+  - type: dropdown
+    id: help_topic
+    attributes:
+      label: What do you need help with?
+      options:
+        - Installing the integration
+        - Initial configuration
+        - Connecting a battery or device
+        - Entities, sensors, or controls
+        - Automations or energy management
+        - Updating or migrating the integration
+        - Something else
+    validations:
+      required: true
+
+  - type: textarea
+    id: goal
+    attributes:
+      label: What are you trying to do?
+      description: Explain the result you want to achieve. You do not need to use technical terms.
+      placeholder: I want Omnibattery to...
+    validations:
+      required: true
+
+  - type: textarea
+    id: current_result
+    attributes:
+      label: What is happening instead?
+      description: Describe what you see, including any messages shown by Home Assistant or Omnibattery.
+      placeholder: When I try to..., I see...
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Your setup
+      description: Copy what you know and write "I don't know" for anything you cannot find.
+      value: |
+        Omnibattery version:
+        Home Assistant version:
+        Battery brand and exact model:
+        Battery firmware version:
+        Connection method or adapter:
+    validations:
+      required: true
+
+  - type: textarea
+    id: attempted_steps
+    attributes:
+      label: What have you already tried?
+      description: Include documentation you followed and any settings you changed.
+      placeholder: I followed..., then I tried...
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs or screenshots
+      description: Optional. Add relevant Home Assistant logs or screenshots after removing sensitive information.
+      render: text
+
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Confirmations
+      options:
+        - label: I searched the documentation and existing discussions first.
+          required: true
+        - label: I removed passwords, tokens, API keys, complete serial numbers, and other sensitive information.
+          required: true
+        - label: I understand that this is community support and a response is not guaranteed or immediate.
+          required: true
