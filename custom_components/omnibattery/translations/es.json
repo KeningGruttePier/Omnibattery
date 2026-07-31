@@ -1427,7 +1427,7 @@
         "name": "Potencia de la Celda"
       },
       "round_trip_efficiency_total": {
-        "name": "Eficiencia Total de Ciclo"
+        "name": "Eficiencia Total"
       },
       "stored_energy": {
         "name": "Energía Almacenada"
