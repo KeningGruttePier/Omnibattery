@@ -34,12 +34,6 @@ The system continuously switches between charging and discharging.
 
 ---
 
-## SOC/power values are not persisted after HA restart
-
-This is fixed in the current Omnibattery release. Changes to SOC and power sliders are saved immediately to the config entry and restored on every restart.
-
----
-
 ## Battery alarm or fault notification received
 
 The integration monitors the battery's `Alarm Status` and `Fault Status` registers (v2 only) every 5 seconds. When a new bit is set a persistent notification appears in Home Assistant with the exact condition name (e.g. *BAT Overvoltage*, *Fan Abnormal Warning*). The notification is automatically dismissed once all conditions clear.
@@ -69,12 +63,6 @@ The integration monitors the battery's `Alarm Status` and `Fault Status` registe
 2. Check the `price_data_status` attribute of the `predictive_charging_active` sensor (Dynamic Pricing mode).
 3. Review HA notifications: the 00:05 evaluation reports its result.
 4. Make sure the energy balance actually requires charging (there may already be enough energy).
-
----
-
-## RS485 switch re-enables itself after restart
-
-The current Omnibattery release persists and restores the user's preference at startup.
 
 ---
 

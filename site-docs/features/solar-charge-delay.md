@@ -1,8 +1,5 @@
 # Solar charge delay
 
-!!! note "Solar forecast sensor"
-    The integration uses **today's** solar forecast, not tomorrow's. If you migrated from Marstek Venus Energy Manager or have an older configuration, point the solar forecast sensor in settings to the **today** sensor (e.g. `sensor.solcast_pv_forecast_forecast_today`) instead of the tomorrow sensor.
-
 Delays morning battery charging (both from solar and from the grid) while the expected solar production is sufficient to cover the required energy. Avoids charging the battery early — whether from solar or the grid — when the sun will be able to do it later.
 
 ## When it applies

@@ -15,9 +15,6 @@ Charges from the grid during a **fixed time window** (typically cheap overnight 
 !!! note "Up to 3 windows"
     You can configure 1, 2 or 3 charging windows — useful for a split tariff with both a night and a midday off-peak block. Fill only window 1 for the previous single-window behaviour; each extra window needs **both** a start and an end time (fill both or leave both empty). The consumption-window math treats the union of all configured windows.
 
-!!! note "Solar forecast sensor"
-    The solar forecast sensor field must point to the **today** sensor (e.g. `sensor.solcast_pv_forecast_forecast_today`), not the tomorrow sensor. If you migrated from Marstek Venus Energy Manager or have an older configuration, update this field accordingly.
-
 !!! note "No solar sensor"
     If you have no solar panels, leave the forecast sensor empty. The system will charge whenever battery energy is insufficient to cover expected consumption.
 

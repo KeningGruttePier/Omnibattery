@@ -1,8 +1,5 @@
 # Retraso de carga solar
 
-!!! note "Sensor de previsión solar"
-    La integración usa la previsión **del día de hoy**, no la de mañana. Si has migrado desde Marstek Venus Energy Manager o tienes una configuración antigua, actualiza el sensor de previsión solar en los ajustes para que apunte al sensor de **hoy** (p. ej. `sensor.solcast_pv_forecast_forecast_today`) en lugar del de mañana.
-
 Retrasa la carga matutina de la batería (tanto solar como desde la red) mientras la producción solar prevista sea suficiente para cubrir la energía necesaria. Evita cargar la batería a primera hora —ya sea con solar o con red— cuando el sol podrá hacerlo más tarde.
 
 ## Aplicación

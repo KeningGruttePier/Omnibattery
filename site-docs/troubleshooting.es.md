@@ -34,12 +34,6 @@ El sistema cambia continuamente entre carga y descarga.
 
 ---
 
-## Los valores de SOC/potencia no se persisten tras reiniciar HA
-
-Este problema está corregido en la versión actual de Omnibattery. Los cambios en sliders de SOC y potencia se guardan inmediatamente en la configuración y se restauran en cada reinicio.
-
----
-
 ## Recibo una notificación de alarma o fallo de batería
 
 La integración monitoriza los registros `Alarm Status` y `Fault Status` de la batería (solo v2) cada 5 segundos. Cuando se activa un nuevo bit, aparece una notificación persistente en Home Assistant con el nombre exacto de la condición (p. ej. *BAT Overvoltage*, *Fan Abnormal Warning*). La notificación se descarta automáticamente cuando todas las condiciones se resuelven.
@@ -69,12 +63,6 @@ La integración monitoriza los registros `Alarm Status` y `Fault Status` de la b
 2. Comprueba el atributo `price_data_status` del sensor `predictive_charging_active` (modo Precio Dinámico).
 3. Revisa las notificaciones de HA: la evaluación de las 00:05 reporta el resultado.
 4. Asegúrate de que el balance energético realmente requiere carga (puede que haya suficiente energía).
-
----
-
-## El switch RS485 se reactiva solo tras reiniciar
-
-La versión actual de Omnibattery persiste y restaura la preferencia del usuario al arrancar.
 
 ---
 
