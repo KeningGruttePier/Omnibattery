@@ -36,9 +36,7 @@ The system continuously switches between charging and discharging.
 
 ## SOC/power values are not persisted after HA restart
 
-Fixed since v1.5.0. Changes to SOC and power sliders are saved immediately to the config entry and restored on every restart.
-
-If the problem persists, verify you are using version **1.5.0** or later.
+This is fixed in the current Omnibattery release. Changes to SOC and power sliders are saved immediately to the config entry and restored on every restart.
 
 ---
 
@@ -76,7 +74,7 @@ The integration monitors the battery's `Alarm Status` and `Fault Status` registe
 
 ## RS485 switch re-enables itself after restart
 
-Fixed in v1.5.0. The user's preference is now persisted and restored at startup.
+The current Omnibattery release persists and restores the user's preference at startup.
 
 ---
 

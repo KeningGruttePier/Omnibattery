@@ -1,6 +1,6 @@
 # Time slots
 
-Time slots define windows that control how each battery is allowed to operate. From version 2.0.0 every slot exposes independent ticks for charge and discharge, optional SOC and power overrides, a manual-power mode, and a per-battery scope. Up to 8 slots can be defined.
+Time slots define windows that control how each battery is allowed to operate. Each slot exposes independent ticks for charge and discharge, optional SOC and power overrides, a manual-power mode, and a per-battery scope. Up to 8 slots can be defined.
 
 ## Model: per-direction whitelist
 
@@ -33,9 +33,9 @@ This preserves the legacy behavior: the existing "no-discharge time slots" remai
 
 When more than one battery is configured each slot picks a target via `battery_scope`. Multiple slots with different scopes can overlap in time without conflict — they only conflict when both target the same physical battery (`battery_N` vs `battery_N`, or either set to `all`).
 
-## Migration from earlier versions
+## Migration of legacy slots
 
-Slots created before 2.0.0 (`{start_time, end_time, days, apply_to_charge}`) are converted automatically on first start:
+Slots using the legacy format (`{start_time, end_time, days, apply_to_charge}`), including configurations migrated from Marstek Venus Energy Manager, are converted automatically on first start:
 
 | Legacy field | Migrated to |
 |---|---|

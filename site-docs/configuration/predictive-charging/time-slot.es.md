@@ -13,8 +13,8 @@ Carga desde la red durante una **ventana horaria fija** (típicamente tarifa noc
 !!! note "Hasta 3 ventanas"
     Puedes configurar 1, 2 o 3 ventanas de carga — útil para una tarifa con bloque nocturno y otro de mediodía. Rellena solo la ventana 1 para el comportamiento de ventana única anterior; cada ventana extra necesita **tanto** una hora de inicio como de fin (rellena ambas o déjalas ambas vacías). El cálculo de la ventana de consumo usa la unión de todas las ventanas configuradas.
 
-!!! danger "Cambio importante en v1.6.0"
-    El campo de sensor de previsión solar ahora debe apuntar al sensor de **hoy** (p. ej. `sensor.solcast_pv_forecast_forecast_today`), no al de mañana.
+!!! note "Sensor de previsión solar"
+    El campo de sensor de previsión solar debe apuntar al sensor de **hoy** (p. ej. `sensor.solcast_pv_forecast_forecast_today`), no al de mañana. Si has migrado desde Marstek Venus Energy Manager o tienes una configuración antigua, actualiza este campo.
 
 !!! note "Sin sensor solar"
     Si no tienes paneles solares, deja vacío el sensor de previsión. El sistema cargará siempre que la energía de la batería sea insuficiente para cubrir el consumo esperado.

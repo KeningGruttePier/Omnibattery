@@ -36,9 +36,7 @@ El sistema cambia continuamente entre carga y descarga.
 
 ## Los valores de SOC/potencia no se persisten tras reiniciar HA
 
-A partir de la v1.5.0 este problema está corregido. Los cambios en sliders de SOC y potencia se guardan inmediatamente en la configuración y se restauran en cada reinicio.
-
-Si persiste el problema, verifica que estás usando la versión **1.5.0** o superior.
+Este problema está corregido en la versión actual de Omnibattery. Los cambios en sliders de SOC y potencia se guardan inmediatamente en la configuración y se restauran en cada reinicio.
 
 ---
 
@@ -76,7 +74,7 @@ La integración monitoriza los registros `Alarm Status` y `Fault Status` de la b
 
 ## El switch RS485 se reactiva solo tras reiniciar
 
-Corregido en v1.5.0. La preferencia del usuario se persiste y se restaura en el arranque.
+La versión actual de Omnibattery persiste y restaura la preferencia del usuario al arrancar.
 
 ---
 

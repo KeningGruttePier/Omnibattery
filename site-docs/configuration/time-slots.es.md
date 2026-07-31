@@ -1,6 +1,6 @@
 # Franjas horarias
 
-Las franjas horarias definen ventanas que controlan cómo se permite operar a cada batería. Desde la versión 2.0.0 cada franja expone ticks independientes para carga y descarga, overrides opcionales de SOC y de potencia, un modo manual y un alcance por batería. Se admiten hasta 8 franjas.
+Las franjas horarias definen ventanas que controlan cómo se permite operar a cada batería. Cada franja expone ticks independientes para carga y descarga, overrides opcionales de SOC y de potencia, un modo manual y un alcance por batería. Se admiten hasta 8 franjas.
 
 ## Modelo: whitelist por dirección
 
@@ -33,9 +33,9 @@ Esto preserva el comportamiento anterior: las "franjas de no-descarga" existente
 
 Con varias baterías cada franja elige su destinatario con `battery_scope`. Franjas con alcances distintos pueden solaparse en tiempo sin conflicto — sólo entran en conflicto si ambas apuntan a la misma batería física (`battery_N` vs `battery_N`, o cualquiera de las dos a `all`).
 
-## Migración desde versiones anteriores
+## Migración de franjas heredadas
 
-Las franjas creadas antes de 2.0.0 (`{start_time, end_time, days, apply_to_charge}`) se convierten automáticamente al arrancar:
+Las franjas con el formato legado (`{start_time, end_time, days, apply_to_charge}`), incluidas las configuraciones migradas desde Marstek Venus Energy Manager, se convierten automáticamente al arrancar:
 
 | Campo legado | Migrado a |
 |---|---|
