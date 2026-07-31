@@ -52,13 +52,13 @@ def test_lifetime_counter_efficiency_preserves_valid_ratio():
     assert sensor.native_value == pytest.approx(92.0)
 
 
-def test_derived_daily_counters_take_priority_for_anker_efficiency():
-    """Anker lifetime totals may use unrelated baselines; daily values do not."""
+def test_daily_counters_do_not_override_lifetime_efficiency():
+    """Efficiency consistently uses lifetime totals even when daily data exists."""
     sensor = _lifetime_efficiency_sensor(
         charge_kwh=10.0,
-        discharge_kwh=30.0,
+        discharge_kwh=9.2,
         daily_charge_kwh=3.9,
         daily_discharge_kwh=3.7,
     )
 
-    assert sensor.native_value == pytest.approx(94.87)
+    assert sensor.native_value == pytest.approx(92.0)
