@@ -38,6 +38,7 @@ def _ctrl(coords, floor, *, solar="50.0", consumption=2.0):
     # solar far exceeds consumption → natural deficit is negative (no charge).
     return SimpleNamespace(
         predictive_charging_enabled=True,
+        predictive_charging_overridden=False,
         coordinators=list(coords),
         _predictive_safety_margin_kwh=0.0,
         _predictive_grid_charge_margin_pct=0.0,
@@ -52,6 +53,20 @@ def _ctrl(coords, floor, *, solar="50.0", consumption=2.0):
 
 def _run(ctrl):
     return asyncio.run(ChargeDischargeController._should_activate_grid_charging(ctrl))
+
+
+def test_legacy_predictive_override_skips_solar_forecast_lookup():
+    """A legacy paused entry must not evaluate its unset forecast sensor (#217)."""
+    ctrl = SimpleNamespace(
+        predictive_charging_enabled=True,
+        predictive_charging_overridden=True,
+        solar_forecast_sensor=None,
+    )
+
+    result = _run(ctrl)
+
+    assert result["should_charge"] is False
+    assert result["reason"] == "Predictive charging disabled"
 
 
 def test_floor_forces_charge_on_solar_positive_day():

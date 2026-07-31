@@ -2574,7 +2574,14 @@ class ChargeDischargeController:
                 "days_in_history": int,
                 "reason": str
         """
-        if not self.predictive_charging_enabled:
+        # Legacy entries can retain ``enabled=True`` alongside the runtime
+        # override set by the former pause-only switch. Treat that state as
+        # disabled here too: the UI and the pricing paths already do, and an
+        # unset forecast sensor must never reach hass.states.get().
+        if (
+            not self.predictive_charging_enabled
+            or self.predictive_charging_overridden
+        ):
             return {
                 "should_charge": False,
                 "solar_forecast_kwh": None,
