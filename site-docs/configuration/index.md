@@ -1,8 +1,9 @@
 # Configuration
 
-The integration is configured from :
- - the Home Assistant UI through a multi-step wizard
- - the Omnibattery Dashboard
+The integration is configured through two interfaces:
+
+- the Home Assistant UI through a multi-step wizard
+- the Omnibattery Dashboard
 
 ## Home Assistant wizard configuration
 
@@ -23,11 +24,11 @@ flowchart TD
     J[Done]
 ```
 
-| Features | Description | Required |
+| Section | Description | Required |
 |------|-------------|:--------:|
 | [Sensors](main-sensor.md) | Grid consumption sensor and solar sensor (home consumption is derived) | ✅ |
 | Batteries | Number of battery units | ✅ |
-| [Batteries](batteries.md) | Per-battery config : name, IP, port, version, power limits and SOC | ✅ |
+| [Batteries](batteries.md) | Per-battery configuration: name, IP, port, version, power limits and SOC | ✅ |
 | [Time slots](time-slots.md) | Discharge/charge windows with per-slot parameters | ❌ |
 | [Excluded devices](excluded-devices.md) | Heavy loads to ignore | ❌ |
 | [Predictive charging](predictive-charging/index.md) | Grid charging when solar forecast is insufficient | ❌ |
@@ -41,6 +42,7 @@ flowchart TD
 | [Temperature charge limit](advanced.md) | Linear derate charge/discharge power based on battery temperature | ❌ |
 | [Capacity protection](advanced.md) | Reserves a portion of battery capacity for demand spikes (peak shaving) | ❌ |
 | [Hourly net balance](advanced.md) | Sets the hourly net import/export energy to a specific target (default 0 Wh) | ❌ |
+| [System power limits](batteries.md#system-power-limits-all-batteries-combined) | Caps combined charge/discharge power across all active batteries | ❌ |
 | [PD controller (advanced)](advanced.md) | Finetune the PD controller to keep the grid flow to the configured target | ❌ |
 
 ## Modifying the configuration

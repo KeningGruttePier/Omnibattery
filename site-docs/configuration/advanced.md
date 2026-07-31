@@ -1,6 +1,6 @@
 # Advanced options
 
-After configuring predictive charging, the wizard offers five additional optional steps that adjust the integration's behaviour in specific situations.
+After the initial setup, the Omnibattery Dashboard exposes optional controls for features that adjust the integration's behaviour in specific situations.
 
 ---
 

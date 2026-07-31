@@ -1,12 +1,15 @@
 # Configuración
 
-La integración se configura íntegramente desde la interfaz de Home Assistant mediante un asistente de varios pasos.
+La integración se configura mediante dos interfaces:
 
-## Pasos del asistente
+- La interfaz de Home Assistant, a través de un asistente de varios pasos.
+- El dashboard de Omnibattery.
+
+## Configuración del asistente de Home Assistant
 
 ```mermaid
 flowchart TD
-    A[1. Sensor principal] --> B[2. Número de baterías]
+    A[1. Config. del sensor principal] --> B[2. Número de baterías]
     B --> C[3. Config. por batería]
     C --> D{¿Franjas horarias?}
     D -- Sí --> E[4. Franjas horarias]
@@ -17,29 +20,15 @@ flowchart TD
     G --> H{¿Carga predictiva?}
     H -- Sí --> I[6. Modo de carga predictiva]
     H -- No --> J
-    I --> J{¿Carga semanal completa?}
-    J -- Sí --> K[7. Día de carga semanal completa]
-    J -- No --> L
-    K --> L{¿Retraso de carga solar?}
-    L -- Sí --> M[8. Config. retraso de carga solar]
-    L -- No --> N
-    M --> N{¿Protección de capacidad?}
-    N -- Sí --> O[9. Config. protección de capacidad]
-    N -- No --> P
-    O --> P{¿Balance neto horario?}
-    P -- Sí --> Q[10. Config. balance neto horario]
-    P -- No --> R
-    Q --> R{¿Controlador PD avanzado?}
-    R -- Sí --> S[11. Config. controlador PD avanzado]
-    R -- No --> T[Fin]
-    S --> T
+    I --> J
+    J[Fin]
 ```
 
-| Paso | Descripción | Obligatorio |
+| Sección | Descripción | Obligatorio |
 |------|-------------|:-----------:|
-| [Sensor principal](main-sensor.md) | Sensor de consumo de red y sensor solar (el consumo del hogar se deriva) | ✅ |
+| [Sensores](main-sensor.md) | Sensor de consumo de red y sensor solar (el consumo del hogar se deriva) | ✅ |
 | Baterías | Número de unidades | ✅ |
-| [Baterías](batteries.md) | Config. por batería: nombre, IP, puerto, versión, límites de potencia y SOC | ✅ |
+| [Baterías](batteries.md) | Configuración por batería: nombre, IP, puerto, versión, límites de potencia y SOC | ✅ |
 | [Franjas horarias](time-slots.md) | Ventanas de descarga/carga con parámetros por franja | ❌ |
 | [Dispositivos excluidos](excluded-devices.md) | Cargas pesadas a ignorar | ❌ |
 | [Carga predictiva](predictive-charging/index.md) | Carga desde la red cuando la previsión solar es insuficiente | ❌ |
@@ -47,6 +36,7 @@ flowchart TD
 | [Retraso de carga solar](advanced.md) | Evita cargar las baterías por la mañana si la producción solar prevista será suficiente | ❌ |
 | [Protección de capacidad](advanced.md) | Reserva una parte de la capacidad de batería para picos de demanda (peak shaving) | ❌ |
 | [Balance neto horario](advanced.md) | Establece el balance neto de importación/exportación horario a un objetivo específico (por defecto 0 Wh) | ❌ |
+| [Límites de potencia del sistema](batteries.md#limites-de-potencia-del-sistema-todas-las-baterias-combinadas) | Limita la potencia combinada de carga/descarga de todas las baterías activas | ❌ |
 | [Controlador PD (avanzado)](advanced.md) | Ajuste fino del controlador PD para mantener el flujo de red en el objetivo configurado | ❌ |
 
 ## Modificar la configuración
@@ -54,4 +44,4 @@ flowchart TD
 Una vez instalada, puedes modificar cualquier parámetro en:
 **Ajustes → Dispositivos y servicios → Omnibattery → Configurar**
 
-![Reconfigure Omnibattery](../assets/screenshots/configuration/reconfigure-marstek-venus-energy-manager.png){ width="650" style="display: block; margin: 0 auto;"}
+![Reconfigurar Omnibattery](../assets/screenshots/configuration/reconfigure-omnibattery.png){ width="650" style="display: block; margin: 0 auto;"}

@@ -64,6 +64,14 @@ Si elevas el **SOC máximo** de una batería al `100 %`, esa batería usa protec
 
 ---
 
+## Límites de potencia del sistema (todas las baterías combinadas)
+
+Configura estos límites desde el dashboard de Omnibattery. Activa el interruptor para limitar la potencia combinada de carga o descarga de todas las baterías activas. El límite individual de cada batería se sigue aplicando; establecer cualquiera de los límites del sistema en `0 W` desactiva ese límite.
+
+![Límites de potencia del sistema](../assets/screenshots/configuration/battery-system-power-limits-config.png){ width="650" style="display: block; margin: 0 auto;"}
+
+---
+
 ## Umbral offgrid backup en tiempo de ejecución
 
 La entidad numérica **Umbral Offgrid Backup** (visible en la tarjeta de dispositivo de cada batería, entre las entidades de configuración) permite ajustar el umbral en cualquier momento sin entrar al flujo de opciones. Auméntalo si tu batería tiene cargas permanentes pequeñas en el puerto offgrid — como un switch PoE, router o cámaras IP — que de otro modo mantendrían la batería permanentemente excluida del control PD.
