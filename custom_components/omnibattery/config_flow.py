@@ -119,7 +119,8 @@ from .drivers.hoymiles import HoymilesMqttDriver
 from .pricing.nordpool import is_official_nordpool_sensor
 
 _ANKER_MAX_POWER_W = 3500
-_SESSY_MAX_POWER_W = 2200
+_SESSY_MAX_CHARGE_POWER_W = 2200
+_SESSY_MAX_DISCHARGE_POWER_W = 1700
 _SESSY_DEFAULT_MIN_SOC = 5
 _HOYMILES_MAX_POWER_W = 2000
 _HOYMILES_DEFAULT_POWER_W = 1000
@@ -1049,22 +1050,18 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
             max_charge_power, max_discharge_power = _zendure_power_limits(
                 self._current_battery_data.get("zendure_model", "2400ac_pro")
             )
-            max_power = max(max_charge_power, max_discharge_power)
         elif brand == "anker":
             max_charge_power, max_discharge_power = _anker_power_ceilings(
                 self._current_battery_data
             )
-            max_power = max(max_charge_power, max_discharge_power)
         elif brand == "sessy":
-            max_power = max_charge_power = max_discharge_power = _SESSY_MAX_POWER_W
+            max_charge_power = _SESSY_MAX_CHARGE_POWER_W
+            max_discharge_power = _SESSY_MAX_DISCHARGE_POWER_W
         elif brand == "hoymiles":
             max_charge_power, max_discharge_power = _hoymiles_power_ceilings(self._current_battery_data)
-            max_power = max(max_charge_power, max_discharge_power)
         else:
             battery_version = self._current_battery_data.get(CONF_BATTERY_VERSION, DEFAULT_VERSION)
-            max_power = MAX_POWER_BY_VERSION.get(battery_version, 2500)
-            max_charge_power = max_power
-            max_discharge_power = max_power
+            max_charge_power = max_discharge_power = MAX_POWER_BY_VERSION.get(battery_version, 2500)
         (
             soc_min_lo,
             soc_min_hi,
@@ -1112,11 +1109,11 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
         if brand != "anker":
             default_charge = max(
                 100,
-                min(max_power, int(self._current_battery_data.get("max_charge_power", max_power))),
+                min(max_charge_power, int(self._current_battery_data.get("max_charge_power", max_charge_power))),
             )
             default_discharge = max(
                 100,
-                min(max_power, int(self._current_battery_data.get("max_discharge_power", max_power))),
+                min(max_discharge_power, int(self._current_battery_data.get("max_discharge_power", max_discharge_power))),
             )
             _schema[vol.Required("max_charge_power", default=default_charge)] = NumberSelector(
                 NumberSelectorConfig(min=100, max=max_charge_power, step=50, unit_of_measurement="W", mode=NumberSelectorMode.SLIDER)
@@ -2806,22 +2803,18 @@ class OptionsFlowHandler(OptionsFlow):
                 max_charge_power, max_discharge_power = _zendure_power_limits(
                     self._current_battery_data.get("zendure_model", "2400ac_pro")
                 )
-                max_power = max(max_charge_power, max_discharge_power)
             elif brand == "anker":
                 max_charge_power, max_discharge_power = _anker_power_ceilings(
                     self._current_battery_data
                 )
-                max_power = max(max_charge_power, max_discharge_power)
             elif brand == "sessy":
-                max_power = max_charge_power = max_discharge_power = _SESSY_MAX_POWER_W
+                max_charge_power = _SESSY_MAX_CHARGE_POWER_W
+                max_discharge_power = _SESSY_MAX_DISCHARGE_POWER_W
             elif brand == "hoymiles":
                 max_charge_power, max_discharge_power = _hoymiles_power_ceilings(self._current_battery_data)
-                max_power = max(max_charge_power, max_discharge_power)
             else:
                 battery_version = self._current_battery_data.get(CONF_BATTERY_VERSION, DEFAULT_VERSION)
-                max_power = MAX_POWER_BY_VERSION.get(battery_version, 2500)
-                max_charge_power = max_power
-                max_discharge_power = max_power
+                max_charge_power = max_discharge_power = MAX_POWER_BY_VERSION.get(battery_version, 2500)
             (
                 soc_min_lo,
                 soc_min_hi,
@@ -2874,8 +2867,8 @@ class OptionsFlowHandler(OptionsFlow):
             if self.battery_index < len(current_batteries):
                 current_battery = current_batteries[self.battery_index]
                 defaults = {
-                    "max_charge_power": min(current_battery.get("max_charge_power", max_power), max_power),
-                    "max_discharge_power": min(current_battery.get("max_discharge_power", max_power), max_power),
+                    "max_charge_power": min(current_battery.get("max_charge_power", max_charge_power), max_charge_power),
+                    "max_discharge_power": min(current_battery.get("max_discharge_power", max_discharge_power), max_discharge_power),
                     "max_soc": current_battery.get("max_soc", soc_max_default),
                     "min_soc": current_battery.get("min_soc", soc_min_default),
                     "charge_hysteresis_percent": max(
@@ -2894,15 +2887,15 @@ class OptionsFlowHandler(OptionsFlow):
                     "max_charge_power": max(
                         100,
                         min(
-                            max_power,
-                            int(self._current_battery_data.get("max_charge_power", max_power)),
+                            max_charge_power,
+                            int(self._current_battery_data.get("max_charge_power", max_charge_power)),
                         ),
                     ),
                     "max_discharge_power": max(
                         100,
                         min(
-                            max_power,
-                            int(self._current_battery_data.get("max_discharge_power", max_power)),
+                            max_discharge_power,
+                            int(self._current_battery_data.get("max_discharge_power", max_discharge_power)),
                         ),
                     ),
                     "max_soc": soc_max_default,

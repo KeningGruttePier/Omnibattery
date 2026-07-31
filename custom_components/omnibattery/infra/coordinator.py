@@ -287,6 +287,12 @@ class MarstekVenusDataUpdateCoordinator(DataUpdateCoordinator):
                 max_charge_power_w=self.max_charge_power,
                 max_discharge_power_w=self.max_discharge_power,
             )
+            # Clamp legacy entries saved with the former symmetric 2,200 W
+            # ceiling before the controller uses these values for allocation.
+            self.max_charge_power = self.driver.capabilities.max_charge_power_w
+            self.max_discharge_power = self.driver.capabilities.max_discharge_power_w
+            self.user_max_charge_power = self.max_charge_power
+            self.user_max_discharge_power = self.max_discharge_power
         elif self.brand == "hoymiles":
             self.driver = HoymilesMqttDriver(
                 hass, self.host,

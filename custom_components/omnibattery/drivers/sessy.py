@@ -20,6 +20,8 @@ _LOGGER = logging.getLogger(__name__)
 _HTTP_TIMEOUT = aiohttp.ClientTimeout(total=10)
 _PROBE_TIMEOUT = aiohttp.ClientTimeout(total=5)
 _API_STRATEGY = "POWER_STRATEGY_API"
+_MAX_CHARGE_POWER_W = 2200
+_MAX_DISCHARGE_POWER_W = 1700
 
 SENSOR_DEFINITIONS = [
     {"key": "battery_soc", "name": "Battery SOC", "unit": "%", "device_class": "battery", "state_class": "measurement", "scale": 1, "precision": 0, "scan_interval": "medium", "enabled_by_default": True},
@@ -54,8 +56,8 @@ class SessyLocalDriver(BatteryDriver):
         port: int = 80,
         username: str = "",
         password: str = "",
-        max_charge_power_w: int = 2200,
-        max_discharge_power_w: int = 2200,
+        max_charge_power_w: int = _MAX_CHARGE_POWER_W,
+        max_discharge_power_w: int = _MAX_DISCHARGE_POWER_W,
         session: Optional[aiohttp.ClientSession] = None,
     ) -> None:
         self._base_url = f"http://{host}" + (f":{port}" if port != 80 else "")
@@ -68,6 +70,8 @@ class SessyLocalDriver(BatteryDriver):
         self._owns_session = False
         self._connected = False
         self._shutting_down = False
+        max_charge_power_w = max(0, min(int(max_charge_power_w), _MAX_CHARGE_POWER_W))
+        max_discharge_power_w = max(0, min(int(max_discharge_power_w), _MAX_DISCHARGE_POWER_W))
         self._capabilities = DriverCapabilities(False, False, False, max_charge_power_w,
             max_discharge_power_w, False, False, False, has_daily_energy_counters=False,
             has_nominal_capacity=False,

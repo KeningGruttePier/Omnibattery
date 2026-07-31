@@ -104,6 +104,25 @@ async def test_setpoint_selects_api_strategy_and_inverts_sign():
 
 
 @pytest.mark.asyncio
+async def test_setpoint_clamps_legacy_limits_to_published_hardware_envelope():
+    session = _session()
+    driver = SessyLocalDriver(
+        "sessy.local",
+        session=session,
+        max_charge_power_w=5000,
+        max_discharge_power_w=5000,
+    )
+
+    assert driver.capabilities.max_charge_power_w == 2200
+    assert driver.capabilities.max_discharge_power_w == 1700
+
+    result = await driver.apply_setpoint(-2200, read_back=False)
+
+    assert result.ok and result.net_power_w == -1700
+    assert session.post.call_args_list[1].kwargs["json"] == {"setpoint": 1700}
+
+
+@pytest.mark.asyncio
 async def test_setpoint_confirms_against_sessy_power_setpoint():
     status = {"sessy": {"power_setpoint": -400, "power": -350}}
     session = _session(status=status)
@@ -150,6 +169,24 @@ def test_sessy_reports_counters_but_not_nominal_capacity():
     assert capabilities.cycles_from_discharge_only is True
 
 
+def test_coordinator_clamps_legacy_sessy_power_limits_before_allocation():
+    coordinator = MarstekVenusDataUpdateCoordinator(
+        MagicMock(),
+        "Garage Sessy",
+        "sessy.local",
+        80,
+        "sensor.grid_power",
+        brand="sessy",
+        max_charge_power=5000,
+        max_discharge_power=5000,
+    )
+
+    assert coordinator.max_charge_power == 2200
+    assert coordinator.max_discharge_power == 1700
+    assert coordinator.user_max_charge_power == 2200
+    assert coordinator.user_max_discharge_power == 1700
+
+
 @pytest.mark.asyncio
 async def test_sessy_configuration_requests_and_persists_nominal_capacity():
     flow = MarstekVenusConfigFlow()
@@ -164,6 +201,8 @@ async def test_sessy_configuration_requests_and_persists_nominal_capacity():
         marker.schema: marker for marker in form["data_schema"].schema
     }
     assert "battery_capacity_kwh" in fields
+    assert fields["max_charge_power"].config["max"] == 2200
+    assert fields["max_discharge_power"].config["max"] == 1700
     assert fields["min_soc"].config["min"] == 0
     assert fields["min_soc"].config["max"] == 30
     assert markers["min_soc"].default() == 5
@@ -179,7 +218,7 @@ async def test_sessy_configuration_requests_and_persists_nominal_capacity():
     await flow.async_step_battery_limits(
         {
             "max_charge_power": 2200,
-            "max_discharge_power": 2200,
+            "max_discharge_power": 1700,
             "max_soc": 100,
             "min_soc": 0,
             "charge_hysteresis_percent": 2,
@@ -221,7 +260,7 @@ async def test_options_flow_offers_and_configures_sessy(monkeypatch):
         marker.schema: selector for marker, selector in limits["data_schema"].schema.items()
     }
     assert fields["max_charge_power"].config["max"] == 2200
-    assert fields["max_discharge_power"].config["max"] == 2200
+    assert fields["max_discharge_power"].config["max"] == 1700
     markers = {
         marker.schema: marker for marker in limits["data_schema"].schema
     }

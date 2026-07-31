@@ -5975,17 +5975,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         coordinator.battery_capacity_kwh = battery_config.get("battery_capacity_kwh", 0.0)
         # Software manual-control + charge-ceiling state (Zendure-class drivers).
         coordinator.manual_force_mode = battery_config.get("manual_force_mode", "None")
-        coordinator.manual_set_charge_power = battery_config.get("manual_set_charge_power", 0)
-        coordinator.manual_set_discharge_power = battery_config.get("manual_set_discharge_power", 0)
+        coordinator.manual_set_charge_power = min(
+            battery_config.get("manual_set_charge_power", 0),
+            coordinator.max_charge_power,
+        )
+        coordinator.manual_set_discharge_power = min(
+            battery_config.get("manual_set_discharge_power", 0),
+            coordinator.max_discharge_power,
+        )
         # Seed the live display from the persisted manual targets until the first
         # control cycle refreshes them.
         coordinator.commanded_charge_power = coordinator.manual_set_charge_power
         coordinator.commanded_discharge_power = coordinator.manual_set_discharge_power
-        coordinator.user_max_charge_power = battery_config.get(
-            "user_max_charge_power", coordinator.max_charge_power
+        coordinator.user_max_charge_power = min(
+            battery_config.get("user_max_charge_power", coordinator.max_charge_power),
+            coordinator.max_charge_power,
         )
-        coordinator.user_max_discharge_power = battery_config.get(
-            "user_max_discharge_power", coordinator.max_discharge_power
+        coordinator.user_max_discharge_power = min(
+            battery_config.get("user_max_discharge_power", coordinator.max_discharge_power),
+            coordinator.max_discharge_power,
         )
         coordinator.active_balance_mode_started_ts = battery_config.get("active_balance_mode_started_ts")
         coordinator.active_balance_mode_run_date = battery_config.get("active_balance_mode_run_date")
