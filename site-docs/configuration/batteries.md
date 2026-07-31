@@ -72,6 +72,12 @@ If you raise a battery's **Max SOC** to `100 %`, that battery uses voltage-based
 
 ---
 
+## System power limits (all batteries combined)
+
+![system power limits](../assets/screenshots/configuration/battery-system-power-limits-config.png){ width="650"  style="display: block; margin: 0 auto;"}
+
+---
+
 ## Backup offgrid threshold at runtime
 
 The **Backup Offgrid Threshold** number entity (visible on each battery's device card, under configuration entities) lets you adjust the threshold at any time without entering the options flow. Raise it if your battery has small permanent loads on its offgrid port — such as a PoE switch, router, or IP cameras — that would otherwise keep it permanently excluded from PD control.
