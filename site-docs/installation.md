@@ -15,6 +15,7 @@ battery. Adapters and bridges are only required where noted.
 | **Sessy Home Battery** | Local HTTP API through the Sessy dongle | The dongle must be reachable from Home Assistant. Enter its IP/hostname, port and dongle credentials; port `80` is the default. |
 | **Hoymiles MS-A2** | MQTT through Home Assistant's configured MQTT integration | A working local MQTT broker is required (for example, Mosquitto; an existing broker can be reused). Enable **MQTT Service** in S-Miles Home and make the broker reachable from the battery. |
 | **Grid sensor** | Home Assistant entity | Sensor measuring total grid consumption (e.g. Shelly EM3, Neurio, smart-meter integration). |
+| **Solar production meter** *(optional)* | Home Assistant entity | Real-time PV production power sensor in W or kW. It lets Omnibattery derive Home Consumption accurately and populate the Solar node in the integration dashboard. Leave it empty when the panels feed the battery's MPPT inputs directly. |
 
 !!! warning "Grid-meter update rate"
     The grid meter/sensor must publish a new value in **less than 10 seconds**.
