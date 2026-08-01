@@ -1,31 +1,45 @@
 ![Omnibattery](assets/logo-github.png){ width="420" }
 
-**Omnibattery** is a custom Home Assistant integration to monitor and control pluggable solar batteries — Marstek Venus (E v2/v3, Venus A and Venus D series), Zendure SolarFlow (2400 AC+ / AC Pro), and Anker SOLIX Solarbank Max AC / 4 E5000 Pro — via Modbus TCP or local HTTP.
+**Omnibattery** is a custom Home Assistant integration for monitoring and controlling pluggable solar batteries from several brands. Current supported hardware includes:
+
+- **Marstek** Venus E/C (v2/v3), Venus A and Venus D via Modbus TCP, Modbus RTU or a LilyGo RS485/ESPHome bridge.
+- **Zendure** SolarFlow 2400 AC+, 2400 AC Pro, 1600 AC+, 800 Pro, 800 Plus and 800 via local HTTP.
+- **Anker SOLIX** Solarbank Max AC and Solarbank 4 E5000 Pro via Modbus TCP.
+- **Sessy** Home Battery via its local dongle API (testers welcome).
+- **Hoymiles** MS-A2 via the MQTT integration configured in Home Assistant.
 
 <div class="grid cards" markdown>
 
 -   :material-battery-charging: **Dynamic power control**
 
-    PD controller that keeps grid flow near zero to maximise self-consumption.
+    Event-driven PD controller that keeps grid exchange near its target, with one-click tuning profiles and a quality sensor to help find a stable response.
 
 -   :material-calendar-clock: **Predictive charging**
 
-    Automatic grid charging when the solar forecast falls short of expected consumption.
+    Charges from the grid only when solar and stored energy are not enough, with time-slot, dynamic-pricing and real-time-pricing modes.
 
 -   :material-battery-sync: **Multi-battery**
 
-    Intelligent management of up to 6 batteries with optimal power distribution.
+    Coordinates up to 6 batteries with SOC priorities, energy hysteresis and efficiency-aware power sharing.
+
+-   :material-battery-multiple: **Multi-brand**
+
+    Combine Marstek, Zendure, Anker SOLIX, Sessy and Hoymiles batteries in one installation while sharing the same control loop, system entities and energy-management features.
+
+-   :material-view-dashboard: **Integrated dashboard**
+
+    Built-in Home Assistant sidebar panel with a power-flow diagram, history charts, battery health and all control settings in one place — no extra HACS card or YAML required.
 
 -   :material-tune: **Highly configurable**
 
-    Time slots, excluded devices, peak shaving, weekly full charge and more.
+    Adjust time slots, SOC and power limits, peak shaving, weekly full charge, solar-charge delay and excluded loads from Home Assistant.
 
 </div>
 
 ## Built-in control dashboard
 
-Auto-installs as a HA sidebar panel — no HACS, no YAML.
-Three tabs:
+The panel installs automatically as a Home Assistant sidebar panel — no extra HACS card or YAML configuration is required. It provides three tabs:
+
 - **Overview** with animated SOC ring, Grid↔Home↔Battery↔Solar energy-flow diagram, diagnostics, 2×2 chart grid
 - **Batteries** with per-battery SOC/power, health & cells, daily energy, optional MPPT, firmware info, controls
 - **Control** with system-wide settings grouped by feature, each with its switch + config parameters
@@ -35,7 +49,9 @@ Three tabs:
 ## Key features
 
 - **PD Controller (Zero Export/Import)**: adjusts battery power in real time to keep grid exchange close to zero.
+- **One-click PD profiles and control-quality sensor**: select a response from Very smooth to Very aggressive, then use the quality verdict to see whether regulation is stable, oscillating or sluggish.
 - **No-PD direct-tracking mode** (opt-in): the battery follows the consumption sensor 1:1 in a single cycle — no integral, derivative, smoothing or rate limiter — for installations that prefer raw tracking over the PD control law.
+- **Multi-brand support**: combine compatible Marstek, Zendure, Anker SOLIX, Sessy and Hoymiles batteries in the same installation.
 - **Predictive charging**: three modes (time slot, dynamic pricing, real-time price — including Tibber) that charge from the grid only when the energy balance requires it. Uses a 7-day rolling average of real household consumption to decide whether grid charging is needed.
 - **Multi-battery management**: smart selection with SOC priorities, energy hysteresis and efficiency zone operation.
 - **Time slots**: independently control charge and discharge windows, with per-slot SOC and power parameters.
