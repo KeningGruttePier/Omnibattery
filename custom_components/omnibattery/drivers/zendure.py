@@ -4,8 +4,9 @@ Implements BatteryDriver for Zendure SolarFlow devices (2400 AC+, 1600 AC+, etc.
 via the local REST API.
 
 One-time device prerequisite:
-  Enable HEMS in the Zendure app, then exit. This activates the local HTTP server.
-  (EN 18031 compliance keeps HTTP off by default; HEMS toggles it on.)
+  Keep HEMS disabled in the Zendure app while Omnibattery is in control.
+  With HEMS enabled, the device's smart-matching loop overrides manual power
+  setpoints after a few seconds.
 
 Transport: aiohttp polling.
   - Read:  GET  /properties/report  → full property snapshot every poll

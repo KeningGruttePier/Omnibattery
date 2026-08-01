@@ -51,7 +51,7 @@
           "brand": "Brand"
         },
         "data_description": {
-          "brand": "Marstek Venus: Modbus TCP. Zendure SolarFlow: local HTTP (enable HEMS in the Zendure app first). Anker SOLIX Solarbank Max AC / 4 E5000 Pro: Modbus TCP (enable Modbus TCP under Third-Party Control in the Anker app; only one Modbus client at a time). Sessy: local HTTP."
+          "brand": "Marstek Venus: Modbus TCP. Zendure SolarFlow: local HTTP (HEMS must be disabled for Omnibattery control). Anker SOLIX Solarbank Max AC / 4 E5000 Pro: Modbus TCP (enable Modbus TCP under Third-Party Control in the Anker app; only one Modbus client at a time). Sessy: local HTTP."
         }
       },
       "battery_connection": {
@@ -76,7 +76,7 @@
       },
       "battery_connection_zendure": {
         "title": "Configure battery {battery_num} — Connection (Zendure)",
-        "description": "Enter connection details for the Zendure SolarFlow battery {battery_num}. Make sure HEMS is enabled in the Zendure app.",
+        "description": "Enter connection details for the Zendure SolarFlow battery {battery_num}. Keep HEMS disabled in the Zendure app for Omnibattery control.",
         "data": {
           "name": "Name",
           "host": "IP Address",
@@ -643,7 +643,7 @@
           "brand": "Brand"
         },
         "data_description": {
-          "brand": "Marstek Venus: Modbus TCP. Zendure SolarFlow: local HTTP (enable HEMS in the Zendure app first). Anker SOLIX Solarbank Max AC / 4 E5000 Pro: Modbus TCP (enable Modbus TCP under Third-Party Control in the Anker app; only one Modbus client at a time). Sessy: local HTTP."
+          "brand": "Marstek Venus: Modbus TCP. Zendure SolarFlow: local HTTP (HEMS must be disabled for Omnibattery control). Anker SOLIX Solarbank Max AC / 4 E5000 Pro: Modbus TCP (enable Modbus TCP under Third-Party Control in the Anker app; only one Modbus client at a time). Sessy: local HTTP."
         }
       },
       "battery_connection": {
@@ -668,7 +668,7 @@
       },
       "battery_connection_zendure": {
         "title": "Configure battery {battery_num} — Connection (Zendure)",
-        "description": "Modify connection details for the Zendure SolarFlow battery {battery_num}. Make sure HEMS is enabled in the Zendure app.",
+        "description": "Modify connection details for the Zendure SolarFlow battery {battery_num}. Keep HEMS disabled in the Zendure app for Omnibattery control.",
         "data": {
           "name": "Name",
           "host": "IP Address",

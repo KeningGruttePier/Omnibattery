@@ -51,7 +51,7 @@
           "brand": "Marca de la bateria"
         },
         "data_description": {
-          "brand": "Marstek Venus: Modbus TCP. Zendure SolarFlow: local HTTP (enable HEMS in the Zendure app first). Anker SOLIX Solarbank Max AC / 4 E5000 Pro: Modbus TCP (enable Modbus TCP under Third-Party Control in the Anker app; only one Modbus client at a time). Sessy: local HTTP."
+          "brand": "Marstek Venus: Modbus TCP. Zendure SolarFlow: local HTTP (HEMS must be disabled for Omnibattery control). Anker SOLIX Solarbank Max AC / 4 E5000 Pro: Modbus TCP (enable Modbus TCP under Third-Party Control in the Anker app; only one Modbus client at a time). Sessy: local HTTP."
         }
       },
       "battery_connection": {
@@ -76,7 +76,7 @@
       },
       "battery_connection_zendure": {
         "title": "Configura bateria {battery_num} — Connexió (Zendure)",
-        "description": "Introdueix les dades de connexió per a la bateria Zendure SolarFlow {battery_num}. Activa primer HEMS a l'app Zendure.",
+        "description": "Introdueix les dades de connexió per a la bateria Zendure SolarFlow {battery_num}. Mantén HEMS desactivat a l'app Zendure per al control d'Omnibattery.",
         "data": {
           "name": "Nom",
           "host": "Adreça IP",
@@ -652,7 +652,7 @@
           "brand": "Marca de la bateria"
         },
         "data_description": {
-          "brand": "Marstek Venus: Modbus TCP. Zendure SolarFlow: local HTTP (enable HEMS in the Zendure app first). Anker SOLIX Solarbank Max AC / 4 E5000 Pro: Modbus TCP (enable Modbus TCP under Third-Party Control in the Anker app; only one Modbus client at a time). Sessy: local HTTP."
+          "brand": "Marstek Venus: Modbus TCP. Zendure SolarFlow: local HTTP (HEMS must be disabled for Omnibattery control). Anker SOLIX Solarbank Max AC / 4 E5000 Pro: Modbus TCP (enable Modbus TCP under Third-Party Control in the Anker app; only one Modbus client at a time). Sessy: local HTTP."
         }
       },
       "battery_connection": {
@@ -677,7 +677,7 @@
       },
       "battery_connection_zendure": {
         "title": "Configura la bateria {battery_num} — Connexió (Zendure)",
-        "description": "Modifica les dades de connexió per a la bateria Zendure SolarFlow {battery_num}. Activa primer HEMS a l'app Zendure.",
+        "description": "Modifica les dades de connexió per a la bateria Zendure SolarFlow {battery_num}. Mantén HEMS desactivat a l'app Zendure per al control d'Omnibattery.",
         "data": {
           "name": "Nom",
           "host": "Adreça IP",
