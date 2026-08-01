@@ -16,6 +16,12 @@ compatible. Los adaptadores y puentes solo son necesarios cuando se indican.
 | **Hoymiles MS-A2** | MQTT mediante la integración MQTT configurada en Home Assistant | Hace falta un broker MQTT local operativo (por ejemplo, Mosquitto; se puede reutilizar uno existente). Activa **MQTT Service** en S-Miles Home y asegúrate de que la batería puede alcanzar el broker. |
 | **Sensor de red** | Entidad de Home Assistant | Sensor que mida el consumo total de la red (p. ej. Shelly EM3, Neurio o integración de contador inteligente). |
 
+!!! warning "Frecuencia de actualización del contador"
+    El contador/sensor de red debe publicar un valor nuevo en **menos de 10
+    segundos**. Se recomienda un intervalo de actualización de **1–2 segundos**,
+    porque el controlador es dirigido por eventos y utiliza cada publicación
+    para ajustar la potencia de la batería.
+
 ### Software
 
 - Home Assistant **2024.1.0** o superior

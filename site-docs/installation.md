@@ -16,6 +16,11 @@ battery. Adapters and bridges are only required where noted.
 | **Hoymiles MS-A2** | MQTT through Home Assistant's configured MQTT integration | A working local MQTT broker is required (for example, Mosquitto; an existing broker can be reused). Enable **MQTT Service** in S-Miles Home and make the broker reachable from the battery. |
 | **Grid sensor** | Home Assistant entity | Sensor measuring total grid consumption (e.g. Shelly EM3, Neurio, smart-meter integration). |
 
+!!! warning "Grid-meter update rate"
+    The grid meter/sensor must publish a new value in **less than 10 seconds**.
+    An update interval of **1–2 seconds** is recommended because the controller
+    is event-driven and uses each publication to adjust battery power.
+
 ### Software
 
 - Home Assistant **2024.1.0** or later
