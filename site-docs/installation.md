@@ -30,11 +30,10 @@ battery. Adapters and bridges are only required where noted.
 
 ### Network
 
-For Modbus TCP and local HTTP, the battery or bridge must be reachable from
-Home Assistant by IP on the same network segment or via routing. For Modbus RTU,
-connect the USB adapter to the Home Assistant host. For the LilyGo/ESPHome path,
-add the bridge to Home Assistant. For Hoymiles, the MS-A2 must be able to reach
-the MQTT broker over the local network.
+- For Modbus TCP and local HTTP, the battery or bridge must be reachable from Home Assistant by IP on the same network segment or via routing. 
+- For Modbus RTU, connect the USB adapter to the Home Assistant host. 
+- For the LilyGo/ESPHome path, add the bridge to Home Assistant.
+- For MQTT based batteries, the battery must be able to reach the MQTT broker over the local network.
 
 ---
 
@@ -57,6 +56,19 @@ the MQTT broker over the local network.
 2. Extract the `omnibattery` folder.
 3. Copy it to the `custom_components/` directory of your Home Assistant instance.
 4. Restart Home Assistant.
+
+---
+
+## Adding the integration
+
+After installing and restarting:
+
+1. Go to **Settings** → **Devices & Services**.
+2. Click **+ ADD INTEGRATION**.
+3. Search for **Omnibattery**.
+4. Follow the [configuration wizard](configuration/index.md).
+
+![Add integration in HA](assets/screenshots/installation/add-integration.png){ width="600"  style="display: block; margin: 0 auto;"}
 
 ---
 
@@ -95,16 +107,3 @@ config/blueprints/automation/omnibattery/
 2. Copy the `.yaml` files from this repository's `blueprints/` folder into it.
 3. In Home Assistant, go to **Settings** → **Automations & Scenes** → **Blueprints** and click **Reload Blueprints**. If the option is not available, restart Home Assistant.
 4. Create a new automation from the installed blueprint.
-
----
-
-## Adding the integration
-
-After installing and restarting:
-
-1. Go to **Settings** → **Devices & Services**.
-2. Click **+ ADD INTEGRATION**.
-3. Search for **Omnibattery**.
-4. Follow the [configuration wizard](configuration/index.md).
-
-![Add integration in HA](assets/screenshots/installation/add-integration.png){ width="600"  style="display: block; margin: 0 auto;"}

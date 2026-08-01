@@ -31,11 +31,10 @@ compatible. Los adaptadores y puentes solo son necesarios cuando se indican.
 
 ### Red
 
-Para Modbus TCP y HTTP local, la batería o el puente debe ser accesible desde
-Home Assistant por IP en el mismo segmento de red o mediante enrutamiento. Para
-Modbus RTU, conecta el adaptador USB al equipo donde se ejecuta Home Assistant.
-Para LilyGo/ESPHome, añade el puente a Home Assistant. En Hoymiles, la MS-A2
-debe poder alcanzar el broker MQTT en la red local.
+- Para Modbus TCP y HTTP local, la batería o el puente debe ser accesible desde Home Assistant por IP en el mismo segmento de red o mediante enrutamiento.
+- Para Modbus RTU, conecta el adaptador USB al equipo donde se ejecuta Home Assistant.
+- Para LilyGo/ESPHome, añade el puente a Home Assistant.
+- Para baterías basadas en MQTT, la batería debe poder alcanzar el broker MQTT en la red local.
 
 ---
 
@@ -58,6 +57,19 @@ debe poder alcanzar el broker MQTT en la red local.
 2. Extrae la carpeta `omnibattery`.
 3. Cópiala en el directorio `custom_components/` de Home Assistant.
 4. Reinicia Home Assistant.
+
+---
+
+## Añadir la integración
+
+Después de instalar y reiniciar:
+
+1. Ve a **Ajustes** → **Dispositivos y servicios**.
+2. Pulsa **+ AÑADIR INTEGRACIÓN**.
+3. Busca **Omnibattery**.
+4. Sigue el [asistente de configuración](configuration/index.md).
+
+![Añadir integración en HA](assets/screenshots/installation/add-integration.png){ width="600"  style="display: block; margin: 0 auto;"}
 
 ---
 
@@ -96,16 +108,3 @@ config/blueprints/automation/omnibattery/
 2. Copia dentro los archivos `.yaml` de la carpeta `blueprints/` de este repositorio.
 3. En Home Assistant, ve a **Ajustes** → **Automatizaciones y escenas** → **Blueprints** y pulsa **Recargar blueprints**. Si no aparece la opción, reinicia Home Assistant.
 4. Crea una automatización nueva desde el blueprint instalado.
-
----
-
-## Añadir la integración
-
-Después de instalar y reiniciar:
-
-1. Ve a **Ajustes** → **Dispositivos y servicios**.
-2. Pulsa **+ AÑADIR INTEGRACIÓN**.
-3. Busca **Omnibattery**.
-4. Sigue el [asistente de configuración](configuration/index.md).
-
-![Añadir integración en HA](assets/screenshots/installation/add-integration.png){ width="600"  style="display: block; margin: 0 auto;"}
