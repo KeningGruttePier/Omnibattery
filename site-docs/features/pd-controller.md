@@ -50,6 +50,37 @@ Instead of tuning the gains by hand, pick a **tuning profile** (`select.*_pd_tun
 
 In the dashboard, the profile selector and the quality sensor sit at the top of the **PD controller** section of the Control tab.
 
+## Dashboard configuration
+
+!!! warning "Expert users only"
+    Do not modify these values unless you understand PD control theory and how it interacts with inverter response times. **The default values work correctly for the vast majority of installations.**
+
+The following controls tune the internal PD controller. They can also be adjusted at runtime from the integration's configuration entities without restarting Home Assistant.
+
+!!! tip "Prefer profiles"
+    Most users do not need to change these values by hand. The **PD tuning profile** selector applies vetted `Kp`/`Kd`/rate-limit presets in one click, and the **PD Control Quality** sensor shows whether the result is stable, oscillating or sluggish.
+
+| Parameter | Default | Range | Description |
+|---|---|---|---|
+| **Kp** | `0.35` | 0.1–2.0 | Proportional gain. Higher values produce a faster response but more overshoot. |
+| **Kd** | `0.3` | 0.0–2.0 | Derivative gain. Higher values smooth transitions but slow the response. |
+| **Deadband** | `40 W` | 0–200 W | Dead zone. The controller does not act when the error is smaller than this value. |
+| **Max power change** | `800 W/cycle` | 100–2000 W | Maximum change per cycle. Protects against abrupt swings. |
+| **Direction hysteresis** | `60 W` | 0–200 W | Margin required to switch between charging and discharging. |
+| **Min charge power** | `0 W` | 0–2000 W | If calculated charge is below this value, the controller stays idle. `0` disables it. |
+| **Min discharge power** | `0 W` | 0–2000 W | Same as above, for discharge. `0` disables it. |
+| **Enable system power limits** | `off` | on/off | Enables the combined charge/discharge cap for all active batteries. |
+| **System max charge power** | `0 W` | 0–15000 W | Optional cap for combined charge power. `0` disables it. |
+| **System max discharge power** | `0 W` | 0–15000 W | Optional cap for combined discharge power. `0` disables it. |
+
+The minimum charge/discharge power values are useful for preventing inefficient micro-cycling when grid demand is very low.
+
+System caps are useful when the installation has a shared hardware or wiring limit. They do not reduce each battery's individual maximum: a single active battery can still use its own configured limit, while several active batteries are throttled to the combined cap.
+
+When **Enable system power limits** is off, both caps are ignored and their runtime number entities are not created. When enabled, the caps are exposed as sliders on the Omnibattery System device.
+
+![Advanced PD controller configuration](../assets/screenshots/configuration/advanced-pd-controller-config.png){ width="650" style="display: block; margin: 0 auto;"}
+
 ## Control quality sensor
 
 `sensor.marstek_venus_system_pd_control_quality` shows, at a glance, how well the PD is holding the grid target — so you can see the effect of a profile/slider change instead of guessing.

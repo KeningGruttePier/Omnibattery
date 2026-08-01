@@ -16,6 +16,17 @@ Active cell balancing repeatedly cycles slow charge or discharge near the top vo
 !!! warning "Cell balancing"
     Active cell balancing is **very slow**. Reducing the top-of-charge cell delta by roughly 5 mV typically takes around 24 hours of cumulative time at the top of the balance window.
 
+## Dashboard configuration
+
+The weekly full charge is configured from the Omnibattery Dashboard. The only required choice is the day on which the cycle should run.
+
+| Field | Description | Default |
+|---|---|---|
+| **Day of the week** | The day on which the battery charges to 100% for cell balancing. | — |
+| **Wait for solar charge delay** | When enabled, solar charge delay has priority and the weekly charge waits for it to unlock. | Disabled |
+
+![Weekly full charge configuration](../assets/screenshots/configuration/advanced-weekly-full-charge-config.png){ width="650" style="display: block; margin: 0 auto;"}
+
 See [Cell balancing](cell-balance-monitor.md) for full details.
 
 !!! note "Drifted SOC"
@@ -34,9 +45,7 @@ The **Weekly Full Charge** sensor exposes per-battery diagnostics under its `bat
 
 ## Cell balance monitor
 
-The **cell balance monitor** is only active when checked in the Weekly Full Charge Configuration. It records the voltage spread between the highest and lowest cell after each top-voltage measurement and keeps the sensor history, trend and alerts updated.
-
-See [Advanced options](/configuration/advanced.md) for full details.
+The **cell balance monitor** records the voltage spread between the highest and lowest cell after each top-voltage measurement and keeps the sensor history, trend and alerts updated.
 
 ## Interaction with solar charge delay
 

@@ -1,9 +1,9 @@
 # Configuración
 
-La integración se configura mediante dos interfaces:
-
-- La interfaz de Home Assistant, a través de un asistente de varios pasos.
-- El dashboard de Omnibattery.
+La configuración inicial de la integración se completa desde la interfaz de
+Home Assistant mediante un asistente de varios pasos. Los controles específicos
+de cada funcionalidad disponibles después de la instalación se documentan en
+sus páginas correspondientes de la sección **Funcionalidades**.
 
 ## Configuración del asistente de Home Assistant
 
@@ -32,12 +32,6 @@ flowchart TD
 | [Franjas horarias](time-slots.md) | Ventanas de descarga/carga con parámetros por franja | ❌ |
 | [Dispositivos excluidos](excluded-devices.md) | Cargas pesadas a ignorar | ❌ |
 | [Carga predictiva](predictive-charging/index.md) | Carga desde la red cuando la previsión solar es insuficiente | ❌ |
-| [Carga semanal completa](advanced.md) | Carga las baterías al 100% una vez a la semana para equilibrar las celdas | ❌ |
-| [Retraso de carga solar](advanced.md) | Evita cargar las baterías por la mañana si la producción solar prevista será suficiente | ❌ |
-| [Protección de capacidad](advanced.md) | Reserva una parte de la capacidad de batería para picos de demanda (peak shaving) | ❌ |
-| [Balance neto horario](advanced.md) | Establece el balance neto de importación/exportación horario a un objetivo específico (por defecto 0 Wh) | ❌ |
-| [Límites de potencia del sistema](batteries.md#limites-de-potencia-del-sistema-todas-las-baterias-combinadas) | Limita la potencia combinada de carga/descarga de todas las baterías activas | ❌ |
-| [Controlador PD (avanzado)](advanced.md) | Ajuste fino del controlador PD para mantener el flujo de red en el objetivo configurado | ❌ |
 
 ## Modificar la configuración
 

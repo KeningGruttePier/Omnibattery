@@ -80,6 +80,10 @@ Activa y configura desde **Configuración → Dispositivos y Servicios → Omnib
 | Tolerancia de balance neto (kWh) | `0.0` | Banda muerta: sin corrección cuando el balance neto está dentro de ±N kWh del objetivo. `0` = corrección exacta. |
 | Histéresis del desplazamiento (W) | `15` | Cambio mínimo en el desplazamiento necesario para aplicar una nueva corrección. Evita micro-ajustes cada ciclo. `0` = actualizar siempre. |
 
+![Aviso de balance neto horario](../assets/screenshots/configuration/hourly_net_balance_warning.png){ width="650" style="display: block; margin: 0 auto;"}
+
+![Configuración de balance neto horario](../assets/screenshots/configuration/hourly_net_balance_config.png){ width="650" style="display: block; margin: 0 auto;"}
+
 ## Persistencia
 
 El estado se persiste en el almacenamiento de Home Assistant cada ~5 minutos y al descargar la integración. Al reiniciar, los acumuladores de la hora actual se restauran solo si el reinicio se produjo en la misma hora civil.

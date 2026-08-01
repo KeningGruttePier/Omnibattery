@@ -59,6 +59,8 @@ plugins:
           nav_translations:
             Home: Inicio
             Installation: Instalación
+            Installation guide: Guía de instalación
+            Battery-specific setup: Configuración específica por batería
             Blueprints: Blueprints
             Configuration: Configuración
             Overview: Resumen
@@ -71,8 +73,10 @@ plugins:
             Time Slot mode: Modo Franja Horaria
             Dynamic Pricing mode: Modo Precio Dinámico
             Real-Time Price mode: Modo Precio en Tiempo Real
-            Advanced options: Opciones avanzadas
             Features: Funcionalidades
+            Grid control: Control de red
+            Energy management: Gestión energética
+            Battery health and protection: Salud y protección de la batería
             PD Controller: Controlador PD
             Multi-battery management: Gestión multi-batería
             Daily consumption estimate: Estimación de consumo diario
@@ -80,11 +84,14 @@ plugins:
             Cell balance monitor: Monitor de equilibrio de celdas
             Peak shaving: Peak shaving
             Solar charge delay: Retraso de carga solar
+            Temperature charge limit: Límite de carga por temperatura
             Load exclusion: Exclusión de cargas
             Hourly net balance: Balance neto horario
-            Technical reference: Referencia técnica
+            Reference: Referencia
             Architecture: Arquitectura
             Battery driver requirements: Requisitos para drivers de batería
+            Complete register table: Tabla completa de registros
+            For contributors: Para colaboradores
             Modbus registers: Registros Modbus
             HA entities: Entidades HA
             Troubleshooting: Solución de problemas
@@ -124,13 +131,15 @@ markdown_extensions:
 
 nav:
   - Home: index.md
-  - Installation: installation.md
+  - Installation:
+      - Installation guide: installation.md
+      - Battery-specific setup:
+          - Hoymiles MS-A2 setup: configuration/hoymiles-ms-a2.md
   - Blueprints: blueprints.md
   - Configuration:
       - Overview: configuration/index.md
       - Main sensor: configuration/main-sensor.md
       - Batteries: configuration/batteries.md
-      - Hoymiles MS-A2 setup: configuration/hoymiles-ms-a2.md
       - Time slots: configuration/time-slots.md
       - Excluded devices: configuration/excluded-devices.md
       - Predictive charging:
@@ -138,21 +147,27 @@ nav:
           - Time Slot mode: configuration/predictive-charging/time-slot.md
           - Dynamic Pricing mode: configuration/predictive-charging/dynamic-pricing.md
           - Real-Time Price mode: configuration/predictive-charging/real-time-price.md
-      - Advanced options: configuration/advanced.md
   - Features:
-      - PD Controller: features/pd-controller.md
-      - Multi-battery management: features/multi-battery.md
-      - Daily consumption estimate: features/consumption-estimate.md
-      - Weekly full charge: features/weekly-full-charge.md
-      - Cell balance monitor: features/cell-balance-monitor.md
-      - Peak shaving: features/peak-shaving.md
-      - Solar charge delay: features/solar-charge-delay.md
-      - Load exclusion: features/load-exclusion.md
-      - Hourly net balance: features/hourly-net-balance.md
-  - Technical reference:
+      - Grid control:
+          - PD Controller: features/pd-controller.md
+          - Multi-battery management: features/multi-battery.md
+          - Hourly net balance: features/hourly-net-balance.md
+      - Energy management:
+          - Daily consumption estimate: features/consumption-estimate.md
+          - Solar charge delay: features/solar-charge-delay.md
+          - Peak shaving: features/peak-shaving.md
+          - Load exclusion: features/load-exclusion.md
+      - Battery health and protection:
+          - Weekly full charge: features/weekly-full-charge.md
+          - Cell balance monitor: features/cell-balance-monitor.md
+          - Temperature charge limit: features/temperature-charge-limit.md
+  - Troubleshooting: troubleshooting.md
+  - Reference:
+      - HA entities: reference/entities.md
+      - Modbus registers:
+          - Overview: reference/modbus-registers.md
+          - Complete register table: reference/registers.md
+  - For contributors:
       - Architecture: reference/architecture.md
       - Battery driver requirements: reference/driver-requirements-template.md
-      - Modbus registers: reference/modbus-registers.md
-      - HA entities: reference/entities.md
-  - Troubleshooting: troubleshooting.md
   - Changelog: changelog.md

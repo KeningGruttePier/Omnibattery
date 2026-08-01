@@ -16,6 +16,15 @@ When SOC is below the threshold:
 battery_power = max(0, grid_consumption - peak_limit)
 ```
 
+## Dashboard configuration
+
+| Field | Description | Default | Range |
+|---|---|---|---|
+| **SOC threshold (%)** | Capacity protection activates below this SOC. | `30 %` | 20–100 % |
+| **Peak limit (W)** | Grid power threshold. When capacity protection is active, the battery discharges only the excess above this limit. | `2500 W` | 500–10000 W |
+
+![Capacity protection configuration](../assets/screenshots/configuration/advanced-capacity-protection-config.png){ width="650" style="display: block; margin: 0 auto;"}
+
 ## Example
 
 ```

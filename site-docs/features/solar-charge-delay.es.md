@@ -43,6 +43,20 @@ Esto es útil cuando la batería está muy descargada y necesita un mínimo gara
 
 El setpoint se habilita con un checkbox independiente en la configuración. Si está desactivado, el retraso aplica desde el primer momento de carga. El valor mínimo es el 12 %, correspondiente al SOC mínimo de descarga de las baterías Venus.
 
+## Configuración desde el dashboard
+
+| Campo | Descripción | Por defecto |
+|---|---|---|
+| **Margen de seguridad (h)** | Horas antes del atardecer en las que la carga debe haber terminado. | 1 h |
+| **Sensor de previsión solar** | Se usa cuando no se configuró un sensor de previsión durante la configuración inicial. | — |
+| **Activar SOC mínimo antes del retraso** | Si se activa, la batería carga hasta el SOC configurado antes de que empiece el retraso solar. | Desactivado |
+| **SOC mínimo (%)** | SOC que debe alcanzar la batería antes de que se aplique el retraso solar. | — |
+| **Banda muerta del balance (kWh)** | Tolerancia para la comprobación del balance energético. Si batería más previsión quedan por debajo del consumo esperado, el retraso dura más. | `0,5 kWh` |
+
+Un margen mayor (por ejemplo, 180 minutos) desbloquea antes la carga desde la red; un margen menor espera más tiempo a que el sol cubra la energía.
+
+![Configuración del retraso de carga solar](../assets/screenshots/configuration/advanced-solar-charge-delay-config.png){ width="650" style="display: block; margin: 0 auto;"}
+
 ## Requisitos
 
 - Sensor de previsión solar configurado en el [paso inicial](../configuration/main-sensor.md).

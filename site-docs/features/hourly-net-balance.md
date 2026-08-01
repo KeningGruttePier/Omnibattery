@@ -80,6 +80,10 @@ Enable and configure from **Settings → Devices & Services → Omnibattery → 
 | Net balance tolerance (kWh) | `0.0` | Deadband: no correction when the net balance is within ±N kWh of the target. `0` = exact correction. |
 | Offset hysteresis (W) | `15` | Minimum offset change required before a new correction is applied. Prevents micro-adjustments every cycle. `0` = update every cycle. |
 
+![Hourly net balance warning](../assets/screenshots/configuration/hourly_net_balance_warning.png){ width="650" style="display: block; margin: 0 auto;"}
+
+![Hourly net balance configuration](../assets/screenshots/configuration/hourly_net_balance_config.png){ width="650" style="display: block; margin: 0 auto;"}
+
 ## Persistence
 
 State is persisted to Home Assistant storage every ~5 minutes and on integration unload. On restart, the current-hour accumulators are restored only if the restart occurred within the same civil hour.

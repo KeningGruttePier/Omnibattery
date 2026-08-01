@@ -18,6 +18,17 @@ El sensor **Carga semanal completa** expone diagnósticos por batería en su atr
 !!! note "SOC desviado"
     Durante la carga semanal la pausa de 3.60 V **no** se aplica: la carga sigue a 200 W hasta que el BMS corta. Si el contador culombimétrico del BMS se ha desviado (celdas realmente llenas pero SOC reportado por debajo del 100 %), la finalización igual se detecta: la firma de corte del BMS (carga ≤10 W con el inversor en Standby durante 5 ciclos) se reconoce siempre que el pack esté en la zona de reducción (≥ 3.48 V), sin importar el SOC reportado. Así la carga semanal puede terminar aunque el pack nunca llegue a leer 100 %, e *intenta* recalibrar el SOC — depende del firmware del BMS. Ver [Recalibración de SOC con tensión alta atascada](cell-balance-monitor.md#recalibracion-de-soc-con-tension-alta-atascada).
 
+## Configuración desde el dashboard
+
+La carga semanal completa se configura desde el dashboard de Omnibattery. La única elección obligatoria es el día en el que debe ejecutarse el ciclo.
+
+| Campo | Descripción | Por defecto |
+|---|---|---|
+| **Día de la semana** | Día en el que la batería cargará al 100 % para equilibrar las celdas. | — |
+| **Esperar al retraso de carga solar** | Si se activa, el retraso de carga solar tiene prioridad y la carga semanal espera a que se desbloquee. | Desactivado |
+
+![Configuración de carga semanal completa](../assets/screenshots/configuration/advanced-weekly-full-charge-config.png){ width="650" style="display: block; margin: 0 auto;"}
+
 ## Monitor de equilibrio de celdas
 
 El **monitor de equilibrio de celdas** está siempre activo. Registra la diferencia de tensión entre la celda más alta y la más baja tras cada medición en tensión alta, y mantiene actualizados los sensores, la tendencia y las alertas.

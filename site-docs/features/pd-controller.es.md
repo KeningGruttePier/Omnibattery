@@ -47,6 +47,37 @@ En vez de ajustar las ganancias a mano, elige un **perfil de ajuste** (`select.*
 
 En el dashboard, el selector de perfil y el sensor de calidad están al principio de la sección **Controlador PD** de la pestaña Control.
 
+## Configuración desde el dashboard
+
+!!! warning "Solo para usuarios expertos"
+    No modifiques estos valores salvo que entiendas la teoría de control PD y cómo interactúa con los tiempos de respuesta del inversor. **Los valores por defecto funcionan correctamente en la gran mayoría de instalaciones.**
+
+Los siguientes controles ajustan los parámetros internos del controlador PD. También se pueden modificar en tiempo de ejecución desde las entidades de configuración de la integración, sin reiniciar Home Assistant.
+
+!!! tip "Mejor usa perfiles"
+    La mayoría de usuarios no necesita cambiar estos valores a mano. El selector de **perfil de ajuste PD** aplica presets validados de `Kp`/`Kd`/límite de rampa en un clic, y el sensor de **calidad de control PD** muestra si el resultado es estable, oscilante o lento.
+
+| Parámetro | Por defecto | Rango | Descripción |
+|---|---|---|---|
+| **Kp** | `0.35` | 0.1–2.0 | Ganancia proporcional. Un valor mayor produce una respuesta más rápida, pero más sobreoscilación. |
+| **Kd** | `0.3` | 0.0–2.0 | Ganancia derivativa. Un valor mayor suaviza las transiciones, pero ralentiza la respuesta. |
+| **Deadband** | `40 W` | 0–200 W | Zona muerta. El controlador no actúa si el error es menor que este valor. |
+| **Cambio máximo de potencia** | `800 W/ciclo` | 100–2000 W | Cambio máximo por ciclo. Protege frente a variaciones bruscas. |
+| **Histéresis direccional** | `60 W` | 0–200 W | Margen necesario para cambiar entre carga y descarga. |
+| **Potencia mínima de carga** | `0 W` | 0–2000 W | Si la carga calculada está por debajo de este valor, el controlador permanece inactivo. `0` lo desactiva. |
+| **Potencia mínima de descarga** | `0 W` | 0–2000 W | Igual que el anterior, para la descarga. `0` lo desactiva. |
+| **Activar límites de potencia del sistema** | desactivado | activado/desactivado | Activa el límite combinado de carga/descarga de todas las baterías activas. |
+| **Potencia máxima de carga del sistema** | `0 W` | 0–15000 W | Límite opcional para la potencia de carga combinada. `0` lo desactiva. |
+| **Potencia máxima de descarga del sistema** | `0 W` | 0–15000 W | Límite opcional para la potencia de descarga combinada. `0` lo desactiva. |
+
+Las potencias mínimas de carga/descarga son útiles para evitar microciclos ineficientes cuando la demanda de red es muy baja.
+
+Los límites del sistema son útiles cuando la instalación tiene un límite compartido de hardware o cableado. No reducen el máximo individual de cada batería: una única batería activa puede seguir usando su límite configurado, mientras que varias baterías activas se limitan al máximo combinado.
+
+Cuando **Activar límites de potencia del sistema** está desactivado, ambos límites se ignoran y no se crean sus entidades `number` de runtime. Cuando está activado, se exponen como sliders en el dispositivo Omnibattery System.
+
+![Configuración avanzada del controlador PD](../assets/screenshots/configuration/advanced-pd-controller-config.png){ width="650" style="display: block; margin: 0 auto;"}
+
 ## Sensor de calidad de control
 
 `sensor.marstek_venus_system_pd_control_quality` muestra de un vistazo cómo de bien mantiene el PD el objetivo de red, para que veas el efecto de un cambio de perfil/slider en vez de adivinar.

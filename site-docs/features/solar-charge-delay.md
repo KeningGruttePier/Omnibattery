@@ -46,6 +46,20 @@ This is useful when the battery is deeply discharged and needs a guaranteed mini
 
 The setpoint is enabled with a dedicated checkbox in the configuration. When disabled, the delay applies from the very start of charging. The minimum value is 12 % — the minimum discharge SOC of the Venus batteries.
 
+## Dashboard configuration
+
+| Field | Description | Default |
+|---|---|---|
+| **Safety margin (h)** | Hours before sunset by which charging must be complete. | 1 h |
+| **Solar forecast sensor** | Used when a forecast sensor was not configured during the initial setup. | — |
+| **Enable minimum SOC before delay** | When enabled, the battery charges to the configured SOC before the solar delay starts. | Disabled |
+| **Minimum SOC (%)** | Battery SOC to reach before the solar delay takes effect. | — |
+| **Balance deadband (kWh)** | Tolerance for the energy-balance check. If battery plus forecast is below expected consumption, the delay lasts longer. | `0.5 kWh` |
+
+A larger margin (for example, 180 minutes) unlocks grid charging earlier in the day; a smaller margin waits longer for the sun to cover the energy.
+
+![Solar charge delay configuration](../assets/screenshots/configuration/advanced-solar-charge-delay-config.png){ width="650" style="display: block; margin: 0 auto;"}
+
 ## Requirements
 
 - Solar forecast sensor configured in the [initial setup step](../configuration/main-sensor.md).
