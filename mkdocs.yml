@@ -150,7 +150,6 @@ nav:
   - Features:
       - Grid control:
           - PD Controller: features/pd-controller.md
-          - Multi-battery management: features/multi-battery.md
           - Hourly net balance: features/hourly-net-balance.md
       - Energy management:
           - Daily consumption estimate: features/consumption-estimate.md
@@ -164,6 +163,7 @@ nav:
   - Troubleshooting: troubleshooting.md
   - Reference:
       - HA entities: reference/entities.md
+      - Multi-battery management: features/multi-battery.md
       - Modbus registers:
           - Overview: reference/modbus-registers.md
           - Complete register table: reference/registers.md
