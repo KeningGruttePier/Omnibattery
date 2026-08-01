@@ -4,22 +4,31 @@
 
 ### Hardware
 
-| Componente | Descripción |
-|---|---|
-| Batería | Marstek Venus E v2/v3, Venus A, Venus D; Zendure SolarFlow 2400 AC+ / AC Pro; Anker SOLIX Solarbank Max AC / 4 E5000 Pro; **o Hoymiles MS-A2** |
-| Conversor Modbus | Dispositivo RS485 → Modbus TCP (p. ej. Elfin-EW11) — **solo necesario para Marstek Venus E v2**. Las Venus E v3, Venus A y Venus D se conectan por Ethernet y soportan Modbus TCP de forma nativa. Anker Solarbank Max AC y 4 E5000 Pro usan Modbus TCP nativo (activar en la app Anker bajo Third-Party Control; solo un cliente Modbus a la vez). No necesario para Zendure (HTTP local). |
-| Adaptador serie *(opcional)* | Adaptador USB–RS485 para conexión serie directa (Modbus RTU) a baterías Marstek. |
-| Sensor de red | Sensor HA que mide el consumo total de la red (p. ej. Shelly EM3, Neurio, contador inteligente) |
+La tabla muestra la vía de conexión que usa Omnibattery para cada batería
+compatible. Los adaptadores y puentes solo son necesarios cuando se indican.
+
+| Batería / componente | Conexión soportada | Requisito adicional |
+|---|---|---|
+| **Marstek Venus E/C (v2/v3), Venus A, Venus D** | Modbus TCP; Modbus RTU por USB–RS485; o puente LilyGo RS485/ESPHome *(Venus E v2)* | **Modbus TCP:** Venus E v2 necesita un conversor RS485 → TCP (p. ej. Elfin-EW11); Venus E v3, Venus A y Venus D usan Ethernet nativo. **Modbus RTU:** adaptador USB–RS485. **ESPHome:** el puente LilyGo debe exponer sus entidades requeridas en Home Assistant. |
+| **Zendure SolarFlow 2400 AC+, 2400 AC Pro, 1600 AC+, 800 Pro, 800 Plus, 800** | API HTTP local | Activa **HEMS** en la aplicación de Zendure para activar el servidor HTTP local. |
+| **Anker SOLIX Solarbank Max AC, 4 E5000 Pro** | Modbus TCP | Activa **Third-Party Control** en la aplicación de Anker. Solo puede conectarse un cliente Modbus a la vez. |
+| **Sessy Home Battery** | API HTTP local mediante el dongle de Sessy | El dongle debe ser accesible desde Home Assistant. Introduce su IP/nombre de host, puerto y credenciales; el puerto predeterminado es `80`. |
+| **Hoymiles MS-A2** | MQTT mediante la integración MQTT configurada en Home Assistant | Hace falta un broker MQTT local operativo (por ejemplo, Mosquitto; se puede reutilizar uno existente). Activa **MQTT Service** en S-Miles Home y asegúrate de que la batería puede alcanzar el broker. |
+| **Sensor de red** | Entidad de Home Assistant | Sensor que mida el consumo total de la red (p. ej. Shelly EM3, Neurio o integración de contador inteligente). |
 
 ### Software
 
 - Home Assistant **2024.1.0** o superior
-- Integración MQTT de Home Assistant y un broker local para Hoymiles MS-A2
+- Solo para **Hoymiles MS-A2**: la integración MQTT de Home Assistant y un broker MQTT local operativo. Omnibattery usa el broker a través de Home Assistant; no instala uno.
 - (Opcional) Sensor de previsión solar para la carga predictiva (Solcast, Forecast.Solar, etc.)
 
 ### Red
 
-La batería debe ser accesible desde Home Assistant por IP en el mismo segmento de red o mediante enrutamiento.
+Para Modbus TCP y HTTP local, la batería o el puente debe ser accesible desde
+Home Assistant por IP en el mismo segmento de red o mediante enrutamiento. Para
+Modbus RTU, conecta el adaptador USB al equipo donde se ejecuta Home Assistant.
+Para LilyGo/ESPHome, añade el puente a Home Assistant. En Hoymiles, la MS-A2
+debe poder alcanzar el broker MQTT en la red local.
 
 ---
 

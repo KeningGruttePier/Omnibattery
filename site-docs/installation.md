@@ -4,22 +4,31 @@
 
 ### Hardware
 
-| Component | Description |
-|---|---|
-| Battery | Marstek Venus E v2/v3, Venus A, Venus D; Zendure SolarFlow 2400 AC+ / AC Pro; Anker SOLIX Solarbank Max AC / 4 E5000 Pro; **or Hoymiles MS-A2** |
-| Modbus converter | RS485 → Modbus TCP device (e.g. Elfin-EW11) — **Marstek Venus E v2 only**. Venus E v3, Venus A and Venus D connect via Ethernet and support Modbus TCP natively. Anker Solarbank Max AC and 4 E5000 Pro use native Modbus TCP (enable under Third-Party Control in the Anker app; only one Modbus client at a time). Not required for Zendure (local HTTP). |
-| Serial adapter *(optional)* | USB–RS485 adapter for direct serial (Modbus RTU) connection to Marstek batteries. |
-| Grid sensor | HA sensor measuring total grid consumption (e.g. Shelly EM3, Neurio, smart meter integration) |
+The table shows the connection path used by Omnibattery for each supported
+battery. Adapters and bridges are only required where noted.
+
+| Battery / component | Supported connection | Additional requirement |
+|---|---|---|
+| **Marstek Venus E/C (v2/v3), Venus A, Venus D** | Modbus TCP; Modbus RTU over USB–RS485; or LilyGo RS485/ESPHome bridge *(Venus E v2)* | **Modbus TCP:** Venus E v2 needs an RS485 → TCP converter (e.g. Elfin-EW11); Venus E v3, Venus A and Venus D use native Ethernet. **Modbus RTU:** USB–RS485 adapter. **ESPHome:** the LilyGo bridge must expose its required entities in Home Assistant. |
+| **Zendure SolarFlow 2400 AC+, 2400 AC Pro, 1600 AC+, 800 Pro, 800 Plus, 800** | Local HTTP API | Enable **HEMS** in the Zendure app to activate the local HTTP server. |
+| **Anker SOLIX Solarbank Max AC, 4 E5000 Pro** | Modbus TCP | Enable **Third-Party Control** in the Anker app. Only one Modbus client can connect at a time. |
+| **Sessy Home Battery** | Local HTTP API through the Sessy dongle | The dongle must be reachable from Home Assistant. Enter its IP/hostname, port and dongle credentials; port `80` is the default. |
+| **Hoymiles MS-A2** | MQTT through Home Assistant's configured MQTT integration | A working local MQTT broker is required (for example, Mosquitto; an existing broker can be reused). Enable **MQTT Service** in S-Miles Home and make the broker reachable from the battery. |
+| **Grid sensor** | Home Assistant entity | Sensor measuring total grid consumption (e.g. Shelly EM3, Neurio, smart-meter integration). |
 
 ### Software
 
 - Home Assistant **2024.1.0** or later
-- Home Assistant MQTT integration and a local broker for Hoymiles MS-A2
+- For **Hoymiles MS-A2** only: the Home Assistant MQTT integration and a working local MQTT broker. Omnibattery uses the broker through Home Assistant; it does not install one.
 - (Optional) Solar forecast sensor for predictive charging (Solcast, Forecast.Solar, etc.)
 
 ### Network
 
-The battery must be reachable from Home Assistant by IP on the same network segment or via routing.
+For Modbus TCP and local HTTP, the battery or bridge must be reachable from
+Home Assistant by IP on the same network segment or via routing. For Modbus RTU,
+connect the USB adapter to the Home Assistant host. For the LilyGo/ESPHome path,
+add the bridge to Home Assistant. For Hoymiles, the MS-A2 must be able to reach
+the MQTT broker over the local network.
 
 ---
 
