@@ -25,9 +25,6 @@ Because the loop is event-driven (variable cadence), the `P` term and the rate l
 | Deadband | `±40 W` | Dead zone: ignores small errors |
 | Rate limit | `±800 W/cycle` | Maximum change per cycle |
 
-!!! note "Lowered defaults"
-    `Kp`/`Kd` were lowered from `0.65`/`0.5` to `0.35`/`0.3` to curb overshoot under the event-driven loop. Installs still on the old defaults are migrated automatically; hand-tuned values are left untouched.
-
 ## Tuning profiles
 
 Instead of tuning the gains by hand, pick a **tuning profile** (`select.*_pd_tuning_profile`) — a one-click preset that sets `Kp`, `Kd` and the rate limit together. Profiles are ordered smoothest → fastest:

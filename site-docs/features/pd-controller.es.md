@@ -25,9 +25,6 @@ Como el lazo es dirigido por eventos (cadencia variable), el término `P` y el l
 | Deadband | `±40 W` | Zona muerta: ignora errores pequeños |
 | Rate limit | `±800 W/ciclo` | Límite de cambio por ciclo |
 
-!!! note "Defaults rebajados"
-    `Kp`/`Kd` se rebajaron de `0.65`/`0.5` a `0.35`/`0.3` para frenar el sobreimpulso bajo el lazo dirigido por eventos. Las instalaciones que sigan en los defaults antiguos se migran automáticamente; los valores ajustados a mano se respetan.
-
 ## Perfiles de ajuste
 
 En vez de ajustar las ganancias a mano, elige un **perfil de ajuste** (`select.*_pd_tuning_profile`): un preset de un clic que fija `Kp`, `Kd` y el límite de rampa a la vez. Ordenados de más suave a más rápido:
