@@ -34,6 +34,7 @@ from .const import (
     CONF_PREDICTIVE_CHARGING_MODE,
     CONF_DP_PRICE_DISCHARGE_CONTROL,
     CONF_RT_PRICE_DISCHARGE_CONTROL,
+    CONF_SMART_PREDISCHARGE_ENABLED,
     PREDICTIVE_MODE_DYNAMIC_PRICING,
     PREDICTIVE_MODE_REALTIME_PRICE,
     CONF_SYSTEM_MAX_CHARGE_POWER,
@@ -91,6 +92,7 @@ async def async_setup_entry(
         mode = entry.data.get(CONF_PREDICTIVE_CHARGING_MODE)
         if mode == PREDICTIVE_MODE_DYNAMIC_PRICING:
             entities.append(PriceDischargeControlSwitch(hass, entry, controller, "dp"))
+            entities.append(SmartPredischargeSwitch(hass, entry, controller))
         elif mode == PREDICTIVE_MODE_REALTIME_PRICE:
             entities.append(PriceDischargeControlSwitch(hass, entry, controller, "rt"))
 
@@ -1777,6 +1779,58 @@ class PriceDischargeControlSwitch(SwitchEntity):
     @property
     def device_info(self):
         """Return device information for the system."""
+        return {
+            "identifiers": {(DOMAIN, "marstek_venus_system")},
+            "name": "Omnibattery System",
+            "manufacturer": "Omnibattery",
+            "model": "Multi-Battery System",
+        }
+
+
+class SmartPredischargeSwitch(SwitchEntity):
+    """Opt-in anti-curtailment switch scoped to dynamic pricing."""
+
+    def __init__(self, hass: HomeAssistant, entry: ConfigEntry, controller) -> None:
+        self.hass = hass
+        self.entry = entry
+        self.controller = controller
+        self._attr_has_entity_name = True
+        self._attr_translation_key = "smart_predischarge"
+        self._attr_unique_id = f"{SYSTEM_UNIQUE_ID_PREFIX}smart_predischarge"
+        self.entity_id = system_entity_id("switch", "smart_predischarge")
+        self._attr_icon = "mdi:battery-arrow-down-outline"
+        self._attr_should_poll = False
+
+    @property
+    def is_on(self) -> bool:
+        return bool(self.controller.smart_predischarge_enabled)
+
+    async def async_turn_on(self, **kwargs) -> None:
+        """Enable and recalculate the current dynamic-pricing plan."""
+        self.controller.smart_predischarge_enabled = True
+        new_data = dict(self.entry.data)
+        new_data[CONF_SMART_PREDISCHARGE_ENABLED] = True
+        self.hass.config_entries.async_update_entry(self.entry, data=new_data)
+        _LOGGER.info("Smart pre-discharge ENABLED")
+        try:
+            await self.controller._pricing_mgr._evaluate_dynamic_pricing(extended_horizon=True)
+        except Exception as err:  # keep a runtime toggle fail-safe
+            _LOGGER.warning("Smart pre-discharge evaluation failed after enable: %s", err)
+            self.controller._pricing_mgr.clear_curtailment_runtime("evaluation_error")
+        self.async_write_ha_state()
+
+    async def async_turn_off(self, **kwargs) -> None:
+        """Disable and immediately clean every smart runtime action."""
+        self.controller.smart_predischarge_enabled = False
+        new_data = dict(self.entry.data)
+        new_data[CONF_SMART_PREDISCHARGE_ENABLED] = False
+        self.hass.config_entries.async_update_entry(self.entry, data=new_data)
+        self.controller._pricing_mgr.clear_curtailment_runtime("disabled")
+        _LOGGER.info("Smart pre-discharge DISABLED")
+        self.async_write_ha_state()
+
+    @property
+    def device_info(self):
         return {
             "identifiers": {(DOMAIN, "marstek_venus_system")},
             "name": "Omnibattery System",

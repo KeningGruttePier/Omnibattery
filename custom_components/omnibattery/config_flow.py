@@ -72,6 +72,16 @@ from .const import (
     CONF_PRICE_INTEGRATION_TYPE,
     CONF_MAX_PRICE_THRESHOLD,
     CONF_DISCHARGE_PRICE_THRESHOLD,
+    CONF_SMART_PREDISCHARGE_ENABLED,
+    CONF_NEGATIVE_INJECTION_THRESHOLD,
+    CONF_PREDISCHARGE_RESERVE_SOC,
+    CONF_PREDISCHARGE_MAX_EXPORT_POWER_W,
+    CONF_CURTAILMENT_HEADROOM_MARGIN_PCT,
+    DEFAULT_SMART_PREDISCHARGE_ENABLED,
+    DEFAULT_NEGATIVE_INJECTION_THRESHOLD,
+    DEFAULT_PREDISCHARGE_RESERVE_SOC,
+    DEFAULT_PREDISCHARGE_MAX_EXPORT_POWER_W,
+    DEFAULT_CURTAILMENT_HEADROOM_MARGIN_PCT,
     CONF_AVERAGE_PRICE_SENSOR,
     CONF_DP_PRICE_DISCHARGE_CONTROL,
     CONF_RT_PRICE_DISCHARGE_CONTROL,
@@ -124,6 +134,13 @@ _SESSY_MAX_DISCHARGE_POWER_W = 1700
 _SESSY_DEFAULT_MIN_SOC = 5
 _HOYMILES_MAX_POWER_W = 2000
 _HOYMILES_DEFAULT_POWER_W = 1000
+
+
+def _parse_optional_float(value: Any) -> float | None:
+    """Parse a localized optional number while preserving an explicit zero."""
+    if value is None or value == "":
+        return None
+    return float(str(value).replace(",", "."))
 
 
 def _soc_selector_limits(brand: str) -> tuple[int, int, int, int, int, int]:
@@ -1575,10 +1592,8 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
                                 errors["solar_forecast_sensor"] = "invalid_unit"
 
                 if not errors:
-                    max_price_raw = user_input.get(CONF_MAX_PRICE_THRESHOLD)
-                    max_price = float(str(max_price_raw).replace(",", ".")) if max_price_raw else None
-                    discharge_price_raw = user_input.get(CONF_DISCHARGE_PRICE_THRESHOLD)
-                    discharge_price = float(str(discharge_price_raw).replace(",", ".")) if discharge_price_raw else None
+                    max_price = _parse_optional_float(user_input.get(CONF_MAX_PRICE_THRESHOLD))
+                    discharge_price = _parse_optional_float(user_input.get(CONF_DISCHARGE_PRICE_THRESHOLD))
 
                     if max_price is not None and discharge_price is not None and discharge_price < max_price:
                         errors[CONF_DISCHARGE_PRICE_THRESHOLD] = "discharge_below_charge"
@@ -1594,6 +1609,21 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
                         self.config_data["charging_time_slot"] = None
                         self.config_data[CONF_PREDICTIVE_SAFETY_MARGIN_KWH] = user_input.get(CONF_PREDICTIVE_SAFETY_MARGIN_KWH, DEFAULT_PREDICTIVE_SAFETY_MARGIN_KWH)
                         self.config_data[CONF_PREDICTIVE_GRID_CHARGE_MARGIN_PCT] = user_input.get(CONF_PREDICTIVE_GRID_CHARGE_MARGIN_PCT, DEFAULT_PREDICTIVE_GRID_CHARGE_MARGIN_PCT)
+                        self.config_data[CONF_SMART_PREDISCHARGE_ENABLED] = user_input.get(
+                            CONF_SMART_PREDISCHARGE_ENABLED, DEFAULT_SMART_PREDISCHARGE_ENABLED
+                        )
+                        self.config_data[CONF_NEGATIVE_INJECTION_THRESHOLD] = user_input.get(
+                            CONF_NEGATIVE_INJECTION_THRESHOLD, DEFAULT_NEGATIVE_INJECTION_THRESHOLD
+                        )
+                        self.config_data[CONF_PREDISCHARGE_RESERVE_SOC] = user_input.get(
+                            CONF_PREDISCHARGE_RESERVE_SOC, DEFAULT_PREDISCHARGE_RESERVE_SOC
+                        )
+                        self.config_data[CONF_PREDISCHARGE_MAX_EXPORT_POWER_W] = user_input.get(
+                            CONF_PREDISCHARGE_MAX_EXPORT_POWER_W, DEFAULT_PREDISCHARGE_MAX_EXPORT_POWER_W
+                        )
+                        self.config_data[CONF_CURTAILMENT_HEADROOM_MARGIN_PCT] = user_input.get(
+                            CONF_CURTAILMENT_HEADROOM_MARGIN_PCT, DEFAULT_CURTAILMENT_HEADROOM_MARGIN_PCT
+                        )
 
                         return await self._finish_setup()
             except Exception as e:
@@ -1633,6 +1663,19 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
             NumberSelectorConfig(min=0, max=20, step=0.1, unit_of_measurement="kWh", mode=NumberSelectorMode.BOX)
         )
         schema_dict[vol.Optional(CONF_PREDICTIVE_GRID_CHARGE_MARGIN_PCT, default=DEFAULT_PREDICTIVE_GRID_CHARGE_MARGIN_PCT)] = NumberSelector(
+            NumberSelectorConfig(min=0, max=100, step=5, unit_of_measurement="%", mode=NumberSelectorMode.BOX)
+        )
+        schema_dict[vol.Optional(CONF_SMART_PREDISCHARGE_ENABLED, default=DEFAULT_SMART_PREDISCHARGE_ENABLED)] = bool
+        schema_dict[vol.Optional(CONF_NEGATIVE_INJECTION_THRESHOLD, default=DEFAULT_NEGATIVE_INJECTION_THRESHOLD)] = NumberSelector(
+            NumberSelectorConfig(min=-2, max=2, step=0.001, unit_of_measurement="€/kWh", mode=NumberSelectorMode.BOX)
+        )
+        schema_dict[vol.Optional(CONF_PREDISCHARGE_RESERVE_SOC, default=DEFAULT_PREDISCHARGE_RESERVE_SOC)] = NumberSelector(
+            NumberSelectorConfig(min=0, max=100, step=1, unit_of_measurement="%", mode=NumberSelectorMode.BOX)
+        )
+        schema_dict[vol.Optional(CONF_PREDISCHARGE_MAX_EXPORT_POWER_W, default=DEFAULT_PREDISCHARGE_MAX_EXPORT_POWER_W)] = NumberSelector(
+            NumberSelectorConfig(min=0, max=10000, step=50, unit_of_measurement="W", mode=NumberSelectorMode.BOX)
+        )
+        schema_dict[vol.Optional(CONF_CURTAILMENT_HEADROOM_MARGIN_PCT, default=DEFAULT_CURTAILMENT_HEADROOM_MARGIN_PCT)] = NumberSelector(
             NumberSelectorConfig(min=0, max=100, step=5, unit_of_measurement="%", mode=NumberSelectorMode.BOX)
         )
 
@@ -3428,10 +3471,8 @@ class OptionsFlowHandler(OptionsFlow):
                                 errors["solar_forecast_sensor"] = "invalid_unit"
 
                 if not errors:
-                    max_price_raw = user_input.get(CONF_MAX_PRICE_THRESHOLD)
-                    max_price = float(str(max_price_raw).replace(",", ".")) if max_price_raw else None
-                    discharge_price_raw = user_input.get(CONF_DISCHARGE_PRICE_THRESHOLD)
-                    discharge_price = float(str(discharge_price_raw).replace(",", ".")) if discharge_price_raw else None
+                    max_price = _parse_optional_float(user_input.get(CONF_MAX_PRICE_THRESHOLD))
+                    discharge_price = _parse_optional_float(user_input.get(CONF_DISCHARGE_PRICE_THRESHOLD))
 
                     if max_price is not None and discharge_price is not None and discharge_price < max_price:
                         errors[CONF_DISCHARGE_PRICE_THRESHOLD] = "discharge_below_charge"
@@ -3447,6 +3488,26 @@ class OptionsFlowHandler(OptionsFlow):
                         self.config_data["charging_time_slot"] = None
                         self.config_data[CONF_PREDICTIVE_SAFETY_MARGIN_KWH] = user_input.get(CONF_PREDICTIVE_SAFETY_MARGIN_KWH, DEFAULT_PREDICTIVE_SAFETY_MARGIN_KWH)
                         self.config_data[CONF_PREDICTIVE_GRID_CHARGE_MARGIN_PCT] = user_input.get(CONF_PREDICTIVE_GRID_CHARGE_MARGIN_PCT, DEFAULT_PREDICTIVE_GRID_CHARGE_MARGIN_PCT)
+                        self.config_data[CONF_SMART_PREDISCHARGE_ENABLED] = user_input.get(
+                            CONF_SMART_PREDISCHARGE_ENABLED,
+                            existing_config.get(CONF_SMART_PREDISCHARGE_ENABLED, DEFAULT_SMART_PREDISCHARGE_ENABLED),
+                        )
+                        self.config_data[CONF_NEGATIVE_INJECTION_THRESHOLD] = user_input.get(
+                            CONF_NEGATIVE_INJECTION_THRESHOLD,
+                            existing_config.get(CONF_NEGATIVE_INJECTION_THRESHOLD, DEFAULT_NEGATIVE_INJECTION_THRESHOLD),
+                        )
+                        self.config_data[CONF_PREDISCHARGE_RESERVE_SOC] = user_input.get(
+                            CONF_PREDISCHARGE_RESERVE_SOC,
+                            existing_config.get(CONF_PREDISCHARGE_RESERVE_SOC, DEFAULT_PREDISCHARGE_RESERVE_SOC),
+                        )
+                        self.config_data[CONF_PREDISCHARGE_MAX_EXPORT_POWER_W] = user_input.get(
+                            CONF_PREDISCHARGE_MAX_EXPORT_POWER_W,
+                            existing_config.get(CONF_PREDISCHARGE_MAX_EXPORT_POWER_W, DEFAULT_PREDISCHARGE_MAX_EXPORT_POWER_W),
+                        )
+                        self.config_data[CONF_CURTAILMENT_HEADROOM_MARGIN_PCT] = user_input.get(
+                            CONF_CURTAILMENT_HEADROOM_MARGIN_PCT,
+                            existing_config.get(CONF_CURTAILMENT_HEADROOM_MARGIN_PCT, DEFAULT_CURTAILMENT_HEADROOM_MARGIN_PCT),
+                        )
                         return await self._save_and_finish()
             except Exception as e:
                 _LOGGER.error("Error validating dynamic pricing config: %s", e)
@@ -3460,6 +3521,21 @@ class OptionsFlowHandler(OptionsFlow):
         default_dp_discharge_control = existing_config.get(CONF_DP_PRICE_DISCHARGE_CONTROL, False)
         default_margin = existing_config.get(CONF_PREDICTIVE_SAFETY_MARGIN_KWH, DEFAULT_PREDICTIVE_SAFETY_MARGIN_KWH)
         default_grid_margin = existing_config.get(CONF_PREDICTIVE_GRID_CHARGE_MARGIN_PCT, DEFAULT_PREDICTIVE_GRID_CHARGE_MARGIN_PCT)
+        default_smart_predischarge = existing_config.get(
+            CONF_SMART_PREDISCHARGE_ENABLED, DEFAULT_SMART_PREDISCHARGE_ENABLED
+        )
+        default_negative_threshold = existing_config.get(
+            CONF_NEGATIVE_INJECTION_THRESHOLD, DEFAULT_NEGATIVE_INJECTION_THRESHOLD
+        )
+        default_reserve_soc = existing_config.get(
+            CONF_PREDISCHARGE_RESERVE_SOC, DEFAULT_PREDISCHARGE_RESERVE_SOC
+        )
+        default_export_power = existing_config.get(
+            CONF_PREDISCHARGE_MAX_EXPORT_POWER_W, DEFAULT_PREDISCHARGE_MAX_EXPORT_POWER_W
+        )
+        default_headroom_margin = existing_config.get(
+            CONF_CURTAILMENT_HEADROOM_MARGIN_PCT, DEFAULT_CURTAILMENT_HEADROOM_MARGIN_PCT
+        )
 
         schema_dict: dict = {
             vol.Required(CONF_PRICE_INTEGRATION_TYPE, default=default_integration):
@@ -3501,6 +3577,19 @@ class OptionsFlowHandler(OptionsFlow):
             NumberSelectorConfig(min=0, max=20, step=0.1, unit_of_measurement="kWh", mode=NumberSelectorMode.BOX)
         )
         schema_dict[vol.Optional(CONF_PREDICTIVE_GRID_CHARGE_MARGIN_PCT, default=default_grid_margin)] = NumberSelector(
+            NumberSelectorConfig(min=0, max=100, step=5, unit_of_measurement="%", mode=NumberSelectorMode.BOX)
+        )
+        schema_dict[vol.Optional(CONF_SMART_PREDISCHARGE_ENABLED, default=default_smart_predischarge)] = bool
+        schema_dict[vol.Optional(CONF_NEGATIVE_INJECTION_THRESHOLD, default=default_negative_threshold)] = NumberSelector(
+            NumberSelectorConfig(min=-2, max=2, step=0.001, unit_of_measurement="€/kWh", mode=NumberSelectorMode.BOX)
+        )
+        schema_dict[vol.Optional(CONF_PREDISCHARGE_RESERVE_SOC, default=default_reserve_soc)] = NumberSelector(
+            NumberSelectorConfig(min=0, max=100, step=1, unit_of_measurement="%", mode=NumberSelectorMode.BOX)
+        )
+        schema_dict[vol.Optional(CONF_PREDISCHARGE_MAX_EXPORT_POWER_W, default=default_export_power)] = NumberSelector(
+            NumberSelectorConfig(min=0, max=10000, step=50, unit_of_measurement="W", mode=NumberSelectorMode.BOX)
+        )
+        schema_dict[vol.Optional(CONF_CURTAILMENT_HEADROOM_MARGIN_PCT, default=default_headroom_margin)] = NumberSelector(
             NumberSelectorConfig(min=0, max=100, step=5, unit_of_measurement="%", mode=NumberSelectorMode.BOX)
         )
 

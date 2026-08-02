@@ -32,6 +32,10 @@ from .const import (
     CONF_PRICE_INTEGRATION_TYPE,
     PREDICTIVE_MODE_DYNAMIC_PRICING,
     PRICE_INTEGRATION_CKW,
+    CONF_NEGATIVE_INJECTION_THRESHOLD,
+    CONF_PREDISCHARGE_RESERVE_SOC,
+    CONF_PREDISCHARGE_MAX_EXPORT_POWER_W,
+    CONF_CURTAILMENT_HEADROOM_MARGIN_PCT,
     MIN_CHARGE_HYSTERESIS_PERCENT,
     MAX_CHARGE_HYSTERESIS_PERCENT,
     DOMAIN,
@@ -114,6 +118,10 @@ async def async_setup_entry(
         entities.append(MarstekPriceThresholdNumber(hass, entry, "discharge"))
         entities.append(MarstekArbitrageNumber(hass, entry, "margin"))
         entities.append(MarstekArbitrageNumber(hass, entry, "efficiency"))
+        entities.append(SmartPredischargeNumber(hass, entry, "threshold"))
+        entities.append(SmartPredischargeNumber(hass, entry, "reserve"))
+        entities.append(SmartPredischargeNumber(hass, entry, "export"))
+        entities.append(SmartPredischargeNumber(hass, entry, "margin"))
 
     # Temperature charge limit sliders (system-level, when the feature is configured)
     if CONF_ENABLE_TEMP_CHARGE_LIMIT in entry.data:
@@ -439,6 +447,106 @@ class MarstekPriceThresholdNumber(NumberEntity):
     @property
     def device_info(self):
         """Return device information for the system."""
+        return {
+            "identifiers": {(DOMAIN, "marstek_venus_system")},
+            "name": "Omnibattery System",
+            "manufacturer": "Omnibattery",
+            "model": "Multi-Battery System",
+        }
+
+
+class SmartPredischargeNumber(NumberEntity):
+    """Hot-editable anti-curtailment parameter, dynamic-pricing only."""
+
+    _attr_has_entity_name = True
+    _attr_mode = NumberMode.BOX
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_should_poll = False
+
+    _DEFINITIONS = {
+        "threshold": (
+            CONF_NEGATIVE_INJECTION_THRESHOLD,
+            -2.0,
+            2.0,
+            0.001,
+            "mdi:cash-minus",
+        ),
+        "reserve": (
+            CONF_PREDISCHARGE_RESERVE_SOC,
+            0.0,
+            100.0,
+            1.0,
+            "mdi:battery-lock",
+        ),
+        "export": (
+            CONF_PREDISCHARGE_MAX_EXPORT_POWER_W,
+            0.0,
+            10000.0,
+            50.0,
+            "mdi:transmission-tower-export",
+        ),
+        "margin": (
+            CONF_CURTAILMENT_HEADROOM_MARGIN_PCT,
+            0.0,
+            100.0,
+            5.0,
+            "mdi:battery-plus",
+        ),
+    }
+
+    def __init__(self, hass: HomeAssistant, entry: ConfigEntry, kind: str) -> None:
+        self.hass = hass
+        self.entry = entry
+        self._kind = kind
+        key, minimum, maximum, step, icon = self._DEFINITIONS[kind]
+        self._conf_key = key
+        self._attr_translation_key = key
+        self._attr_unique_id = f"{SYSTEM_UNIQUE_ID_PREFIX}{key}"
+        self.entity_id = system_entity_id("number", key)
+        self._attr_icon = icon
+        self._attr_native_min_value = minimum
+        self._attr_native_max_value = maximum
+        self._attr_native_step = step
+        if kind == "threshold":
+            is_chf = entry.data.get(CONF_PRICE_INTEGRATION_TYPE) == PRICE_INTEGRATION_CKW
+            self._attr_native_unit_of_measurement = "CHF/kWh" if is_chf else "€/kWh"
+        elif kind in {"reserve", "margin"}:
+            self._attr_native_unit_of_measurement = "%"
+        else:
+            self._attr_native_unit_of_measurement = "W"
+
+    async def async_added_to_hass(self) -> None:
+        self.async_on_remove(self.entry.add_update_listener(self._handle_entry_update))
+
+    async def _handle_entry_update(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
+        self.async_write_ha_state()
+
+    @property
+    def native_value(self) -> float:
+        value = self.entry.data.get(self._conf_key, 0.0)
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return 0.0
+
+    async def async_set_native_value(self, value: float) -> None:
+        new_data = dict(self.entry.data)
+        new_data[self._conf_key] = float(value)
+        self.hass.config_entries.async_update_entry(self.entry, data=new_data)
+        controller = self.hass.data[DOMAIN][self.entry.entry_id].get("controller")
+        if controller is not None:
+            controller.update_pd_parameters()
+            # Never keep applying a plan calculated with the previous threshold,
+            # forecast margin or export cap.  The existing reevaluate button (or
+            # the next scheduled evaluation) rebuilds it.
+            controller._pricing_mgr.clear_curtailment_runtime(
+                "configuration_changed"
+            )
+        _LOGGER.info("Smart pre-discharge %s updated to %s", self._conf_key, value)
+        self.async_write_ha_state()
+
+    @property
+    def device_info(self):
         return {
             "identifiers": {(DOMAIN, "marstek_venus_system")},
             "name": "Omnibattery System",

@@ -294,6 +294,11 @@
           "max_price_threshold": "Seuil de prix maximum (€/kWh, optionnel)",
           "discharge_price_threshold": "Prix plancher de décharge (optionnel)",
           "dp_price_discharge_control": "Décharger uniquement si le prix dépasse le seuil",
+          "smart_predischarge_enabled": "Pré-décharge intelligente / anti-écrêtement",
+          "negative_injection_threshold": "Seuil d'injection négative",
+          "predischarge_reserve_soc": "Réserve de SOC de pré-décharge (%)",
+          "predischarge_max_export_power_w": "Exportation maximale de pré-décharge (W)",
+          "curtailment_headroom_margin_pct": "Marge d'espace anti-écrêtement (%)",
           "solar_forecast_sensor": "Capteur de prévision solaire (kWh)",
           "predictive_safety_margin_kwh": "Marge de sécurité prévision solaire (kWh)",
           "predictive_grid_charge_margin_pct": "Marge de charge réseau prédictive (%)"
@@ -304,6 +309,11 @@
           "max_price_threshold": "Les créneaux au-dessus de ce prix ne seront pas sélectionnés. Quand le contrôle de décharge par prix est activé, cette valeur sert aussi de seuil de décharge. Utiliser la devise principale/kWh : €/kWh pour Nordpool/PVPC, CHF/kWh pour CKW. Les prix Nordpool HACS configurés en centimes sont convertis automatiquement. Laisser vide pour utiliser tous les créneaux et utiliser la moyenne journalière comme seuil de décharge. Sauf si un prix plancher de décharge distinct est défini ci-dessous.",
           "discharge_price_threshold": "Seuil distinct optionnel pour la décharge pilotée par le prix. La décharge est bloquée tant que le prix est inférieur ou égal à cette valeur, ouvrant une bande neutre entre le prix maximal de charge (au-dessus) et ce plancher : dans cette bande, la batterie ne se charge pas depuis le réseau et ne se décharge pas (la charge par surplus solaire fonctionne toujours). Laissez vide pour réutiliser le prix maximal pour les deux (comportement actuel à seuil unique).",
           "dp_price_discharge_control": "Si activé, la batterie ne se décharge que lorsque le prix actuel dépasse le seuil de prix maximum configuré. Si aucun seuil n'est configuré, la moyenne journalière calculée automatiquement depuis le capteur de prix est utilisée. Si les plages horaires limitent la décharge, les deux conditions doivent être remplies.",
+          "smart_predischarge_enabled": "Active la pré-décharge optionnelle uniquement en mode de tarification dynamique pour créer de l'espace avant les créneaux d'injection négative.",
+          "negative_injection_threshold": "Les prix inférieurs ou égaux à ce seuil sont considérés comme des créneaux à risque lorsqu'un surplus solaire est prévu.",
+          "predischarge_reserve_soc": "SOC à réserver en plus des limites minimales existantes.",
+          "predischarge_max_export_power_w": "Puissance d'exportation autorisée pendant la pré-décharge. 0 signifie autoconsommation uniquement.",
+          "curtailment_headroom_margin_pct": "Marge d'espace supplémentaire requise avant le créneau à risque.",
           "solar_forecast_sensor": "Capteur fournissant la prévision de production solaire en kWh (ex : Solcast). Avec panneaux solaires : configurez ce capteur — le système ne chargera depuis le réseau que si la prévision est insuffisante. Sans panneaux solaires : laissez vide — le système chargera quand l'énergie de la batterie est insuffisante pour la journée. Non requis si ce capteur a déjà été configuré à l'étape initiale — il sera utilisé automatiquement.",
           "predictive_safety_margin_kwh": "Tampon d'énergie supplémentaire ajouté à la prévision de consommation. Utile si la prévision solaire est trop optimiste. Mettre à 0 pour désactiver (défaut). Limité à la capacité totale de la batterie.",
           "predictive_grid_charge_margin_pct": "Pourcentage supplémentaire chargé depuis le réseau au-dessus du déficit solaire, pour couvrir des prévisions solaires optimistes. Ex. : un besoin réseau de 2 kWh à 50% charge 3 kWh. 0 pour désactiver (défaut). Plafonné à l'écart jusqu'au SOC max."
@@ -889,6 +899,11 @@
           "max_price_threshold": "Seuil de prix maximum (€/kWh, optionnel)",
           "discharge_price_threshold": "Prix plancher de décharge (optionnel)",
           "dp_price_discharge_control": "Décharger uniquement si le prix dépasse le seuil",
+          "smart_predischarge_enabled": "Pré-décharge intelligente / anti-écrêtement",
+          "negative_injection_threshold": "Seuil d'injection négative",
+          "predischarge_reserve_soc": "Réserve de SOC de pré-décharge (%)",
+          "predischarge_max_export_power_w": "Exportation maximale de pré-décharge (W)",
+          "curtailment_headroom_margin_pct": "Marge d'espace anti-écrêtement (%)",
           "solar_forecast_sensor": "Capteur de prévision solaire (kWh)",
           "predictive_safety_margin_kwh": "Marge de sécurité prévision solaire (kWh)",
           "predictive_grid_charge_margin_pct": "Marge de charge réseau prédictive (%)"
@@ -899,6 +914,11 @@
           "max_price_threshold": "Les créneaux au-dessus de ce prix ne seront pas sélectionnés. Quand le contrôle de décharge par prix est activé, cette valeur sert aussi de seuil de décharge. Utiliser la devise principale/kWh : €/kWh pour Nordpool/PVPC, CHF/kWh pour CKW. Les prix Nordpool HACS configurés en centimes sont convertis automatiquement. Laisser vide pour utiliser tous les créneaux et utiliser la moyenne journalière comme seuil de décharge. Sauf si un prix plancher de décharge distinct est défini ci-dessous.",
           "discharge_price_threshold": "Seuil distinct optionnel pour la décharge pilotée par le prix. La décharge est bloquée tant que le prix est inférieur ou égal à cette valeur, ouvrant une bande neutre entre le prix maximal de charge (au-dessus) et ce plancher : dans cette bande, la batterie ne se charge pas depuis le réseau et ne se décharge pas (la charge par surplus solaire fonctionne toujours). Laissez vide pour réutiliser le prix maximal pour les deux (comportement actuel à seuil unique).",
           "dp_price_discharge_control": "Si activé, la batterie ne se décharge que lorsque le prix actuel dépasse le seuil de prix maximum configuré. Si aucun seuil n'est configuré, la moyenne journalière calculée automatiquement depuis le capteur de prix est utilisée. Si les plages horaires limitent la décharge, les deux conditions doivent être remplies.",
+          "smart_predischarge_enabled": "Active la pré-décharge optionnelle uniquement en mode de tarification dynamique pour créer de l'espace avant les créneaux d'injection négative.",
+          "negative_injection_threshold": "Les prix inférieurs ou égaux à ce seuil sont considérés comme des créneaux à risque lorsqu'un surplus solaire est prévu.",
+          "predischarge_reserve_soc": "SOC à réserver en plus des limites minimales existantes.",
+          "predischarge_max_export_power_w": "Puissance d'exportation autorisée pendant la pré-décharge. 0 signifie autoconsommation uniquement.",
+          "curtailment_headroom_margin_pct": "Marge d'espace supplémentaire requise avant le créneau à risque.",
           "solar_forecast_sensor": "Capteur fournissant la prévision de production solaire en kWh (ex : Solcast). Avec panneaux solaires : configurez ce capteur — le système ne chargera depuis le réseau que si la prévision est insuffisante. Sans panneaux solaires : laissez vide — le système chargera quand l'énergie de la batterie est insuffisante pour la journée. Non requis si ce capteur a déjà été configuré à l'étape initiale — il sera utilisé automatiquement.",
           "predictive_safety_margin_kwh": "Tampon d'énergie supplémentaire ajouté à la prévision de consommation. Utile si la prévision solaire est trop optimiste. Mettre à 0 pour désactiver (défaut). Limité à la capacité totale de la batterie.",
           "predictive_grid_charge_margin_pct": "Pourcentage supplémentaire chargé depuis le réseau au-dessus du déficit solaire, pour couvrir des prévisions solaires optimistes. Ex. : un besoin réseau de 2 kWh à 50% charge 3 kWh. 0 pour désactiver (défaut). Plafonné à l'écart jusqu'au SOC max."
@@ -1233,6 +1253,9 @@
       "dp_price_discharge_control": {
         "name": "Décharge selon le prix"
       },
+      "smart_predischarge": {
+        "name": "Pré-décharge intelligente / anti-écrêtement"
+      },
       "rt_price_discharge_control": {
         "name": "Décharge selon le prix"
       },
@@ -1560,6 +1583,9 @@
       "predictive_charging_active": {
         "name": "Charge Prédictive Active"
       },
+      "curtailment_status": {
+        "name": "État de la pré-décharge intelligente"
+      },
       "wifi_status": {
         "name": "État WiFi"
       },
@@ -1719,6 +1745,18 @@
       },
       "predictive_grid_charge_margin_pct": {
         "name": "Marge de Charge Réseau Prédictive"
+      },
+      "negative_injection_threshold": {
+        "name": "Seuil d'injection négative"
+      },
+      "predischarge_reserve_soc": {
+        "name": "Réserve de SOC de pré-décharge"
+      },
+      "predischarge_max_export_power_w": {
+        "name": "Exportation maximale de pré-décharge"
+      },
+      "curtailment_headroom_margin_pct": {
+        "name": "Marge d'espace anti-écrêtement"
       },
       "predictive_min_soc_floor": {
         "name": "SOC minimum garanti"

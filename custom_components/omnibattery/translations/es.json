@@ -294,6 +294,11 @@
           "max_price_threshold": "Precio máximo (opcional)",
           "discharge_price_threshold": "Precio mínimo de descarga (opcional)",
           "dp_price_discharge_control": "Descargar solo cuando el precio supere el umbral",
+          "smart_predischarge_enabled": "Predescarga inteligente / anti-vertido",
+          "negative_injection_threshold": "Umbral de inyección negativa",
+          "predischarge_reserve_soc": "Reserva de SOC de predescarga (%)",
+          "predischarge_max_export_power_w": "Exportación máxima de predescarga (W)",
+          "curtailment_headroom_margin_pct": "Margen de espacio anti-vertido (%)",
           "solar_forecast_sensor": "Sensor de predicción solar (kWh)",
           "predictive_safety_margin_kwh": "Margen de seguridad de previsión solar (kWh)",
           "predictive_grid_charge_margin_pct": "Margen de carga de red predictiva (%)"
@@ -304,6 +309,11 @@
           "max_price_threshold": "Las horas por encima de este precio no serán seleccionadas. Cuando el control de descarga por precio está activado, este valor también se usa como umbral de descarga salvo que configures abajo un precio mínimo de descarga aparte. Usa moneda principal/kWh: €/kWh para Nordpool/PVPC, CHF/kWh para CKW. Los precios Nordpool HACS configurados en céntimos se convierten automáticamente. Deja vacío para usar todas las horas y usar la media diaria como umbral de descarga.",
           "discharge_price_threshold": "Umbral separado opcional para la descarga por precio. La descarga se bloquea mientras el precio sea igual o inferior a este valor, abriendo una banda neutra entre el precio máximo de carga (arriba) y este mínimo: en esa banda la batería ni carga de red ni descarga (la carga por excedente solar sigue funcionando). Déjalo vacío para reutilizar el precio máximo para ambos (comportamiento actual de umbral único).",
           "dp_price_discharge_control": "Si está activado, la batería solo descarga cuando el precio eléctrico actual supera el precio máximo configurado. Si no hay umbral configurado, usa el precio medio del día calculado automáticamente a partir del sensor de precios. Si las franjas horarias restringen la descarga, ambas condiciones deben cumplirse.",
+          "smart_predischarge_enabled": "Activa la predescarga opcional solo en el modo de precios dinámicos para crear espacio antes de franjas con precio de inyección negativo.",
+          "negative_injection_threshold": "Los precios iguales o inferiores a este umbral son franjas de riesgo cuando se espera excedente solar.",
+          "predischarge_reserve_soc": "SOC que debe reservar la predescarga, además de los límites mínimos existentes.",
+          "predischarge_max_export_power_w": "Potencia de exportación permitida durante la predescarga. 0 significa solo autoconsumo.",
+          "curtailment_headroom_margin_pct": "Margen adicional de espacio requerido antes de la franja de riesgo.",
           "solar_forecast_sensor": "Sensor que proporciona la predicción de producción solar en kWh (ej: Solcast). Si tienes paneles solares, configúralo — el sistema solo cargará desde la red cuando la previsión solar sea insuficiente. Si no tienes paneles, déjalo vacío — el sistema cargará cuando la batería no tenga energía suficiente para el día. No es necesario si ya configuraste este sensor en el paso inicial: se usará automáticamente.",
           "predictive_safety_margin_kwh": "Energía adicional añadida a la previsión de consumo antes de decidir si cargar. Útil cuando tu previsión solar tiende a ser optimista. Pon 0 para desactivar (por defecto). Limitado a la capacidad total de la batería.",
           "predictive_grid_charge_margin_pct": "Porcentaje extra cargado desde la red sobre el déficit solar, para cubrir previsiones solares optimistas. Ej.: una necesidad de 2 kWh de red al 50% carga 3 kWh. 0 para desactivar (por defecto). Limitado al margen hasta el SOC máximo."
@@ -889,6 +899,11 @@
           "max_price_threshold": "Precio máximo (opcional)",
           "discharge_price_threshold": "Precio mínimo de descarga (opcional)",
           "dp_price_discharge_control": "Descargar solo cuando el precio supere el umbral",
+          "smart_predischarge_enabled": "Predescarga inteligente / anti-vertido",
+          "negative_injection_threshold": "Umbral de inyección negativa",
+          "predischarge_reserve_soc": "Reserva de SOC de predescarga (%)",
+          "predischarge_max_export_power_w": "Exportación máxima de predescarga (W)",
+          "curtailment_headroom_margin_pct": "Margen de espacio anti-vertido (%)",
           "solar_forecast_sensor": "Sensor de predicción solar (kWh)",
           "predictive_safety_margin_kwh": "Margen de seguridad de previsión solar (kWh)",
           "predictive_grid_charge_margin_pct": "Margen de carga de red predictiva (%)"
@@ -899,6 +914,11 @@
           "max_price_threshold": "Las horas por encima de este precio no serán seleccionadas. Cuando el control de descarga por precio está activado, este valor también se usa como umbral de descarga salvo que configures abajo un precio mínimo de descarga aparte. Usa moneda principal/kWh: €/kWh para Nordpool/PVPC, CHF/kWh para CKW. Los precios Nordpool HACS configurados en céntimos se convierten automáticamente. Deja vacío para usar todas las horas y usar la media diaria como umbral de descarga.",
           "discharge_price_threshold": "Umbral separado opcional para la descarga por precio. La descarga se bloquea mientras el precio sea igual o inferior a este valor, abriendo una banda neutra entre el precio máximo de carga (arriba) y este mínimo: en esa banda la batería ni carga de red ni descarga (la carga por excedente solar sigue funcionando). Déjalo vacío para reutilizar el precio máximo para ambos (comportamiento actual de umbral único).",
           "dp_price_discharge_control": "Si está activado, la batería solo descarga cuando el precio eléctrico actual supera el precio máximo configurado. Si no hay umbral configurado, usa el precio medio del día calculado automáticamente a partir del sensor de precios. Si las franjas horarias restringen la descarga, ambas condiciones deben cumplirse.",
+          "smart_predischarge_enabled": "Activa la predescarga opcional solo en el modo de precios dinámicos para crear espacio antes de franjas con precio de inyección negativo.",
+          "negative_injection_threshold": "Los precios iguales o inferiores a este umbral son franjas de riesgo cuando se espera excedente solar.",
+          "predischarge_reserve_soc": "SOC que debe reservar la predescarga, además de los límites mínimos existentes.",
+          "predischarge_max_export_power_w": "Potencia de exportación permitida durante la predescarga. 0 significa solo autoconsumo.",
+          "curtailment_headroom_margin_pct": "Margen adicional de espacio requerido antes de la franja de riesgo.",
           "solar_forecast_sensor": "Sensor que proporciona la predicción de producción solar en kWh (ej: Solcast). Si tienes paneles solares, configúralo — el sistema solo cargará desde la red cuando la previsión solar sea insuficiente. Si no tienes paneles, déjalo vacío — el sistema cargará cuando la batería no tenga energía suficiente para el día. No es necesario si ya configuraste este sensor en el paso inicial: se usará automáticamente.",
           "predictive_safety_margin_kwh": "Energía adicional añadida a la previsión de consumo antes de decidir si cargar. Útil cuando tu previsión solar tiende a ser optimista. Pon 0 para desactivar (por defecto). Limitado a la capacidad total de la batería.",
           "predictive_grid_charge_margin_pct": "Porcentaje extra cargado desde la red sobre el déficit solar, para cubrir previsiones solares optimistas. Ej.: una necesidad de 2 kWh de red al 50% carga 3 kWh. 0 para desactivar (por defecto). Limitado al margen hasta el SOC máximo."
@@ -1160,6 +1180,9 @@
       },
       "dp_price_discharge_control": {
         "name": "Descarga según precio"
+      },
+      "smart_predischarge": {
+        "name": "Predescarga inteligente / anti-vertido"
       },
       "rt_price_discharge_control": {
         "name": "Descarga según precio"
@@ -1560,6 +1583,9 @@
       "predictive_charging_active": {
         "name": "Carga Predictiva Activa"
       },
+      "curtailment_status": {
+        "name": "Estado de predescarga inteligente"
+      },
       "wifi_status": {
         "name": "Estado WiFi"
       },
@@ -1722,6 +1748,18 @@
       },
       "predictive_grid_charge_margin_pct": {
         "name": "Margen de Carga de Red Predictiva"
+      },
+      "negative_injection_threshold": {
+        "name": "Umbral de inyección negativa"
+      },
+      "predischarge_reserve_soc": {
+        "name": "Reserva de SOC de predescarga"
+      },
+      "predischarge_max_export_power_w": {
+        "name": "Exportación máxima de predescarga"
+      },
+      "curtailment_headroom_margin_pct": {
+        "name": "Margen de espacio anti-vertido"
       },
       "predictive_min_soc_floor": {
         "name": "SOC mínimo garantizado"

@@ -294,6 +294,11 @@
           "max_price_threshold": "Maximaler Preisschwellenwert (€/kWh, optional)",
           "discharge_price_threshold": "Entlade-Preisuntergrenze (optional)",
           "dp_price_discharge_control": "Nur entladen wenn Preis über Schwellenwert",
+          "smart_predischarge_enabled": "Intelligente Vorentladung / Anti-Abregelung",
+          "negative_injection_threshold": "Schwellenwert für negative Einspeisung",
+          "predischarge_reserve_soc": "SOC-Reserve für Vorentladung (%)",
+          "predischarge_max_export_power_w": "Maximale Vorentlade-Einspeisung (W)",
+          "curtailment_headroom_margin_pct": "Anti-Abregelungs-Reserve (%)",
           "solar_forecast_sensor": "Solarprognose-Sensor (kWh)",
           "predictive_safety_margin_kwh": "Solarprognose-Sicherheitspuffer (kWh)",
           "predictive_grid_charge_margin_pct": "Prädiktive Netzladungs-Marge (%)"
@@ -304,6 +309,11 @@
           "max_price_threshold": "Stunden über diesem Preis werden nicht ausgewählt. Wenn die preisbasierte Entladesteuerung aktiviert ist, wird dieser Wert auch als Entladeschwellenwert verwendet. Hauptwährung/kWh verwenden: €/kWh für Nordpool/PVPC, CHF/kWh für CKW. In Cent konfigurierte HACS-Nordpool-Preise werden automatisch umgerechnet. Leer lassen, um alle Stunden zu verwenden und den Tagesdurchschnitt als Entladeschwellenwert zu nutzen. Sofern unten keine separate Entlade-Preisuntergrenze festgelegt ist.",
           "discharge_price_threshold": "Optionale separate Untergrenze für die preisgesteuerte Entladung. Die Entladung wird blockiert, solange der Preis kleiner oder gleich diesem Wert ist, wodurch ein neutrales Band zwischen der oberen Ladegrenze und dieser Untergrenze entsteht: In diesem Band lädt die Batterie weder aus dem Netz noch entlädt sie (Laden aus Solarüberschuss funktioniert weiterhin). Leer lassen, um die maximale Preisgrenze für beides zu verwenden (bisheriges Verhalten mit einem Schwellenwert).",
           "dp_price_discharge_control": "Wenn aktiviert, entlädt die Batterie nur, wenn der aktuelle Strompreis den konfigurierten maximalen Preisschwellenwert übersteigt. Wenn kein Schwellenwert konfiguriert ist, wird der automatisch aus dem Preissensor berechnete Tagesdurchschnitt verwendet. Falls Zeitfenster die Entladung einschränken, müssen beide Bedingungen erfüllt sein.",
+          "smart_predischarge_enabled": "Aktiviert die optionale Vorentladung nur im dynamischen Preismodus, um vor negativen Einspeisepreisen Platz zu schaffen.",
+          "negative_injection_threshold": "Preise gleich oder unter diesem Wert gelten bei erwarteter Solarüberschussenergie als Risikofenster.",
+          "predischarge_reserve_soc": "SOC, der zusätzlich zu den vorhandenen Mindestgrenzen reserviert wird.",
+          "predischarge_max_export_power_w": "Erlaubte Einspeiseleistung während der Vorentladung. 0 bedeutet nur Eigenverbrauch.",
+          "curtailment_headroom_margin_pct": "Zusätzlicher erforderlicher Speicherplatz vor dem Risikofenster.",
           "solar_forecast_sensor": "Sensor, der die Solarproduktionsprognose in kWh liefert (z.B. Solcast). Mit Solaranlage: konfigurieren — das System lädt nur dann aus dem Netz, wenn die Solarprognose unzureichend ist. Ohne Solaranlage: leer lassen — das System lädt, wenn die Batterieenergie für den Tag nicht ausreicht. Nicht erforderlich, wenn dieser Sensor bereits im ersten Schritt konfiguriert wurde — er wird automatisch verwendet.",
           "predictive_safety_margin_kwh": "Zusätzlicher Energiepuffer, der der Verbrauchsprognose hinzugefügt wird. Nützlich, wenn die Solarprognose zu optimistisch ist. Auf 0 setzen zum Deaktivieren (Standard). Begrenzt auf Gesamtbatteriekapazität.",
           "predictive_grid_charge_margin_pct": "Zusätzlicher Prozentsatz, der über das Solar-Defizit hinaus aus dem Netz geladen wird, um optimistische Solarprognosen abzufedern. Z. B. lädt ein Netzbedarf von 2 kWh bei 50% 3 kWh. 0 zum Deaktivieren (Standard). Auf die Lücke bis zum max. SOC begrenzt."
@@ -889,6 +899,11 @@
           "max_price_threshold": "Maximaler Preisschwellenwert (€/kWh, optional)",
           "discharge_price_threshold": "Entlade-Preisuntergrenze (optional)",
           "dp_price_discharge_control": "Nur entladen wenn Preis über Schwellenwert",
+          "smart_predischarge_enabled": "Intelligente Vorentladung / Anti-Abregelung",
+          "negative_injection_threshold": "Schwellenwert für negative Einspeisung",
+          "predischarge_reserve_soc": "SOC-Reserve für Vorentladung (%)",
+          "predischarge_max_export_power_w": "Maximale Vorentlade-Einspeisung (W)",
+          "curtailment_headroom_margin_pct": "Anti-Abregelungs-Reserve (%)",
           "solar_forecast_sensor": "Solarprognose-Sensor (kWh)",
           "predictive_safety_margin_kwh": "Solarprognose-Sicherheitspuffer (kWh)",
           "predictive_grid_charge_margin_pct": "Prädiktive Netzladungs-Marge (%)"
@@ -899,6 +914,11 @@
           "max_price_threshold": "Stunden über diesem Preis werden nicht ausgewählt. Wenn die preisbasierte Entladesteuerung aktiviert ist, wird dieser Wert auch als Entladeschwellenwert verwendet. Hauptwährung/kWh verwenden: €/kWh für Nordpool/PVPC, CHF/kWh für CKW. In Cent konfigurierte HACS-Nordpool-Preise werden automatisch umgerechnet. Leer lassen, um alle Stunden zu verwenden und den Tagesdurchschnitt als Entladeschwellenwert zu nutzen. Sofern unten keine separate Entlade-Preisuntergrenze festgelegt ist.",
           "discharge_price_threshold": "Optionale separate Untergrenze für die preisgesteuerte Entladung. Die Entladung wird blockiert, solange der Preis kleiner oder gleich diesem Wert ist, wodurch ein neutrales Band zwischen der oberen Ladegrenze und dieser Untergrenze entsteht: In diesem Band lädt die Batterie weder aus dem Netz noch entlädt sie (Laden aus Solarüberschuss funktioniert weiterhin). Leer lassen, um die maximale Preisgrenze für beides zu verwenden (bisheriges Verhalten mit einem Schwellenwert).",
           "dp_price_discharge_control": "Wenn aktiviert, entlädt die Batterie nur, wenn der aktuelle Strompreis den konfigurierten maximalen Preisschwellenwert übersteigt. Wenn kein Schwellenwert konfiguriert ist, wird der automatisch aus dem Preissensor berechnete Tagesdurchschnitt verwendet. Falls Zeitfenster die Entladung einschränken, müssen beide Bedingungen erfüllt sein.",
+          "smart_predischarge_enabled": "Aktiviert die optionale Vorentladung nur im dynamischen Preismodus, um vor negativen Einspeisepreisen Platz zu schaffen.",
+          "negative_injection_threshold": "Preise gleich oder unter diesem Wert gelten bei erwarteter Solarüberschussenergie als Risikofenster.",
+          "predischarge_reserve_soc": "SOC, der zusätzlich zu den vorhandenen Mindestgrenzen reserviert wird.",
+          "predischarge_max_export_power_w": "Erlaubte Einspeiseleistung während der Vorentladung. 0 bedeutet nur Eigenverbrauch.",
+          "curtailment_headroom_margin_pct": "Zusätzlicher erforderlicher Speicherplatz vor dem Risikofenster.",
           "solar_forecast_sensor": "Sensor, der die Solarproduktionsprognose in kWh liefert (z.B. Solcast). Mit Solaranlage: konfigurieren — das System lädt nur dann aus dem Netz, wenn die Solarprognose unzureichend ist. Ohne Solaranlage: leer lassen — das System lädt, wenn die Batterieenergie für den Tag nicht ausreicht. Nicht erforderlich, wenn dieser Sensor bereits im ersten Schritt konfiguriert wurde — er wird automatisch verwendet.",
           "predictive_safety_margin_kwh": "Zusätzlicher Energiepuffer, der der Verbrauchsprognose hinzugefügt wird. Nützlich, wenn die Solarprognose zu optimistisch ist. Auf 0 setzen zum Deaktivieren (Standard). Begrenzt auf Gesamtbatteriekapazität.",
           "predictive_grid_charge_margin_pct": "Zusätzlicher Prozentsatz, der über das Solar-Defizit hinaus aus dem Netz geladen wird, um optimistische Solarprognosen abzufedern. Z. B. lädt ein Netzbedarf von 2 kWh bei 50% 3 kWh. 0 zum Deaktivieren (Standard). Auf die Lücke bis zum max. SOC begrenzt."
@@ -1233,6 +1253,9 @@
       "dp_price_discharge_control": {
         "name": "Preisbasierte Entladung"
       },
+      "smart_predischarge": {
+        "name": "Intelligente Vorentladung / Anti-Abregelung"
+      },
       "rt_price_discharge_control": {
         "name": "Preisbasierte Entladung"
       },
@@ -1560,6 +1583,9 @@
       "predictive_charging_active": {
         "name": "Prädiktives Laden Aktiv"
       },
+      "curtailment_status": {
+        "name": "Status der intelligenten Vorentladung"
+      },
       "wifi_status": {
         "name": "WLAN-Status"
       },
@@ -1719,6 +1745,18 @@
       },
       "predictive_grid_charge_margin_pct": {
         "name": "Prädiktive Netzladungs-Marge"
+      },
+      "negative_injection_threshold": {
+        "name": "Schwellenwert für negative Einspeisung"
+      },
+      "predischarge_reserve_soc": {
+        "name": "SOC-Reserve für Vorentladung"
+      },
+      "predischarge_max_export_power_w": {
+        "name": "Maximale Vorentlade-Einspeisung"
+      },
+      "curtailment_headroom_margin_pct": {
+        "name": "Anti-Abregelungs-Reserve"
       },
       "predictive_min_soc_floor": {
         "name": "Garantierter Mindest-SOC"

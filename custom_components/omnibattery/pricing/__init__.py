@@ -25,8 +25,18 @@ class DynamicPricingSchedule:
     charging_needed: bool = True
 
 
+from .curtailment import BatterySnapshot, CurtailmentPlan, PreDischargeSlot
+
+
 # Imported after PriceSlot is defined so ``calculations`` can resolve it from
 # the partially-initialised package without a circular import.
 from . import calculations  # noqa: E402,F401
 
-__all__ = ["PriceSlot", "DynamicPricingSchedule", "calculations"]
+__all__ = [
+    "PriceSlot",
+    "DynamicPricingSchedule",
+    "BatterySnapshot",
+    "CurtailmentPlan",
+    "PreDischargeSlot",
+    "calculations",
+]

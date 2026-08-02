@@ -599,6 +599,20 @@ CONF_DISCHARGE_PRICE_THRESHOLD = "discharge_price_threshold"
 CONF_MIN_ARBITRAGE_MARGIN = "min_arbitrage_margin"
 CONF_ROUND_TRIP_EFFICIENCY = "round_trip_efficiency"
 
+# Smart pre-discharge / anti-curtailment.  This is deliberately separate from
+# the normal predictive-charging settings: it is only read by dynamic pricing
+# and remains disabled for existing entries unless explicitly enabled.
+CONF_SMART_PREDISCHARGE_ENABLED = "smart_predischarge_enabled"
+CONF_NEGATIVE_INJECTION_THRESHOLD = "negative_injection_threshold"
+CONF_PREDISCHARGE_RESERVE_SOC = "predischarge_reserve_soc"
+CONF_PREDISCHARGE_MAX_EXPORT_POWER_W = "predischarge_max_export_power_w"
+CONF_CURTAILMENT_HEADROOM_MARGIN_PCT = "curtailment_headroom_margin_pct"
+DEFAULT_SMART_PREDISCHARGE_ENABLED = False
+DEFAULT_NEGATIVE_INJECTION_THRESHOLD = 0.0
+DEFAULT_PREDISCHARGE_RESERVE_SOC = 0.0
+DEFAULT_PREDISCHARGE_MAX_EXPORT_POWER_W = 0.0
+DEFAULT_CURTAILMENT_HEADROOM_MARGIN_PCT = 0.0
+
 PREDICTIVE_MODE_TIME_SLOT = "time_slot"
 PREDICTIVE_MODE_DYNAMIC_PRICING = "dynamic_pricing"
 PREDICTIVE_MODE_REALTIME_PRICE = "realtime_price"
