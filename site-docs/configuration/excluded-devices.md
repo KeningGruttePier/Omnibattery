@@ -56,6 +56,11 @@ Telemetry devices also get a **Dynamic Power Control** switch. It is designed
 for flexible loads such as wallboxes that regulate themselves from the same
 grid meter as Omnibattery. Enable it together with **Solar Surplus**.
 
+The **solar-production sensor is not required** for this control. When it is
+configured, Omnibattery detects solar-production increases of at least 200 W
+and yields battery charging again for 20 seconds. Without that sensor, it runs
+a 20-second probe every 5 minutes.
+
 The **Device active / EV charging sensor** lets Omnibattery yield while the wallbox is requesting
 power but still reads 0 W, avoiding the cold-start deadlock where the battery
 absorbs all export before the wallbox starts. Omnibattery automatically:

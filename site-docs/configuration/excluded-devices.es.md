@@ -57,6 +57,11 @@ de Potencia**. Está pensado para cargas flexibles, como wallboxes, que se regul
 mediante el mismo contador de red que Omnibattery. Debe activarse junto con
 **Excedente Solar**.
 
+El **sensor de producción solar no es necesario** para este control. Si está
+configurado, Omnibattery detecta aumentos de producción de al menos 200 W y
+cede de nuevo la carga de batería durante 20 segundos. Sin ese sensor, realiza
+una comprobación de 20 segundos cada 5 minutos.
+
 El **Sensor de dispositivo activo / carga del VE** permite que Omnibattery ceda
 mientras la wallbox solicita potencia pero todavía marca 0 W, evitando el bloqueo
 de arranque en el que la batería absorbe toda la exportación. Automáticamente:
