@@ -22,7 +22,7 @@
 
     Coordinates up to 6 batteries with SOC priorities, energy hysteresis and efficiency-aware power sharing.
 
--   :material-brand-family: **Multi-brand**
+-   :material-brand_family: **Multi-brand**
 
     Combine Marstek, Zendure, Anker SOLIX, Sessy and Hoymiles batteries in one installation while sharing the same control loop, system entities and energy-management features.
 
