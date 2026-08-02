@@ -21,8 +21,14 @@ from homeassistant.const import (
 from homeassistant.core import CoreState, HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import issue_registry as ir
+from homeassistant.helpers import event as event_helpers
 from homeassistant.helpers.device_registry import DeviceEntry
-from homeassistant.helpers.event import async_track_time_interval, async_track_time_change, async_track_state_change_event, async_call_later
+from homeassistant.helpers.event import (
+    async_call_later,
+    async_track_state_change_event,
+    async_track_time_change,
+    async_track_time_interval,
+)
 from homeassistant.util import dt as dt_util
 
 from pymodbus.exceptions import ConnectionException
@@ -485,6 +491,7 @@ class ChargeDischargeController:
 
         # Stale sensor detection
         self._last_sensor_report_time = None    # datetime of last real sensor publication (HA last_reported)
+        self._last_sensor_cadence_time = None   # latest publication consumed by the cadence detector
         self._stale_cycles = 0                  # consecutive cycles without a sensor publication
         self._max_sensor_stale_s = MAX_SENSOR_STALE_S
         self._control_lock = asyncio.Lock()     # serialize control cycle across timer + sensor-event triggers
@@ -4902,6 +4909,49 @@ class ChargeDischargeController:
             },
         )
 
+    @staticmethod
+    def _sensor_report_time(sensor_state):
+        """Return the publication timestamp available on a Home Assistant state."""
+        if sensor_state is None:
+            return None
+        return (
+            getattr(sensor_state, "last_reported", None)
+            or getattr(sensor_state, "last_updated", None)
+        )
+
+    def _observe_sensor_cadence(self, sensor_report_time):
+        """Feed one actual sensor publication into the slow-sensor detector.
+
+        The control loop is deliberately allowed to run slower than the grid meter
+        (battery I/O can occupy it for several seconds).  Therefore cadence must be
+        measured from state publications, not from the times at which the control loop
+        happens to sample ``hass.states``.  The state-change callback calls this for
+        every publication; the control loop also calls it as a fallback.  The timestamp
+        makes the two paths idempotent.
+        """
+        if sensor_report_time is None:
+            return None
+
+        previous_report_time = getattr(
+            self, "_last_sensor_cadence_time", None
+        )
+        if previous_report_time == sensor_report_time:
+            return None
+        self._last_sensor_cadence_time = sensor_report_time
+
+        if previous_report_time is None:
+            return None
+
+        sensor_elapsed_s = (
+            sensor_report_time - previous_report_time
+        ).total_seconds()
+        if sensor_elapsed_s > 0:
+            ChargeDischargeController._check_sensor_cadence(
+                self, sensor_elapsed_s
+            )
+            return sensor_elapsed_s
+        return None
+
     def _track_sensor_report(self, sensor_state):
         """Track real sensor publications, including unchanged state reports.
 
@@ -4910,9 +4960,8 @@ class ChargeDischargeController:
         so it is the correct source for cadence and stale-data health. The fallback
         keeps compatibility with State-like objects from older Home Assistant versions.
         """
-        sensor_report_time = (
-            getattr(sensor_state, "last_reported", None)
-            or sensor_state.last_updated
+        sensor_report_time = ChargeDischargeController._sensor_report_time(
+            sensor_state
         )
         previous_report_time = self._last_sensor_report_time
         self._last_sensor_report_time = sensor_report_time
@@ -4923,6 +4972,9 @@ class ChargeDischargeController:
         sensor_elapsed_s = (
             (sensor_report_time - previous_report_time).total_seconds()
             if previous_report_time is not None else None
+        )
+        ChargeDischargeController._observe_sensor_cadence(
+            self, sensor_report_time
         )
         return sensor_report_time, sensor_elapsed_s, is_stale
 
@@ -5135,12 +5187,6 @@ class ChargeDischargeController:
         )
         # Real time since the last sensor report — single source of truth for every
         # cadence-dependent term (filter, derivative, P scaling, rate limiter).
-
-        # Watchdog ticks have elapsed=0 and are not cadence observations. Feeding
-        # them into the debounce reset the slow streak between every pair of real
-        # samples, so a 60 s sensor could never reach the warning threshold.
-        if not is_stale:
-            self._check_sensor_cadence(sensor_elapsed_s)
 
         # Same cadence, different failure: a configured solar-forecast sensor that
         # stops reading. Cheap state lookup, so no extra throttle.
@@ -6386,11 +6432,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Event-driven control: also run the control cycle the instant the grid
     # consumption sensor publishes a new value, so PD reacts at the sensor's
     # native cadence instead of waiting for the next safety-timer tick. The
-    # timer above stays as a watchdog (runs the time-based subsystems and forces
-    # a safety recalculation if the sensor goes silent). Overlapping triggers
-    # are serialized by the controller's _control_lock.
+    # state-reported listener also covers publications whose value and attributes
+    # are unchanged. The timer above stays as a watchdog (runs the time-based
+    # subsystems and forces a safety recalculation if the sensor goes silent).
+    # Overlapping triggers are serialized by the controller's _control_lock.
     @callback
     def _on_consumption_changed(event):
+        # Record the publication before scheduling control.  A cycle can be busy
+        # with battery I/O when the next meter update arrives; measuring cadence
+        # only when that cycle eventually samples hass.states would turn a fast P1
+        # into a false 65-second sensor.
+        new_state = event.data.get("new_state")
+        controller._observe_sensor_cadence(
+            controller._sensor_report_time(new_state)
+        )
         # Do not forward the Event as `now`; the handler expects datetime|None.
         controller.schedule_control_cycle()
 
@@ -6398,6 +6453,29 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass, [controller.consumption_sensor], _on_consumption_changed
     ))
     entry.async_on_unload(unsub_consumption)
+
+    # Newer Home Assistant versions emit EVENT_STATE_REPORTED for a publication
+    # that leaves the state unchanged.  Use it for exact cadence tracking and for
+    # the same event-driven control path; older versions simply keep the changed-
+    # state listener and the control-loop fallback above.
+    unsub_consumption_reported = None
+    track_state_report_event = getattr(
+        event_helpers, "async_track_state_report_event", None
+    )
+    if track_state_report_event is not None:
+        @callback
+        def _on_consumption_reported(event):
+            new_state = event.data.get("new_state")
+            report_time = controller._sensor_report_time(new_state)
+            if report_time is None:
+                report_time = event.data.get("last_reported")
+            controller._observe_sensor_cadence(report_time)
+            controller.schedule_control_cycle()
+
+        unsub_consumption_reported = _call_once(track_state_report_event(
+            hass, [controller.consumption_sensor], _on_consumption_reported
+        ))
+        entry.async_on_unload(unsub_consumption_reported)
 
     # Set up hourly balance manager if enabled
     if controller._hourly_balance_mgr is not None:
@@ -6418,6 +6496,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "unsub_control": unsub_control,
         "unsub_refresh": unsub_refresh,
         "unsub_consumption": unsub_consumption,
+        "unsub_consumption_reported": unsub_consumption_reported,
         "balance_monitor": balance_monitor,
     }
 
@@ -6514,6 +6593,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if unsub := data.get("unsub_refresh"):
             unsub()
         if unsub := data.get("unsub_consumption"):
+            unsub()
+        if unsub := data.get("unsub_consumption_reported"):
             unsub()
 
         # 2. Set shutdown flag on all coordinators to suppress expected errors

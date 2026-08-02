@@ -127,6 +127,7 @@ def test_flip_accumulates_across_stale_cycles_on_slow_sensor():
 def _cadence_ctrl():
     return SimpleNamespace(
         _last_sensor_report_time=None,
+        _last_sensor_cadence_time=None,
         _slow_sensor_issue_created=False,
         _slow_sensor_intervals=0,
         _fast_sensor_intervals=0,
@@ -142,6 +143,10 @@ def _cadence(ctrl, elapsed_s):
 
 def _track_report(ctrl, state):
     return ChargeDischargeController._track_sensor_report(ctrl, state)
+
+
+def _observe_report(ctrl, report_time):
+    return ChargeDischargeController._observe_sensor_cadence(ctrl, report_time)
 
 
 def _capture_repairs(monkeypatch):
@@ -179,7 +184,6 @@ def test_unchanged_four_second_reports_do_not_create_slow_sensor_repair(monkeypa
         tracked_time, elapsed_s, is_stale = _track_report(ctrl, state)
         assert tracked_time == report_time
         assert is_stale is False
-        _cadence(ctrl, elapsed_s)
 
     assert created == []
     assert len(deleted) == 1
@@ -309,6 +313,36 @@ def test_created_repair_is_not_cleared_or_recreated_during_same_run(monkeypatch)
     assert deleted == []
     assert len(created) == 1
     assert ctrl._slow_sensor_issue_created is True
+
+
+def test_publications_are_counted_while_control_loop_is_busy(monkeypatch):
+    """A busy control loop must not turn fast P1 publications into a 65 s interval."""
+    ctrl = _cadence_ctrl()
+    created, _ = _capture_repairs(monkeypatch)
+    first_report = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+    # State-publication callbacks see every report while the control task is busy.
+    _observe_report(ctrl, first_report)
+    for report_number in range(1, 14):
+        _observe_report(
+            ctrl,
+            first_report + timedelta(seconds=5 * report_number)
+        )
+
+    # The control loop only gets to sample the latest state after a long-running
+    # battery operation.  That observation must not create a second 65 s cadence
+    # interval because the publication was already recorded by the callback.
+    latest_state = State(
+        "sensor.grid_power",
+        "123",
+        last_changed=first_report,
+        last_reported=first_report + timedelta(seconds=65),
+        last_updated=first_report + timedelta(seconds=65),
+    )
+    _track_report(ctrl, latest_state)
+
+    assert created == []
+    assert ctrl._slow_sensor_intervals == 0
 
 
 def test_persisted_repair_clears_after_fast_startup_cadence(monkeypatch):
