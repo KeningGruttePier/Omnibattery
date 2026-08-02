@@ -2,6 +2,8 @@
 
 The first step configures the global data sources for the integration.
 
+![Main sensor configuration](../assets/screenshots/configuration/main-sensor.png){ width="600"  style="display: block; margin: 0 auto;"}
+
 ## Grid consumption sensor
 
 A Home Assistant sensor that measures power exchange with the grid (in **W** or **kW**).
@@ -56,6 +58,12 @@ You can also leave it blank and configure it later in those specific sections.
 
 ---
 
+## Solar production sensor *(optional)*
+
+This is the real-time PV production power sensor (W or kW) from an external invertor not wired through the battery MPPT inputs. It is used to show the Solar node in the dashboard energy-flow diagram. Leave empty if your solar panels feed the battery MPPT directly.
+
+---
+
 ## Home consumption *(derived automatically)*
 
 There is **no household consumption sensor field** in setup — the integration derives your total home consumption from sensors it already has:
@@ -63,14 +71,3 @@ There is **no household consumption sensor field** in setup — the integration 
 **Home consumption = Grid power + Battery AC power + Solar power**
 
 This is the value shown by the energy-flow diagram and the `sensor.marstek_venus_system_home_consumption` sensor, and it feeds the 7-day history used by predictive charging and charge delay. Accumulation runs during the solar+battery window only (outside the configured charging time slot; all day if none); the counter resets at midnight and survives HA restarts.
-
-!!! note "Legacy household sensor"
-    Installs created before this field was removed may still have a `household_consumption_sensor` saved in their config. It is honoured **only when no solar production sensor is configured** — with a solar sensor the derived value is exact and preferred, so the saved sensor is ignored.
-
----
-
-## Solar production sensor *(optional)*
-
-This is the real-time PV production power sensor (W or kW) from an external invertor not wired through the battery MPPT inputs. It is used to show the Solar node in the dashboard energy-flow diagram. Leave empty if your solar panels feed the battery MPPT directly.
-
-![Main sensor configuration](../assets/screenshots/configuration/main-sensor.png){ width="600"  style="display: block; margin: 0 auto;"}

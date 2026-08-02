@@ -2,6 +2,8 @@
 
 El primer paso configura las fuentes de datos globales de la integración.
 
+![Configuración del sensor principal](../assets/screenshots/configuration/main-sensor.png){ width="600"  style="display: block; margin: 0 auto;"}
+
 ## Sensor de consumo de red
 
 Sensor de Home Assistant que mide el intercambio de potencia con la red (en **W** o **kW**).
@@ -56,6 +58,12 @@ También puedes dejarlo en blanco y configurarlo más tarde en esas secciones es
 
 ---
 
+## Sensor de producción solar *(optional)*
+
+Sensor de potencia de producción fotovoltaica (W o kW) en tiempo real de un inversor externo que no está conectado mediante las entradas MPPT de la batería. Se utiliza para mostrar el nodo Solar en el diagrama de flujo energético del panel. Déjalo vacío si tus paneles solares alimentan directamente el MPPT de la batería.
+
+---
+
 ## Consumo del hogar *(derivado automáticamente)*
 
 **No hay campo de sensor de consumo del hogar** en la configuración — la integración deriva el consumo total del hogar de sensores que ya tiene:
@@ -63,8 +71,3 @@ También puedes dejarlo en blanco y configurarlo más tarde en esas secciones es
 **Consumo del hogar = Potencia de red + Potencia AC de baterías + Producción solar**
 
 Es el valor que muestra el diagrama de flujo de energía y el sensor `sensor.marstek_venus_system_home_consumption`, y alimenta el historial de 7 días que usan la carga predictiva y el retraso de carga. La acumulación corre solo durante la franja solar+batería (fuera de la franja de carga; todo el día si no hay franja); el contador se reinicia a medianoche y sobrevive reinicios de HA.
-
-!!! note "Sensor de hogar heredado"
-    Instalaciones creadas antes de quitar este campo pueden conservar un `household_consumption_sensor` guardado en su config. Se honra **solo cuando no hay sensor de producción solar configurado** — con sensor solar, el valor derivado es exacto y preferido, así que el guardado se ignora.
-
-![Configuración del sensor principal](../assets/screenshots/configuration/main-sensor.png){ width="600"  style="display: block; margin: 0 auto;"}
