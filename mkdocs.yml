@@ -91,7 +91,7 @@ plugins:
             Architecture: Arquitectura
             Battery driver requirements: Requisitos para drivers de batería
             Complete register table: Tabla completa de registros
-            Shelly Pro 3EM MQTT script: Script MQTT para Shelly Pro 3EM
+            Shelly Pro 3EM MQTT scripts: Scripts MQTT para Shelly Pro 3EM
             For contributors: Para colaboradores
             Modbus registers: Registros Modbus
             HA entities: Entidades HA
@@ -165,7 +165,7 @@ nav:
   - Reference:
       - HA entities: reference/entities.md
       - Multi-battery management: features/multi-battery.md
-      - Shelly Pro 3EM MQTT script: reference/shelly-pro-3em-mqtt-script.md
+      - Shelly Pro 3EM MQTT scripts: reference/shelly-pro-3em-mqtt-script.md
       - Modbus registers:
           - Overview: reference/modbus-registers.md
           - Complete register table: reference/registers.md

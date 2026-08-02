@@ -1,17 +1,19 @@
-# Shelly Pro 3EM MQTT script
+# Shelly Pro 3EM MQTT scripts
 
-A Shelly Pro 3EM does not provide a 1–2 second MQTT telemetry cadence natively. This script runs on the device and publishes telemetry every second for a Pro 3EM configured with three single-phase meters. It also publishes Home Assistant MQTT Discovery configuration for the sensors.
+A Shelly Pro 3EM does not provide a 1–2 second MQTT telemetry cadence natively. The scripts on this page run on the device and publish telemetry every second. Choose the section that matches the Shelly's configured metering profile.
+
+## Three single-phase meters profile
 
 !!! warning "Scope"
     Use this script with a Shelly Pro 3EM configured in the three single-phase meters profile. It reads `EM1.GetStatus` for channels `0`, `1` and `2` and exposes each channel as a separate clamp.
 
-## Requirements
+### Requirements
 
 - MQTT enabled and connected on the Shelly device.
 - Home Assistant connected to the same MQTT broker.
 - MQTT Discovery enabled in Home Assistant (the default prefix is `homeassistant`).
 
-## Installation
+### Installation
 
 1. Open the Shelly web interface and go to **Scripts**.
 2. Create a new script and paste the code below.
@@ -20,7 +22,7 @@ A Shelly Pro 3EM does not provide a 1–2 second MQTT telemetry cadence natively
 
 The script publishes state to `shellypro3em/<device-id>/state` and availability to `shellypro3em/<device-id>/availability`. Discovery messages are retained by the MQTT broker, while state is published once per second.
 
-## Script
+### Script
 
 ```javascript
 // Shelly Pro 3EM in three single-phase meters profile
@@ -275,3 +277,206 @@ publishDiscovery();
 publishState();
 Timer.set(STATE_INTERVAL_MS, true, publishState);
 ```
+
+## Three-phase profile
+
+!!! warning "Scope"
+    Use this script with a Shelly Pro 3EM configured with the **triphase** profile. It reads **EM.GetStatus** with **id: 0** and publishes the three phases as **phase_a**, **phase_b** and **phase_c**. Run only one of the two profile scripts at a time.
+
+### Requirements
+
+- The Shelly Pro 3EM must use the **triphase** metering profile.
+- MQTT enabled and connected on the Shelly device.
+- Home Assistant connected to the same MQTT broker.
+- MQTT Discovery enabled in Home Assistant (the default prefix is **homeassistant**).
+
+### Installation
+
+1. Open the Shelly web interface and go to **Scripts**.
+2. Create a new script, or replace the script for the other metering profile.
+3. Paste the code below, save it, then enable and run it.
+4. Select the discovered grid-power sensor when configuring Omnibattery's [main sensor](../configuration/main-sensor.md).
+
+This script uses the same state and availability topics as the single-phase-profile script, so do not run both scripts simultaneously for the same device.
+
+### Script
+
+~~~javascript
+// Shelly Pro 3EM — perfil trifásico
+// MQTT telemetry + Home Assistant MQTT Discovery.
+//
+// Requiere:
+// - Perfil del Shelly: "triphase"
+// - MQTT habilitado y conectado
+// - MQTT Discovery habilitado en Home Assistant
+
+let DISCOVERY_PREFIX = "homeassistant";
+let STATE_INTERVAL_MS = 1000;
+let STATE_EXPIRE_AFTER_S = 5;
+
+let dev = Shelly.getDeviceInfo();
+let DEVICE_ID = dev.id || "shellypro3em";
+let DEVICE_NAME = dev.name || "Shelly Pro 3EM";
+
+let BASE_TOPIC = "shellypro3em/" + DEVICE_ID;
+let STATE_TOPIC = BASE_TOPIC + "/state";
+let AVAILABILITY_TOPIC = BASE_TOPIC + "/availability";
+
+let lastAvailability = null;
+let publishing = false;
+
+function haConfigTopic(objectId) {
+  return DISCOVERY_PREFIX + "/sensor/" + DEVICE_ID + "_" + objectId + "/config";
+}
+
+function setAvailability(online) {
+  if (lastAvailability === online) return;
+
+  lastAvailability = online;
+  MQTT.publish(
+    AVAILABILITY_TOPIC,
+    online ? "online" : "offline",
+    0,
+    true
+  );
+}
+
+function publishDiscoverySensor(
+  objectId,
+  name,
+  unit,
+  deviceClass,
+  stateClass,
+  valueTemplate
+) {
+  let payload = {
+    name: name,
+    unique_id: DEVICE_ID + "_" + objectId,
+    object_id: DEVICE_ID + "_" + objectId,
+
+    state_topic: STATE_TOPIC,
+    value_template: valueTemplate,
+    expire_after: STATE_EXPIRE_AFTER_S,
+
+    availability_topic: AVAILABILITY_TOPIC,
+    payload_available: "online",
+    payload_not_available: "offline",
+
+    unit_of_measurement: unit,
+    device_class: deviceClass,
+    state_class: stateClass,
+
+    device: {
+      identifiers: [DEVICE_ID],
+      name: DEVICE_NAME,
+      manufacturer: "Shelly",
+      model: "Shelly Pro 3EM",
+      sw_version: dev.fw_id || ""
+    }
+  };
+
+  MQTT.publish(haConfigTopic(objectId), JSON.stringify(payload), 0, true);
+}
+
+function publishPhaseDiscovery(phase, label) {
+  publishDiscoverySensor(
+    "phase_" + phase + "_active_power",
+    "Fase " + label + " Potencia activa",
+    "W", "power", "measurement",
+    "{{ value_json.phase_" + phase + ".act_power | float(0) }}"
+  );
+
+  publishDiscoverySensor(
+    "phase_" + phase + "_voltage",
+    "Fase " + label + " Voltaje",
+    "V", "voltage", "measurement",
+    "{{ value_json.phase_" + phase + ".voltage | float(0) }}"
+  );
+
+  publishDiscoverySensor(
+    "phase_" + phase + "_current",
+    "Fase " + label + " Corriente",
+    "A", "current", "measurement",
+    "{{ value_json.phase_" + phase + ".current | float(0) }}"
+  );
+
+  publishDiscoverySensor(
+    "phase_" + phase + "_power_factor",
+    "Fase " + label + " Factor de potencia",
+    "", "power_factor", "measurement",
+    "{{ value_json.phase_" + phase + ".pf | float(0) }}"
+  );
+}
+
+function publishDiscovery() {
+  publishDiscoverySensor(
+    "total_active_power",
+    "Potencia activa total",
+    "W", "power", "measurement",
+    "{{ value_json.total_act_power | float(0) }}"
+  );
+
+  publishDiscoverySensor(
+    "total_current",
+    "Corriente total",
+    "A", "current", "measurement",
+    "{{ value_json.total_current | float(0) }}"
+  );
+
+  publishPhaseDiscovery("a", "A");
+  publishPhaseDiscovery("b", "B");
+  publishPhaseDiscovery("c", "C");
+}
+
+function phasePayload(status, phase) {
+  return {
+    act_power: status[phase + "_act_power"],
+    aprt_power: status[phase + "_aprt_power"],
+    current: status[phase + "_current"],
+    voltage: status[phase + "_voltage"],
+    pf: status[phase + "_pf"],
+    freq: status[phase + "_freq"]
+  };
+}
+
+function publishState() {
+  if (publishing) return;
+  publishing = true;
+
+  Shelly.call("EM.GetStatus", { id: 0 }, function (status, err, msg) {
+    publishing = false;
+
+    if (err !== 0) {
+      print("EM:0 error:", err, msg);
+      setAvailability(false);
+      return;
+    }
+
+    let totalPower = status.total_act_power;
+    if (totalPower === null || typeof totalPower === "undefined") {
+      totalPower =
+        (status.a_act_power || 0) +
+        (status.b_act_power || 0) +
+        (status.c_act_power || 0);
+    }
+
+    let payload = {
+      total_act_power: totalPower,
+      total_aprt_power: status.total_aprt_power,
+      total_current: status.total_current,
+      neutral_current: status.n_current,
+
+      phase_a: phasePayload(status, "a"),
+      phase_b: phasePayload(status, "b"),
+      phase_c: phasePayload(status, "c")
+    };
+
+    setAvailability(true);
+    MQTT.publish(STATE_TOPIC, JSON.stringify(payload), 0, false);
+  });
+}
+
+publishDiscovery();
+publishState();
+Timer.set(STATE_INTERVAL_MS, true, publishState);
+~~~
