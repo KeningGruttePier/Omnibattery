@@ -25,7 +25,12 @@ from custom_components.omnibattery.const import (
     PREDICTIVE_MODE_REALTIME_PRICE,
     PREDICTIVE_MODE_TIME_SLOT,
 )
-from custom_components.omnibattery.pricing import PriceSlot
+from custom_components.omnibattery.pricing import (
+    BatterySnapshot,
+    CurtailmentPlan,
+    PreDischargeSlot,
+    PriceSlot,
+)
 from custom_components.omnibattery.pricing import engine as pricing_engine
 from custom_components.omnibattery.pricing.engine import PricingManager
 from custom_components.omnibattery.pricing.nordpool import OfficialNordPoolSource
@@ -563,3 +568,110 @@ def test_hacs_nordpool_raw_today_does_not_call_official_service():
     asyncio.run(PricingManager(hass, ctrl)._maybe_refresh_nordpool_prices(force=True))
 
     assert services.calls == []
+
+
+# ----------------------------------------------------------------------
+# Smart pre-discharge runtime lifecycle
+# ----------------------------------------------------------------------
+
+def test_smart_predischarge_is_scoped_to_predictive_dynamic_pricing():
+    ctrl = _controller(
+        smart_predischarge_enabled=True,
+        predictive_charging_enabled=True,
+        predictive_charging_mode=PREDICTIVE_MODE_DYNAMIC_PRICING,
+    )
+    manager = _mgr(ctrl)
+
+    assert manager._smart_predischarge_enabled() is True
+
+    ctrl.predictive_charging_mode = PREDICTIVE_MODE_REALTIME_PRICE
+    assert manager._smart_predischarge_enabled() is False
+
+
+def test_smart_predischarge_cleanup_removes_override_and_blockers():
+    calls = []
+    ctrl = _controller()
+    ctrl.coordinators = []
+    ctrl.remove_setpoint_override = lambda source: calls.append(("override", source))
+    ctrl.remove_discharge_block = lambda source, coordinator=None: calls.append(
+        ("block", source, coordinator)
+    )
+    ctrl._curtailment_plan = CurtailmentPlan(status="predischarging", reason="selected")
+    manager = _mgr(ctrl)
+
+    manager.clear_curtailment_runtime("disabled")
+
+    assert ("override", "curtailment_predischarge") in calls
+    assert ("block", "curtailment_negative_window", None) in calls
+    assert ctrl._curtailment_runtime_status == "disabled"
+    assert ctrl._curtailment_runtime_reason == "disabled"
+
+
+def test_smart_predischarge_runtime_starts_stops_and_protects_negative_window():
+    now = datetime.now()
+    active_pre_slot = PreDischargeSlot(
+        now - timedelta(minutes=1), now + timedelta(minutes=10), 0.40
+    )
+    future_risk = PriceSlot(
+        now + timedelta(hours=1), now + timedelta(hours=2), -0.10
+    )
+    calls = []
+    state = SimpleNamespace(state="0.0", attributes={})
+    hass = SimpleNamespace(states=SimpleNamespace(get=lambda _entity_id: state))
+    coordinator = SimpleNamespace(data={"battery_soc": 80.0}, is_available=True, name="b1")
+    ctrl = _controller(
+        smart_predischarge_enabled=True,
+        predictive_charging_enabled=True,
+        predictive_charging_mode=PREDICTIVE_MODE_DYNAMIC_PRICING,
+        coordinators=[coordinator],
+        consumption_sensor="sensor.grid",
+        _curtailment_plan=CurtailmentPlan(
+            status="planned",
+            reason="headroom_required",
+            risk_slots=[future_risk],
+            selected_discharge_slots=[active_pre_slot],
+            required_headroom_kwh=3.0,
+        ),
+        remove_setpoint_override=lambda source: calls.append(("remove_override", source)),
+        set_setpoint_override=lambda source, value, priority=0: calls.append(
+            ("set_override", source, value, priority)
+        ),
+        remove_discharge_block=lambda source, coordinator=None: calls.append(
+            ("remove_block", source, coordinator)
+        ),
+        set_discharge_block=lambda source, reason, details=None, coordinator=None: calls.append(
+            ("set_block", source, reason, coordinator)
+        ),
+        _apply_meter_transform=lambda _state: 0.0,
+        _curtailment_active=False,
+        _curtailment_active_export_target_w=0.0,
+    )
+    manager = PricingManager(hass, ctrl)
+    manager._get_current_price = lambda: 0.30
+    manager._curtailment_battery_snapshots = lambda: [
+        BatterySnapshot("b1", 80.0, 10.0, 100.0, 10.0, 2000.0)
+    ]
+
+    manager.refresh_curtailment_runtime()
+
+    assert any(call[:2] == ("set_override", "curtailment_predischarge") for call in calls)
+    assert ctrl._curtailment_runtime_status == "predischarging"
+
+    # The same runtime plan blocks normal discharge during the negative window.
+    ctrl._curtailment_plan = CurtailmentPlan(
+        status="planned",
+        reason="headroom_required",
+        risk_slots=[PriceSlot(now - timedelta(minutes=1), now + timedelta(minutes=10), -0.10)],
+        selected_discharge_slots=[],
+        required_headroom_kwh=3.0,
+    )
+    manager._get_current_price = lambda: -0.10
+    manager.refresh_curtailment_runtime()
+
+    assert ctrl._curtailment_runtime_status == "protected_window"
+    assert any(call[0] == "set_block" and call[1] == "curtailment_negative_window" for call in calls)
+
+    ctrl.smart_predischarge_enabled = False
+    manager.refresh_curtailment_runtime()
+    assert ctrl._curtailment_runtime_status == "disabled"
+    assert ("remove_override", "curtailment_predischarge") in calls

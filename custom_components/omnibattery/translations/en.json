@@ -288,6 +288,11 @@
           "max_price_threshold": "Maximum price threshold (optional)",
           "discharge_price_threshold": "Discharge price floor (optional)",
           "dp_price_discharge_control": "Only discharge when price is above threshold",
+          "smart_predischarge_enabled": "Enable Smart Pre-discharge / Anti-curtailment",
+          "negative_injection_threshold": "Negative injection threshold (currency/kWh)",
+          "predischarge_reserve_soc": "Pre-discharge reserve SOC (%)",
+          "predischarge_max_export_power_w": "Pre-discharge maximum export (W)",
+          "curtailment_headroom_margin_pct": "Curtailment headroom margin (%)",
           "solar_forecast_sensor": "Solar forecast sensor (kWh)",
           "predictive_safety_margin_kwh": "Solar forecast safety margin (kWh)",
           "predictive_grid_charge_margin_pct": "Predictive grid charge margin (%)"
@@ -298,6 +303,11 @@
           "max_price_threshold": "Slots above this price will not be selected. When price-gated discharge is enabled, this value is also used as the discharge threshold unless a separate discharge floor is set below. Use major currency/kWh: €/kWh for Nordpool/PVPC, CHF/kWh for CKW. HACS Nordpool prices configured in cents are converted automatically. Leave empty to use all slots and use the daily average as the discharge threshold.",
           "discharge_price_threshold": "Optional separate floor for price-gated discharge. Discharge is blocked while the price is at or below this value, opening an idle band between the charge ceiling above and this floor: in that band the battery neither grid-charges nor discharges (solar-surplus charging still works). Leave empty to reuse the maximum price threshold for both (current single-threshold behavior).",
           "dp_price_discharge_control": "When enabled, the battery only discharges when the current electricity price exceeds the configured maximum price threshold. If no threshold is configured, it uses today's average price computed automatically from the price sensor. If time slots restrict discharge, both conditions must be met.",
+          "smart_predischarge_enabled": "Opt-in dynamic-pricing anti-curtailment. It creates headroom before forecast PV reaches a negative-price window while preserving all SOC, user and battery safety limits.",
+          "negative_injection_threshold": "Protect slots whose normalized price is at or below this inclusive threshold when forecast PV exceeds estimated household consumption.",
+          "predischarge_reserve_soc": "Additional SOC floor for pre-discharge. 0 uses the configured and guaranteed minimum SOC floors.",
+          "predischarge_max_export_power_w": "Maximum deliberate grid export during pre-discharge. 0 W means self-consumption only; the PV inverter is never controlled.",
+          "curtailment_headroom_margin_pct": "Extra headroom reserved above the forecast requirement. 0% follows the forecast estimate.",
           "solar_forecast_sensor": "Sensor providing the solar production forecast in kWh (e.g., Solcast). If you have solar panels, configure this sensor — the system will only charge from the grid when solar forecast is insufficient. If you have no solar panels, leave this empty — the system will charge whenever battery energy is not enough for the day. Not required if you already configured this sensor in the initial setup step — it will be used automatically.",
           "predictive_safety_margin_kwh": "Extra energy buffer added to the consumption forecast before deciding whether to charge. Useful when your solar forecast tends to be optimistic. Set to 0 to disable (default). Capped at total battery capacity.",
           "predictive_grid_charge_margin_pct": "Extra % charged from the grid on top of the solar-deficit, to hedge against optimistic solar forecasts. E.g. a 2 kWh grid need at 50% charges 3 kWh. 0 to disable (default). Capped at the gap to max SOC."
@@ -877,6 +887,11 @@
           "max_price_threshold": "Maximum price threshold (optional)",
           "discharge_price_threshold": "Discharge price floor (optional)",
           "dp_price_discharge_control": "Only discharge when price is above threshold",
+          "smart_predischarge_enabled": "Enable Smart Pre-discharge / Anti-curtailment",
+          "negative_injection_threshold": "Negative injection threshold (currency/kWh)",
+          "predischarge_reserve_soc": "Pre-discharge reserve SOC (%)",
+          "predischarge_max_export_power_w": "Pre-discharge maximum export (W)",
+          "curtailment_headroom_margin_pct": "Curtailment headroom margin (%)",
           "solar_forecast_sensor": "Solar forecast sensor (kWh)",
           "predictive_safety_margin_kwh": "Solar forecast safety margin (kWh)",
           "predictive_grid_charge_margin_pct": "Predictive grid charge margin (%)"
@@ -887,6 +902,11 @@
           "max_price_threshold": "Slots above this price will not be selected. When price-gated discharge is enabled, this value is also used as the discharge threshold unless a separate discharge floor is set below. Use major currency/kWh: €/kWh for Nordpool/PVPC, CHF/kWh for CKW. HACS Nordpool prices configured in cents are converted automatically. Leave empty to use all slots and use the daily average as the discharge threshold.",
           "discharge_price_threshold": "Optional separate floor for price-gated discharge. Discharge is blocked while the price is at or below this value, opening an idle band between the charge ceiling above and this floor: in that band the battery neither grid-charges nor discharges (solar-surplus charging still works). Leave empty to reuse the maximum price threshold for both (current single-threshold behavior).",
           "dp_price_discharge_control": "When enabled, the battery only discharges when the current electricity price exceeds the configured maximum price threshold. If no threshold is configured, it uses today's average price computed automatically from the price sensor. If time slots restrict discharge, both conditions must be met.",
+          "smart_predischarge_enabled": "Opt-in dynamic-pricing anti-curtailment. It creates headroom before forecast PV reaches a negative-price window while preserving all SOC, user and battery safety limits.",
+          "negative_injection_threshold": "Protect slots whose normalized price is at or below this inclusive threshold when forecast PV exceeds estimated household consumption.",
+          "predischarge_reserve_soc": "Additional SOC floor for pre-discharge. 0 uses the configured and guaranteed minimum SOC floors.",
+          "predischarge_max_export_power_w": "Maximum deliberate grid export during pre-discharge. 0 W means self-consumption only; the PV inverter is never controlled.",
+          "curtailment_headroom_margin_pct": "Extra headroom reserved above the forecast requirement. 0% follows the forecast estimate.",
           "solar_forecast_sensor": "Sensor providing the solar production forecast in kWh (e.g., Solcast). If you have solar panels, configure this sensor — the system will only charge from the grid when solar forecast is insufficient. If you have no solar panels, leave this empty — the system will charge whenever battery energy is not enough for the day. Not required if you already configured this sensor in the initial setup step — it will be used automatically.",
           "predictive_safety_margin_kwh": "Extra energy buffer added to the consumption forecast before deciding whether to charge. Useful when your solar forecast tends to be optimistic. Set to 0 to disable (default). Capped at total battery capacity.",
           "predictive_grid_charge_margin_pct": "Extra % charged from the grid on top of the solar-deficit, to hedge against optimistic solar forecasts. E.g. a 2 kWh grid need at 50% charges 3 kWh. 0 to disable (default). Capped at the gap to max SOC."
@@ -1148,6 +1168,9 @@
       },
       "dp_price_discharge_control": {
         "name": "Price-Based Discharge"
+      },
+      "smart_predischarge": {
+        "name": "Smart Pre-discharge / Anti-curtailment"
       },
       "rt_price_discharge_control": {
         "name": "Price-Based Discharge"
@@ -1548,6 +1571,9 @@
       "predictive_charging_active": {
         "name": "Predictive Charging Active"
       },
+      "curtailment_status": {
+        "name": "Smart Pre-discharge Status"
+      },
       "wifi_status": {
         "name": "WiFi Status"
       },
@@ -1746,6 +1772,18 @@
       },
       "round_trip_efficiency": {
         "name": "Round-Trip Efficiency"
+      },
+      "negative_injection_threshold": {
+        "name": "Negative Injection Threshold"
+      },
+      "predischarge_reserve_soc": {
+        "name": "Pre-discharge Reserve SOC"
+      },
+      "predischarge_max_export_power_w": {
+        "name": "Pre-discharge Maximum Export"
+      },
+      "curtailment_headroom_margin_pct": {
+        "name": "Curtailment Headroom Margin"
       }
     },
     "button": {

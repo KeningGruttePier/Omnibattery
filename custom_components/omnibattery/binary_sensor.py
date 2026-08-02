@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 
 from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.config_entries import ConfigEntry
@@ -11,7 +12,11 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from .const import DOMAIN, CONF_CAPACITY_PROTECTION_ENABLED
+from .const import (
+    DOMAIN,
+    CONF_CAPACITY_PROTECTION_ENABLED,
+    PREDICTIVE_MODE_DYNAMIC_PRICING,
+)
 from .infra.coordinator import MarstekVenusDataUpdateCoordinator
 from .infra.entity_naming import english_entity_id, system_entity_id, SYSTEM_UNIQUE_ID_PREFIX
 
@@ -40,6 +45,8 @@ async def async_setup_entry(
     # Add predictive charging status sensor (system-level)
     if controller and controller.predictive_charging_enabled:
         entities.append(PredictiveChargingStatusSensor(hass, entry, controller))
+        if controller.predictive_charging_mode == PREDICTIVE_MODE_DYNAMIC_PRICING:
+            entities.append(CurtailmentStatusSensor(hass, entry, controller))
 
     # Add capacity protection status sensor (system-level, when configured, regardless of enabled state)
     if controller and CONF_CAPACITY_PROTECTION_ENABLED in entry.data:
@@ -218,6 +225,98 @@ class CapacityProtectionStatusSensor(BinarySensorEntity):
     @property
     def device_info(self):
         """Return device information for the system."""
+        return {
+            "identifiers": {(DOMAIN, "marstek_venus_system")},
+            "name": "Omnibattery System",
+            "manufacturer": "Omnibattery",
+            "model": "Multi-Battery System",
+        }
+
+
+class CurtailmentStatusSensor(BinarySensorEntity):
+    """Diagnostic state for the dynamic-pricing smart pre-discharge planner."""
+
+    _unrecorded_attributes = frozenset({
+        "risk_slots",
+        "selected_discharge_slots",
+        "target_soc_by_battery",
+    })
+
+    def __init__(self, hass: HomeAssistant, entry: ConfigEntry, controller) -> None:
+        self.hass = hass
+        self.entry = entry
+        self.controller = controller
+        self._attr_has_entity_name = True
+        self._attr_translation_key = "curtailment_status"
+        self._attr_unique_id = f"{SYSTEM_UNIQUE_ID_PREFIX}curtailment_status"
+        self.entity_id = system_entity_id("binary_sensor", "curtailment_status")
+        self._attr_device_class = "running"
+        self._attr_icon = "mdi:solar-power-variant"
+        self._attr_should_poll = True
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    @property
+    def is_on(self) -> bool:
+        return getattr(self.controller, "_curtailment_runtime_status", "disabled") in {
+            "predischarging",
+            "protected_window",
+        }
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        plan = getattr(self.controller, "_curtailment_plan", None)
+        attrs = {
+            "enabled": bool(getattr(self.controller, "smart_predischarge_enabled", False)),
+            "status": getattr(self.controller, "_curtailment_runtime_status", "disabled"),
+            "reason": getattr(self.controller, "_curtailment_runtime_reason", "disabled"),
+            "active_export_target_w": getattr(
+                self.controller, "_curtailment_active_export_target_w", 0.0
+            ),
+            "negative_injection_threshold": getattr(
+                self.controller, "negative_injection_threshold", 0.0
+            ),
+        }
+        if plan is None:
+            return attrs
+        now = datetime.now()
+        next_window = next(
+            (slot.start.isoformat() for slot in plan.risk_slots if slot.end > now),
+            None,
+        )
+        attrs.update({
+            "next_window": next_window,
+            "risk_slots": [
+                {"start": slot.start.isoformat(), "end": slot.end.isoformat(), "price": slot.price}
+                for slot in plan.risk_slots
+            ],
+            "required_headroom_kwh": round(plan.required_headroom_kwh, 3),
+            "current_headroom_kwh": round(plan.current_headroom_kwh, 3),
+            "planned_discharge_kwh": round(plan.planned_discharge_kwh, 3),
+            "shortfall_kwh": round(plan.shortfall_kwh, 3),
+            "target_soc_by_battery": {
+                name: round(value, 1)
+                for name, value in plan.target_soc_by_battery.items()
+            },
+            "selected_discharge_slots": [
+                {
+                    "start": slot.start.isoformat(),
+                    "end": slot.end.isoformat(),
+                    "price": slot.price,
+                    "planned_energy_kwh": round(slot.planned_energy_kwh, 3),
+                    "power_w": round(slot.power_w),
+                }
+                for slot in plan.selected_discharge_slots
+            ],
+            "plan_status": plan.status,
+            "plan_reason": plan.reason,
+            "evaluation_time": (
+                plan.evaluation_time.isoformat() if plan.evaluation_time else None
+            ),
+        })
+        return attrs
+
+    @property
+    def device_info(self):
         return {
             "identifiers": {(DOMAIN, "marstek_venus_system")},
             "name": "Omnibattery System",

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 from datetime import datetime, timedelta
 from time import monotonic
 from typing import TYPE_CHECKING, Any, Optional
@@ -45,6 +46,11 @@ from ..const import (
     FLOOR_HYSTERESIS_PCT,
 )
 from . import PriceSlot, DynamicPricingSchedule, calculations, notifications
+from .curtailment import (
+    BatterySnapshot,
+    CurtailmentPlan,
+    plan_curtailment,
+)
 from .nordpool import (
     NORDPOOL_DOMAIN,
     NORDPOOL_GET_PRICES_SERVICE,
@@ -580,6 +586,437 @@ class PricingManager:
         return any(s.start <= now < s.end for s in self._controller._dynamic_pricing_schedule.selected_slots)
 
     # =========================================================================
+    # SMART PREDISCHARGE / ANTI-CURTAILMENT
+    # =========================================================================
+
+    def _smart_predischarge_enabled(self) -> bool:
+        """Return the feature gate, including the dynamic-pricing scope."""
+        return bool(
+            getattr(self._controller, "smart_predischarge_enabled", False)
+            and getattr(self._controller, "predictive_charging_enabled", False)
+            and getattr(self._controller, "predictive_charging_mode", None)
+            == PREDICTIVE_MODE_DYNAMIC_PRICING
+        )
+
+    def _curtailment_plan_slots(self, slots: list[PriceSlot], now: datetime) -> list[PriceSlot]:
+        """Keep the daily solar plan on the current local day only."""
+        return [slot for slot in slots if slot.end > now and slot.start.date() == now.date()]
+
+    @staticmethod
+    def _future_slot_matches_operation_block(slot: PriceSlot, operation_slot: dict) -> bool:
+        """Return whether a recurring user slot forbids discharge in ``slot``."""
+        if not operation_slot.get("enabled", True) or operation_slot.get("allow_discharge", False):
+            return False
+        days = operation_slot.get("days", [])
+        start_text = operation_slot.get("start_time")
+        end_text = operation_slot.get("end_time")
+        if not start_text or not end_text:
+            return False
+        try:
+            start = datetime.strptime(str(start_text), "%H:%M").time()
+            end = datetime.strptime(str(end_text), "%H:%M").time()
+        except (TypeError, ValueError):
+            return False
+
+        def matches(moment: datetime) -> bool:
+            day = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")[moment.weekday()]
+            if days and day not in days:
+                return False
+            if start <= end:
+                return start <= moment.time() < end
+            return moment.time() >= start or moment.time() < end
+
+        # Checking both ends catches ordinary and cross-midnight recurring slots.
+        return matches(slot.start) or matches(slot.end - timedelta(seconds=1))
+
+    def _curtailment_operation_blocked_slots(self, slots: list[PriceSlot]) -> list[PriceSlot]:
+        configured = self._controller.config_entry.data.get("no_discharge_time_slots", [])
+        if not configured:
+            return []
+        if isinstance(configured, dict):
+            configured = [configured]
+        return [
+            slot
+            for slot in slots
+            if any(self._future_slot_matches_operation_block(slot, item) for item in configured)
+        ]
+
+    def _curtailment_battery_snapshots(self) -> list[BatterySnapshot]:
+        """Read live battery limits without bypassing any user ownership."""
+        snapshots: list[BatterySnapshot] = []
+        reserve = max(0.0, float(getattr(self._controller, "predischarge_reserve_soc", 0.0) or 0.0))
+        guaranteed = (
+            float(getattr(self._controller, "_predictive_min_soc_floor", 0.0) or 0.0)
+            if getattr(self._controller, "_predictive_min_soc_floor_enabled", False)
+            else 0.0
+        )
+        for coordinator in self._controller.coordinators:
+            data = coordinator.data or {}
+            eligible = bool(
+                data
+                and coordinator.is_available
+                and not self._controller._non_responsive.is_excluded(coordinator)
+                and not self._controller._is_active_balance_mode_running(coordinator)
+                and not self._controller._is_backup_function_active(coordinator)
+                and not coordinator.rs485_user_disabled
+                and not self._controller._is_manual_slot_owned(coordinator)
+            )
+            # A user/time-slot blocker must prevent a forced plan.  Price and
+            # this feature's own transient blockers are deliberately ignored:
+            # the former changes with each future slot and the latter is rebuilt.
+            blockers = self._controller.get_discharge_blockers(coordinator)
+            hard_blockers = set(blockers) - {
+                "price_discharge",
+                "curtailment_negative_window",
+                "curtailment_floor",
+            }
+            can_discharge = eligible and not hard_blockers
+            try:
+                soc = float(data.get("battery_soc"))
+                capacity = float(data.get("battery_total_energy"))
+                max_discharge = float(self._controller._battery_power_limit(coordinator, False))
+                max_soc = float(coordinator.max_soc)
+                floor = max(
+                    float(self._controller._effective_discharge_min_soc(coordinator)[0]),
+                    guaranteed,
+                    reserve,
+                )
+            except (AttributeError, TypeError, ValueError):
+                eligible = False
+                can_discharge = False
+                soc = capacity = max_discharge = max_soc = floor = 0.0
+            snapshots.append(
+                BatterySnapshot(
+                    name=coordinator.name,
+                    soc_pct=soc,
+                    capacity_kwh=capacity,
+                    max_soc_pct=max_soc,
+                    floor_soc_pct=floor,
+                    max_discharge_power_w=max_discharge,
+                    eligible=eligible,
+                    can_discharge=can_discharge,
+                )
+            )
+        return snapshots
+
+    def _refresh_curtailment_floor_blocks(
+        self, snapshots: list[BatterySnapshot]
+    ) -> None:
+        """Guard the configured smart reserve while a smart discharge is live."""
+        controller = self._controller
+        for coordinator in controller.coordinators:
+            controller.remove_discharge_block("curtailment_floor", coordinator=coordinator)
+
+        snapshots_by_name = {snapshot.name: snapshot for snapshot in snapshots}
+        for coordinator in controller.coordinators:
+            snapshot = snapshots_by_name.get(coordinator.name)
+            if snapshot is None or not snapshot.eligible or not snapshot.can_discharge:
+                continue
+            if snapshot.soc_pct <= snapshot.floor_soc_pct + 1e-6:
+                controller.set_discharge_block(
+                    "curtailment_floor",
+                    "predischarge_reserve_or_soc_floor",
+                    {
+                        "battery": snapshot.name,
+                        "soc": snapshot.soc_pct,
+                        "floor_soc": snapshot.floor_soc_pct,
+                    },
+                    coordinator=coordinator,
+                )
+
+    def _curtailment_forecast_model(self, now: datetime) -> tuple[float | None, object | None, float | None]:
+        """Return today's forecast, cumulative solar model and daily consumption."""
+        sensor = getattr(self._controller, "solar_forecast_sensor", None)
+        if not sensor:
+            return None, None, None
+        state = self._hass.states.get(sensor)
+        if state is None or state.state in ("unknown", "unavailable"):
+            return None, None, None
+        try:
+            forecast_kwh = float(state.state) * 0.85
+        except (TypeError, ValueError):
+            return None, None, None
+
+        tracker = getattr(self._controller, "_consumption_tracker", None)
+        if tracker is None:
+            return None, None, None
+        try:
+            t_start = getattr(self._controller, "_solar_t_start", None)
+            if t_start is None:
+                t_start = tracker.calculate_sunrise()
+            if t_start is None:
+                return None, None, None
+            if getattr(self._controller, "_solar_t_start", None) is not None:
+                t_end = tracker.estimate_t_end()
+            else:
+                t_end = 2 * tracker.calculate_solar_noon() - t_start
+            if t_end <= t_start:
+                return None, None, None
+            fraction_fn = lambda hour: tracker.get_solar_fraction_done(hour, t_start, t_end)
+            daily_consumption = float(tracker.get_avg_daily_consumption())
+        except (AttributeError, TypeError, ValueError):
+            return None, None, None
+        return forecast_kwh, fraction_fn, daily_consumption
+
+    def _build_curtailment_plan(
+        self,
+        slots: list[PriceSlot],
+        reserved_slots: list[PriceSlot] | None = None,
+        *,
+        now: datetime | None = None,
+    ) -> CurtailmentPlan:
+        """Calculate and publish a new non-persistent smart plan."""
+        evaluated_at = now or datetime.now()
+        if not self._smart_predischarge_enabled():
+            plan = CurtailmentPlan(
+                status="disabled", reason="feature_disabled", evaluation_time=evaluated_at
+            )
+            self._controller._curtailment_plan = plan
+            # Small pricing-engine test doubles and legacy startup paths may not
+            # expose the full controller blocker API.  Runtime cleanup is owned
+            # by the real controller's refresh/update paths.
+            if (
+                hasattr(self._controller, "remove_setpoint_override")
+                and hasattr(self._controller, "coordinators")
+            ):
+                self.clear_curtailment_runtime("disabled", preserve_plan=True)
+            return plan
+
+        daily_slots = self._curtailment_plan_slots(slots, evaluated_at)
+        forecast, solar_model, daily_consumption = self._curtailment_forecast_model(evaluated_at)
+        if forecast is None or solar_model is None or daily_consumption is None:
+            plan = CurtailmentPlan(
+                status="fail_safe",
+                reason="missing_forecast_or_solar_model",
+                evaluation_time=evaluated_at,
+            )
+            self._controller._curtailment_plan = plan
+            self.clear_curtailment_runtime(plan.reason, preserve_plan=True)
+            self._set_curtailment_runtime("fail_safe", plan.reason)
+            return plan
+
+        reserved = list(reserved_slots or [])
+        reserved.extend(self._curtailment_operation_blocked_slots(daily_slots))
+        try:
+            plan = plan_curtailment(
+                daily_slots,
+                forecast,
+                daily_consumption,
+                self._curtailment_battery_snapshots(),
+                negative_injection_threshold=float(
+                    getattr(self._controller, "negative_injection_threshold", 0.0)
+                ),
+                predischarge_reserve_soc=float(
+                    getattr(self._controller, "predischarge_reserve_soc", 0.0)
+                ),
+                headroom_margin_pct=float(
+                    getattr(self._controller, "curtailment_headroom_margin_pct", 0.0)
+                ),
+                charge_power_w=float(getattr(self._controller, "max_charge_capacity", 0.0) or 0.0),
+                max_export_power_w=float(
+                    getattr(self._controller, "predischarge_max_export_power_w", 0.0)
+                ),
+                solar_fraction_fn=solar_model,
+                reserved_slots=reserved,
+                now=evaluated_at,
+            )
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.error("Smart pre-discharge planner failed; using fail-safe: %s", err)
+            plan = CurtailmentPlan(
+                status="fail_safe",
+                reason="planner_error",
+                evaluation_time=evaluated_at,
+            )
+            self._controller._curtailment_plan = plan
+            self.clear_curtailment_runtime(plan.reason, preserve_plan=True)
+            self._set_curtailment_runtime("fail_safe", plan.reason)
+            return plan
+        self._controller._curtailment_plan = plan
+        self._controller._curtailment_last_evaluation = evaluated_at
+        self._set_curtailment_runtime(plan.status, plan.reason)
+        return plan
+
+    def _set_curtailment_runtime(
+        self, status: str, reason: str, active_export_target_w: float | None = None
+    ) -> None:
+        """Publish runtime state and log only transitions."""
+        controller = self._controller
+        target = 0.0 if active_export_target_w is None else float(active_export_target_w)
+        old = (
+            getattr(controller, "_curtailment_runtime_status", "disabled"),
+            getattr(controller, "_curtailment_runtime_reason", "disabled"),
+            round(getattr(controller, "_curtailment_active_export_target_w", 0.0), 1),
+        )
+        controller._curtailment_runtime_status = status
+        controller._curtailment_runtime_reason = reason
+        controller._curtailment_active_export_target_w = target
+        new = (status, reason, round(target, 1))
+        if old != new:
+            _LOGGER.info(
+                "Smart pre-discharge: %s (%s)%s",
+                status,
+                reason,
+                f", export target={target:.0f}W" if status == "predischarging" else "",
+            )
+
+    def clear_curtailment_runtime(self, reason: str = "cleanup", *, preserve_plan: bool = False) -> None:
+        """Remove every smart override/block and optionally keep diagnostics."""
+        controller = self._controller
+        controller.remove_setpoint_override("curtailment_predischarge")
+        controller.remove_discharge_block("curtailment_negative_window")
+        for coordinator in controller.coordinators:
+            controller.remove_discharge_block("curtailment_negative_window", coordinator=coordinator)
+            controller.remove_discharge_block("curtailment_floor", coordinator=coordinator)
+        controller._curtailment_active = False
+        controller._curtailment_active_export_target_w = 0.0
+        if not preserve_plan:
+            controller._curtailment_plan = CurtailmentPlan(
+                status="disabled", reason=reason, evaluation_time=datetime.now()
+            )
+        self._set_curtailment_runtime("disabled" if not preserve_plan else getattr(
+            getattr(controller, "_curtailment_plan", None), "status", "disabled"
+        ), reason)
+
+    def _current_curtailment_risk_slot(self, plan: CurtailmentPlan, now: datetime) -> PriceSlot | None:
+        return next((slot for slot in plan.risk_slots if slot.start <= now < slot.end), None)
+
+    def _current_predischarge_slot(self, plan: CurtailmentPlan, now: datetime):
+        return next((slot for slot in plan.selected_discharge_slots if slot.start <= now < slot.end), None)
+
+    def refresh_curtailment_runtime(self) -> None:
+        """Apply or clear the live action, with fail-safe cleanup on errors."""
+        try:
+            self._refresh_curtailment_runtime()
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.error("Smart pre-discharge runtime failed; cleaning up: %s", err)
+            try:
+                self.clear_curtailment_runtime("runtime_error", preserve_plan=True)
+            except Exception as cleanup_err:  # noqa: BLE001
+                _LOGGER.error("Smart pre-discharge cleanup also failed: %s", cleanup_err)
+            try:
+                self._set_curtailment_runtime("fail_safe", "runtime_error")
+            except Exception:  # noqa: BLE001
+                # Do not let diagnostics compromise the PD loop's safety path.
+                pass
+
+    def _refresh_curtailment_runtime(self) -> None:
+        """Apply or clear the live block/override for the current slot."""
+        if not self._smart_predischarge_enabled():
+            self.clear_curtailment_runtime("feature_disabled")
+            return
+        plan = getattr(self._controller, "_curtailment_plan", None)
+        if plan is None:
+            self.clear_curtailment_runtime("no_plan", preserve_plan=True)
+            self._set_curtailment_runtime("fail_safe", "no_plan")
+            return
+        if plan.status == "fail_safe":
+            self.clear_curtailment_runtime(plan.reason, preserve_plan=True)
+            self._set_curtailment_runtime("fail_safe", plan.reason)
+            return
+        meter_state = self._hass.states.get(getattr(self._controller, "consumption_sensor", None))
+        if self._controller._apply_meter_transform(meter_state) is None:
+            self.clear_curtailment_runtime("invalid_grid_meter", preserve_plan=True)
+            self._set_curtailment_runtime("fail_safe", "invalid_grid_meter")
+            return
+        reported_at = getattr(meter_state, "last_reported", None)
+        if reported_at is not None and hasattr(self._controller, "_sensor_is_within_stale_tolerance"):
+            try:
+                if not self._controller._sensor_is_within_stale_tolerance(reported_at):
+                    self.clear_curtailment_runtime("stale_grid_meter", preserve_plan=True)
+                    self._set_curtailment_runtime("fail_safe", "stale_grid_meter")
+                    return
+            except (TypeError, ValueError):
+                self.clear_curtailment_runtime("invalid_grid_meter_timestamp", preserve_plan=True)
+                self._set_curtailment_runtime("fail_safe", "invalid_grid_meter_timestamp")
+                return
+        current_price = self._get_current_price()
+        if current_price is None or not math.isfinite(float(current_price)):
+            self.clear_curtailment_runtime("invalid_price", preserve_plan=True)
+            self._set_curtailment_runtime("fail_safe", "invalid_price")
+            return
+        if plan.status == "no_risk":
+            self.clear_curtailment_runtime(plan.reason, preserve_plan=True)
+            self._set_curtailment_runtime("no_risk", plan.reason)
+            return
+
+        now = datetime.now()
+        risk_slot = self._current_curtailment_risk_slot(plan, now)
+        # The negative-window blocker is per battery so capacity protection can
+        # take its priority-10 override without a global blocker deadlocking it.
+        for coordinator in self._controller.coordinators:
+            self._controller.remove_discharge_block(
+                "curtailment_negative_window", coordinator=coordinator
+            )
+            self._controller.remove_discharge_block(
+                "curtailment_floor", coordinator=coordinator
+            )
+        self._controller.remove_setpoint_override("curtailment_predischarge")
+        self._controller._curtailment_active = False
+
+        if risk_slot is not None:
+            self._refresh_curtailment_floor_blocks(
+                self._curtailment_battery_snapshots()
+            )
+            details = {
+                "current_price": current_price,
+                "threshold": getattr(self._controller, "negative_injection_threshold", 0.0),
+                "start": risk_slot.start.isoformat(),
+                "end": risk_slot.end.isoformat(),
+            }
+            for coordinator in self._controller.coordinators:
+                if coordinator.data is not None and coordinator.is_available:
+                    self._controller.set_discharge_block(
+                        "curtailment_negative_window",
+                        "negative_injection_window",
+                        details,
+                        coordinator=coordinator,
+                    )
+            self._set_curtailment_runtime("protected_window", "negative_injection_window")
+            return
+
+        snapshots = self._curtailment_battery_snapshots()
+        current_headroom = sum(
+            max(0.0, (snapshot.max_soc_pct - snapshot.soc_pct) / 100.0 * snapshot.capacity_kwh)
+            for snapshot in snapshots
+            if snapshot.eligible
+        )
+        plan.current_headroom_kwh = current_headroom
+        required = max(0.0, float(plan.required_headroom_kwh))
+        if current_headroom + 1e-6 >= required:
+            self._set_curtailment_runtime("target_reached", "headroom_sufficient")
+            return
+
+        active_slot = self._current_predischarge_slot(plan, now)
+        if active_slot is None:
+            self._set_curtailment_runtime("planned", plan.reason)
+            return
+
+        self._refresh_curtailment_floor_blocks(snapshots)
+        remaining_kwh = max(0.0, required - current_headroom)
+        hours_left = max(0.0, (active_slot.end - now).total_seconds() / 3600.0)
+        max_power = sum(
+            snapshot.max_discharge_power_w
+            for snapshot in snapshots
+            if snapshot.eligible and snapshot.can_discharge
+        )
+        export_cap = max(0.0, float(getattr(self._controller, "predischarge_max_export_power_w", 0.0)))
+        if hours_left <= 0 or max_power <= 0 or remaining_kwh <= 1e-6:
+            self._set_curtailment_runtime("shortfall", "no_live_discharge_capacity")
+            return
+        target_export = 0.0 if export_cap <= 0 else -min(
+            export_cap, max_power, remaining_kwh / hours_left * 1000.0
+        )
+        if export_cap <= 0:
+            # Zero means domestic self-consumption only.  A target of 0 W lets
+            # normal PD cover household load but never deliberately export.
+            target_export = 0.0
+        self._controller.set_setpoint_override(
+            "curtailment_predischarge", target_export, priority=5
+        )
+        self._controller._curtailment_active = True
+        self._set_curtailment_runtime("predischarging", "selected_discharge_slot", target_export)
+
+    # =========================================================================
     # DYNAMIC PRICING: Evaluation and notification methods
     # =========================================================================
 
@@ -593,6 +1030,10 @@ class PricingManager:
         # Cleared up front: the early returns below can still send a notification,
         # and a ceiling from a previous evaluation must not be reported as today's.
         self._controller._dp_arbitrage_ceiling = None
+        # A failed or interrupted reevaluation must never leave yesterday's
+        # negative setpoint/block active.  The new plan is rebuilt below.
+        if self._smart_predischarge_enabled():
+            self.clear_curtailment_runtime("reevaluation")
 
         # Ensure service-based provider slots are current before evaluating.
         await self._maybe_refresh_service_prices(force=True)
@@ -617,6 +1058,7 @@ class PricingManager:
             self._controller._dp_daily_avg_price = sum(s.price for s in slots) / len(slots)
             _LOGGER.debug("Dynamic pricing: daily average price %.4f from %d slots", self._controller._dp_daily_avg_price, len(slots))
         if not slots:
+            self._build_curtailment_plan([], [], now=now)
             if not charging_needed:
                 # No deficit + no price data: nothing to evaluate
                 self._controller._dynamic_pricing_schedule = None
@@ -665,12 +1107,60 @@ class PricingManager:
         )
 
         if not selected:
+            self._build_curtailment_plan(slots, [], now=now)
             self._controller._dynamic_pricing_schedule = None
             self._controller._dynamic_pricing_evaluated_date = today
             self._controller._dp_eval_retry_count = 0
             _LOGGER.warning("Dynamic pricing: no slots selected (all above threshold?)")
             await self._send_dynamic_pricing_notification(decision_data=decision_data, schedule=None)
             return
+
+        # A negative-price solar-surplus slot is protected from ordinary grid
+        # charging.  Build once with the tentative schedule, remove conflicts,
+        # then build the final plan with the remaining cheap slots reserved.
+        tentative_plan = self._build_curtailment_plan(slots, selected, now=now)
+        # Guaranteed-minimum SOC is the safety exception: if that floor is the
+        # reason for grid charging, keep its selected slot even when it overlaps
+        # a risk window.  The risk guard still prevents battery discharge.
+        if tentative_plan.risk_slots and not decision_data.get("floor_active", False):
+            protected_selected = [
+                slot
+                for slot in selected
+                if not any(
+                    slot.start < risk.end and risk.start < slot.end
+                    for risk in tentative_plan.risk_slots
+                )
+            ]
+            if len(protected_selected) != len(selected):
+                _LOGGER.info(
+                    "Dynamic pricing: removed %d grid-charge slots overlapping solar negative-price windows",
+                    len(selected) - len(protected_selected),
+                )
+                # Refill from other normalized slots where possible so the
+                # joint evaluation protects the solar window without needlessly
+                # losing the original grid-charge energy target.
+                safe_slots = [
+                    slot
+                    for slot in slots
+                    if not any(
+                        slot.start < risk.end and risk.start < slot.end
+                        for risk in tentative_plan.risk_slots
+                    )
+                ]
+                reselected = calculations.select_cheapest_hours(
+                    safe_slots, hours_needed, ceiling, now=eval_now
+                )
+                selected = reselected or protected_selected
+                if not selected:
+                    self._build_curtailment_plan(slots, [], now=now)
+                    self._controller._dynamic_pricing_schedule = None
+                    self._controller._dynamic_pricing_evaluated_date = today
+                    self._controller._dp_eval_retry_count = 0
+                    await self._send_dynamic_pricing_notification(
+                        decision_data=decision_data, schedule=None
+                    )
+                    return
+                self._build_curtailment_plan(slots, selected, now=now)
 
         # Step 4: Build schedule
         avg_price = sum(s.price for s in selected) / len(selected)
@@ -1196,6 +1686,7 @@ class PricingManager:
                 self._controller._dp_arbitrage_ceiling = None
                 self._controller._dp_evening_reevaluated_date = None
                 self._controller._dp_last_eval_soc = None
+                self.clear_curtailment_runtime("new_day")
 
         # Phase 4: Check if we're in a selected cheap slot
         if self._controller._dynamic_pricing_schedule and not self._controller.predictive_charging_overridden:

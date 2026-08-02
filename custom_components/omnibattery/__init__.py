@@ -117,6 +117,16 @@ from .const import (
     CONF_MIN_ARBITRAGE_MARGIN,
     CONF_ROUND_TRIP_EFFICIENCY,
     DEFAULT_ROUND_TRIP_EFFICIENCY,
+    CONF_SMART_PREDISCHARGE_ENABLED,
+    CONF_NEGATIVE_INJECTION_THRESHOLD,
+    CONF_PREDISCHARGE_RESERVE_SOC,
+    CONF_PREDISCHARGE_MAX_EXPORT_POWER_W,
+    CONF_CURTAILMENT_HEADROOM_MARGIN_PCT,
+    DEFAULT_SMART_PREDISCHARGE_ENABLED,
+    DEFAULT_NEGATIVE_INJECTION_THRESHOLD,
+    DEFAULT_PREDISCHARGE_RESERVE_SOC,
+    DEFAULT_PREDISCHARGE_MAX_EXPORT_POWER_W,
+    DEFAULT_CURTAILMENT_HEADROOM_MARGIN_PCT,
     CONF_AVERAGE_PRICE_SENSOR,
     CONF_DP_PRICE_DISCHARGE_CONTROL,
     CONF_RT_PRICE_DISCHARGE_CONTROL,
@@ -608,6 +618,21 @@ class ChargeDischargeController:
         self.round_trip_efficiency = config_entry.data.get(
             CONF_ROUND_TRIP_EFFICIENCY, DEFAULT_ROUND_TRIP_EFFICIENCY
         )
+        self.smart_predischarge_enabled = config_entry.data.get(
+            CONF_SMART_PREDISCHARGE_ENABLED, DEFAULT_SMART_PREDISCHARGE_ENABLED
+        )
+        self.negative_injection_threshold = config_entry.data.get(
+            CONF_NEGATIVE_INJECTION_THRESHOLD, DEFAULT_NEGATIVE_INJECTION_THRESHOLD
+        )
+        self.predischarge_reserve_soc = config_entry.data.get(
+            CONF_PREDISCHARGE_RESERVE_SOC, DEFAULT_PREDISCHARGE_RESERVE_SOC
+        )
+        self.predischarge_max_export_power_w = config_entry.data.get(
+            CONF_PREDISCHARGE_MAX_EXPORT_POWER_W, DEFAULT_PREDISCHARGE_MAX_EXPORT_POWER_W
+        )
+        self.curtailment_headroom_margin_pct = config_entry.data.get(
+            CONF_CURTAILMENT_HEADROOM_MARGIN_PCT, DEFAULT_CURTAILMENT_HEADROOM_MARGIN_PCT
+        )
         self.dp_price_discharge_control: bool = config_entry.data.get(CONF_DP_PRICE_DISCHARGE_CONTROL, False)
         self._dp_daily_avg_price: Optional[float] = None  # Computed from price slots in _evaluate_dynamic_pricing
         self._dp_arbitrage_ceiling: Optional[float] = None  # Set per evaluation when the margin gate is on
@@ -644,6 +669,14 @@ class ChargeDischargeController:
         self._solar_forecast_issue_cleared = False
         self._dp_evening_reevaluated_date = None  # Prevent multiple evening re-evaluations per day
         self._dp_last_eval_soc = None  # avg SOC at last DP (re)eval; SOC-drop reeval reference (#411)
+        # Smart pre-discharge is runtime-only.  Plans are rebuilt after restart;
+        # no plan or override is persisted in Home Assistant storage.
+        self._curtailment_plan = None
+        self._curtailment_runtime_status = "disabled"
+        self._curtailment_runtime_reason = "disabled"
+        self._curtailment_active = False
+        self._curtailment_active_export_target_w = 0.0
+        self._curtailment_last_evaluation = None
         self._pricing_mgr = PricingManager(hass, self)
 
         # Consumption history for dynamic base consumption (7-day rolling average)
@@ -1093,6 +1126,14 @@ class ChargeDischargeController:
 
     def update_pd_parameters(self):
         """Re-read PD controller parameters from config_entry.data (hot-reload)."""
+        old_pricing_mode = self.predictive_charging_mode
+        old_smart_predischarge = self.smart_predischarge_enabled
+        old_curtailment_config = (
+            self.negative_injection_threshold,
+            self.predischarge_reserve_soc,
+            self.predischarge_max_export_power_w,
+            self.curtailment_headroom_margin_pct,
+        )
         # Update weekly full charge settings; reset completion state if day changed
         new_weekly_day = self.config_entry.data.get(CONF_WEEKLY_FULL_CHARGE_DAY, "sun")
         new_weekly_enabled = self.config_entry.data.get(CONF_ENABLE_WEEKLY_FULL_CHARGE, False)
@@ -1177,12 +1218,44 @@ class ChargeDischargeController:
         self.round_trip_efficiency = self.config_entry.data.get(
             CONF_ROUND_TRIP_EFFICIENCY, DEFAULT_ROUND_TRIP_EFFICIENCY
         )
+        self.smart_predischarge_enabled = self.config_entry.data.get(
+            CONF_SMART_PREDISCHARGE_ENABLED, DEFAULT_SMART_PREDISCHARGE_ENABLED
+        )
+        self.negative_injection_threshold = self.config_entry.data.get(
+            CONF_NEGATIVE_INJECTION_THRESHOLD, DEFAULT_NEGATIVE_INJECTION_THRESHOLD
+        )
+        self.predischarge_reserve_soc = self.config_entry.data.get(
+            CONF_PREDISCHARGE_RESERVE_SOC, DEFAULT_PREDISCHARGE_RESERVE_SOC
+        )
+        self.predischarge_max_export_power_w = self.config_entry.data.get(
+            CONF_PREDISCHARGE_MAX_EXPORT_POWER_W, DEFAULT_PREDISCHARGE_MAX_EXPORT_POWER_W
+        )
+        self.curtailment_headroom_margin_pct = self.config_entry.data.get(
+            CONF_CURTAILMENT_HEADROOM_MARGIN_PCT, DEFAULT_CURTAILMENT_HEADROOM_MARGIN_PCT
+        )
+        new_curtailment_config = (
+            self.negative_injection_threshold,
+            self.predischarge_reserve_soc,
+            self.predischarge_max_export_power_w,
+            self.curtailment_headroom_margin_pct,
+        )
         self.capacity_protection_enabled = self.config_entry.data.get(CONF_CAPACITY_PROTECTION_ENABLED, False)
         self.capacity_protection_excluded_devices = self.config_entry.data.get(
             CONF_CAPACITY_PROTECTION_EXCLUDED_DEVICES, False
         )
         self.capacity_protection_soc_threshold = self.config_entry.data.get(CONF_CAPACITY_PROTECTION_SOC_THRESHOLD, DEFAULT_CAPACITY_PROTECTION_SOC)
         self.capacity_protection_limit = self.config_entry.data.get(CONF_CAPACITY_PROTECTION_LIMIT, DEFAULT_CAPACITY_PROTECTION_LIMIT)
+
+        if (
+            old_pricing_mode != self.predictive_charging_mode
+            or old_smart_predischarge != self.smart_predischarge_enabled
+            or old_curtailment_config != new_curtailment_config
+            or self.predictive_charging_mode != PREDICTIVE_MODE_DYNAMIC_PRICING
+            or not self.smart_predischarge_enabled
+        ):
+            self._pricing_mgr.clear_curtailment_runtime(
+                "mode_or_configuration_changed"
+            )
 
         # Hourly balance: ON→OFF cleans up offset; flag change is enough for async_process to react
         new_hb_enabled = self.config_entry.data.get(CONF_ENABLE_HOURLY_BALANCE, False)
@@ -1419,7 +1492,21 @@ class ChargeDischargeController:
         """Return True if discharge is blocked globally or for the given battery."""
         if self._global_discharge_blockers:
             return True
-        return bool(coordinator is not None and self._battery_discharge_blockers.get(coordinator))
+        if coordinator is None:
+            return False
+        blockers = self._battery_discharge_blockers.get(coordinator, {})
+        if self._capacity_protection_overrides_curtailment():
+            return bool(
+                set(blockers) - {"curtailment_negative_window"}
+            )
+        return bool(blockers)
+
+    def _capacity_protection_overrides_curtailment(self) -> bool:
+        """Whether the priority-10 capacity-safety path may use the battery."""
+        return bool(
+            getattr(self, "_capacity_protection_active", False)
+            or "capacity_protection" in getattr(self, "_setpoint_overrides", {})
+        )
 
     def get_charge_blockers(self, coordinator=None) -> dict:
         """Return charge blockers for the requested scope."""
@@ -1435,6 +1522,10 @@ class ChargeDischargeController:
             return self._serialize_blockers(self._global_discharge_blockers)
         merged = dict(self._global_discharge_blockers)
         merged.update(self._battery_discharge_blockers.get(coordinator, {}))
+        if self._capacity_protection_overrides_curtailment():
+            # Capacity protection owns priority 10 and must remain able to
+            # shave a peak even while the solar window guard is active.
+            merged.pop("curtailment_negative_window", None)
         return self._serialize_blockers(merged)
 
     def get_battery_charge_blockers(self) -> dict:
@@ -1883,6 +1974,11 @@ class ChargeDischargeController:
 
         self._refresh_time_slot_blocks()
         self._apply_price_discharge_block()
+        # Smart pre-discharge is evaluated only in dynamic-pricing mode and
+        # registers its negative-window/floor guards centrally before PD runs.
+        pricing_mgr = getattr(self, "_pricing_mgr", None)
+        if pricing_mgr is not None:
+            pricing_mgr.refresh_curtailment_runtime()
         self._refresh_ev_blocks()
         self._refresh_dynamic_power_control_block()
         self._refresh_user_battery_blocks()
@@ -4837,6 +4933,7 @@ class ChargeDischargeController:
         # === MANUAL MODE CHECK (highest priority) ===
         # If manual mode is enabled, skip all automatic control logic
         if self.manual_mode_enabled:
+            self._pricing_mgr.clear_curtailment_runtime("manual_mode")
             _LOGGER.debug("Manual Mode active - skipping automatic control")
             # Register-based drivers (Marstek) obey the user's force_mode /
             # set_*_power register writes directly, so we just freeze the
@@ -6300,6 +6397,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     if data := hass.data[DOMAIN].get(entry.entry_id):
         coordinators = data.get("coordinators", [])
+        controller = data.get("controller")
+        if controller is not None:
+            # Remove the opt-in runtime override/blockers before the control
+            # timer and entities disappear.  The plan itself is never persisted.
+            controller._pricing_mgr.clear_curtailment_runtime("unload")
 
         # 1. Cancel periodic timers FIRST to stop control loop and coordinator refresh
         # These run every 2.0s / 1.5s and would write registers on a closing connection

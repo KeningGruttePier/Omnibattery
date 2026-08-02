@@ -51,6 +51,31 @@ If HA restarts after the 00:05 window without a prior evaluation, the controller
 
 ---
 
+## Smart Pre-discharge / Anti-curtailment
+
+This is an **opt-in subfunction of Dynamic Pricing**. It does not control a PV inverter. When enabled, Omnibattery reuses the normalized 15-minute or hourly price slots and the existing solar model to find future slots where:
+
+- the price is at or below **Negative injection threshold** (default `0 €/kWh`), and
+- forecast solar surplus would exceed household consumption.
+
+The planner calculates current battery headroom to each battery's maximum SOC, adds the configured **Curtailment headroom margin**, and selects the most valuable (highest-price) eligible slots before the risk window for extra PD discharge. Slots are grouped into approximately one-hour blocks to avoid chatter. Consumption is distributed uniformly from the existing daily-history estimate when no more detailed model is available.
+
+The live controls are available only when Predictive Grid Charging uses Dynamic Pricing:
+
+| Control | Meaning |
+|---|---|
+| **Smart Pre-discharge** | Runtime opt-in switch; default off |
+| **Negative injection threshold** | Inclusive price threshold for a risk slot |
+| **Pre-discharge reserve SOC** | Additional SOC floor; `0` uses existing floors |
+| **Pre-discharge maximum export** | Allowed grid export while pre-discharging; `0 W` means self-consumption only |
+| **Curtailment headroom margin** | Extra headroom above forecast surplus, as a percentage |
+
+During a risk window, discharge is blocked so the battery can absorb PV. The feature never bypasses minimum or guaranteed-minimum SOC, user time-slot ownership, manual control, active balance, backup mode, unavailable/non-responsive batteries, or capacity protection. Missing prices, forecast, SOC, capacity or a valid grid meter are fail-safe conditions: any smart override and blocker are cleared. The plan is rebuilt after restart, at the normal daily evaluations, when the feature is enabled, and by the existing **Re-evaluate Dynamic Pricing** button. Parameter changes invalidate the old plan; use that button to apply them immediately instead of waiting for the next evaluation. Plans are not persisted.
+
+The `curtailment_status` binary sensor reports the current state, reason, next risk window, risk slots, required/current headroom, planned discharge, shortfall, per-battery targets, selected discharge slots and active export target.
+
+---
+
 ## Price-based discharge control
 
 The **"Only discharge when price is above threshold"** option adds an extra condition to discharge behaviour.
