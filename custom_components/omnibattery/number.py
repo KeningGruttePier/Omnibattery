@@ -35,7 +35,6 @@ from .const import (
     CONF_NEGATIVE_INJECTION_THRESHOLD,
     CONF_PREDISCHARGE_RESERVE_SOC,
     CONF_PREDISCHARGE_MAX_EXPORT_POWER_W,
-    CONF_CURTAILMENT_HEADROOM_MARGIN_PCT,
     MIN_CHARGE_HYSTERESIS_PERCENT,
     MAX_CHARGE_HYSTERESIS_PERCENT,
     DOMAIN,
@@ -121,7 +120,6 @@ async def async_setup_entry(
         entities.append(SmartPredischargeNumber(hass, entry, "threshold"))
         entities.append(SmartPredischargeNumber(hass, entry, "reserve"))
         entities.append(SmartPredischargeNumber(hass, entry, "export"))
-        entities.append(SmartPredischargeNumber(hass, entry, "margin"))
 
     # Temperature charge limit sliders (system-level, when the feature is configured)
     if CONF_ENABLE_TEMP_CHARGE_LIMIT in entry.data:
@@ -485,13 +483,6 @@ class SmartPredischargeNumber(NumberEntity):
             50.0,
             "mdi:transmission-tower-export",
         ),
-        "margin": (
-            CONF_CURTAILMENT_HEADROOM_MARGIN_PCT,
-            0.0,
-            100.0,
-            5.0,
-            "mdi:battery-plus",
-        ),
     }
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry, kind: str) -> None:
@@ -510,7 +501,7 @@ class SmartPredischargeNumber(NumberEntity):
         if kind == "threshold":
             is_chf = entry.data.get(CONF_PRICE_INTEGRATION_TYPE) == PRICE_INTEGRATION_CKW
             self._attr_native_unit_of_measurement = "CHF/kWh" if is_chf else "€/kWh"
-        elif kind in {"reserve", "margin"}:
+        elif kind == "reserve":
             self._attr_native_unit_of_measurement = "%"
         else:
             self._attr_native_unit_of_measurement = "W"

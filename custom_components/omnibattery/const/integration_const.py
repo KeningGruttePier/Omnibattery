@@ -114,9 +114,9 @@ MAX_TIME_SLOTS = 8
 # Default base consumption fallback (kWh/day)
 DEFAULT_BASE_CONSUMPTION_KWH = 5.0  # Fallback when no consumption history available
 
-# Predictive charging safety margin
+# Predictive charging / anti-curtailment safety margin
 CONF_PREDICTIVE_SAFETY_MARGIN_KWH = "predictive_safety_margin_kwh"
-DEFAULT_PREDICTIVE_SAFETY_MARGIN_KWH = 0.0  # kWh added to consumption forecast; 0 = no margin
+DEFAULT_PREDICTIVE_SAFETY_MARGIN_KWH = 0.0  # kWh buffer; 0 = no margin
 
 # Predictive charging grid-charge margin
 # Extra % charged from grid on top of the solar-deficit, to hedge against
@@ -606,12 +606,10 @@ CONF_SMART_PREDISCHARGE_ENABLED = "smart_predischarge_enabled"
 CONF_NEGATIVE_INJECTION_THRESHOLD = "negative_injection_threshold"
 CONF_PREDISCHARGE_RESERVE_SOC = "predischarge_reserve_soc"
 CONF_PREDISCHARGE_MAX_EXPORT_POWER_W = "predischarge_max_export_power_w"
-CONF_CURTAILMENT_HEADROOM_MARGIN_PCT = "curtailment_headroom_margin_pct"
 DEFAULT_SMART_PREDISCHARGE_ENABLED = False
 DEFAULT_NEGATIVE_INJECTION_THRESHOLD = 0.0
 DEFAULT_PREDISCHARGE_RESERVE_SOC = 0.0
 DEFAULT_PREDISCHARGE_MAX_EXPORT_POWER_W = 0.0
-DEFAULT_CURTAILMENT_HEADROOM_MARGIN_PCT = 0.0
 
 # Opportunistic import charging.  This is deliberately separate from
 # CONF_NEGATIVE_INJECTION_THRESHOLD: the latter prices exported solar for

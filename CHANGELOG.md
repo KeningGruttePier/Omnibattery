@@ -6,6 +6,9 @@
 - **Negative-price opportunistic charging for Dynamic Pricing**: a new opt-in import-price calendar charges each battery toward its configured maximum SOC when the predictive balance has no deficit and the normalized import price is negative. Hourly and 15-minute prices select the most-negative intervals first; typed `deficit`, `negative_price`, and `combined` slots keep normal deficit targets isolated from opportunity-only energy. Runtime switch, diagnostics, panel controls, translations, and English/Spanish documentation are included. Smart Pre-discharge retains solar headroom priority, and all existing charge limits, ownership and safety blockers remain authoritative.
 - **Smart Pre-discharge / Anti-curtailment for Dynamic Pricing**: an opt-in planner detects forecast PV surplus during configurable negative-injection price windows, creates headroom using the existing PD controller, blocks discharge while the protected window is active, and exposes live controls and diagnostics. Existing installations remain disabled by default.
 
+### Changed
+- **Smart Pre-discharge margin**: reuses the existing solar forecast safety margin in kWh for anti-curtailment headroom, removing the separate percentage-based headroom setting.
+
 ## [1.2.0] - 2026-07-31
 
 ### Added

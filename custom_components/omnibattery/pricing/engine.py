@@ -1055,8 +1055,8 @@ class PricingManager:
                 predischarge_reserve_soc=float(
                     getattr(self._controller, "predischarge_reserve_soc", 0.0)
                 ),
-                headroom_margin_pct=float(
-                    getattr(self._controller, "curtailment_headroom_margin_pct", 0.0)
+                headroom_margin_kwh=float(
+                    getattr(self._controller, "_predictive_safety_margin_kwh", 0.0)
                 ),
                 charge_power_w=float(getattr(self._controller, "max_charge_capacity", 0.0) or 0.0),
                 max_export_power_w=float(

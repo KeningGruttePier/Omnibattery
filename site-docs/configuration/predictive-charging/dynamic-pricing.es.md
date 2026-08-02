@@ -73,7 +73,7 @@ Es una **subfunción optativa de Precio Dinámico** y no controla ningún invers
 - el precio sea igual o inferior al **Umbral de inyección negativa** (por defecto `0 €/kWh`), y
 - el excedente FV previsto supere el consumo doméstico.
 
-El plan calcula el espacio actual hasta el SOC máximo de cada batería, añade el **Margen de espacio anti-vertido** y selecciona las franjas elegibles de mayor precio antes de la ventana de riesgo para descargar mediante el PD existente. Agrupa subfranjas en bloques de aproximadamente una hora para evitar cambios constantes. Si no hay un modelo de consumo más detallado, reparte uniformemente por franja la estimación diaria histórica.
+El plan calcula el espacio actual hasta el SOC máximo de cada batería, añade el **Margen de seguridad de previsión solar** en kWh y selecciona las franjas elegibles de mayor precio antes de la ventana de riesgo para descargar mediante el PD existente. El mismo margen se usa en la carga predictiva al decidir si la previsión solar es suficiente. Agrupa subfranjas en bloques de aproximadamente una hora para evitar cambios constantes. Si no hay un modelo de consumo más detallado, reparte uniformemente por franja la estimación diaria histórica.
 
 Los controles solo aparecen cuando la Carga Predictiva usa Precio Dinámico:
 
@@ -83,7 +83,7 @@ Los controles solo aparecen cuando la Carga Predictiva usa Precio Dinámico:
 | **Umbral de inyección negativa** | Umbral inclusivo para detectar una franja de riesgo |
 | **Reserva de SOC de predescarga** | Suelo adicional; `0` usa los suelos existentes |
 | **Exportación máxima de predescarga** | Exportación de red permitida durante la predescarga; `0 W` significa solo autoconsumo |
-| **Margen de espacio anti-vertido** | Espacio adicional sobre el excedente previsto, en porcentaje |
+| **Margen de seguridad de previsión solar** | Margen adicional en kWh usado por la carga predictiva y el anti-vertido |
 
 Durante la ventana de riesgo se bloquea la descarga para conservar capacidad de absorción solar. La función nunca ignora SOC mínimo o garantizado, franjas y ownership manual del usuario, balance activo, backup, baterías no disponibles/no responsivas ni protección de capacidad. Sin precios, previsión, SOC, capacidad o contador de red válido actúa de forma segura: elimina cualquier override o bloqueo inteligente. El plan se reconstruye tras reinicio, en las evaluaciones diarias normales, al activar la función y con el botón existente **Reevaluar Precios Dinámicos**. Los cambios de parámetros invalidan el plan anterior; usa ese botón para aplicarlos inmediatamente en vez de esperar a la siguiente evaluación. El plan no se persiste.
 

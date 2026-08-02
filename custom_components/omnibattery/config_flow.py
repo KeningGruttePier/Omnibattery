@@ -76,12 +76,10 @@ from .const import (
     CONF_NEGATIVE_INJECTION_THRESHOLD,
     CONF_PREDISCHARGE_RESERVE_SOC,
     CONF_PREDISCHARGE_MAX_EXPORT_POWER_W,
-    CONF_CURTAILMENT_HEADROOM_MARGIN_PCT,
     DEFAULT_SMART_PREDISCHARGE_ENABLED,
     DEFAULT_NEGATIVE_INJECTION_THRESHOLD,
     DEFAULT_PREDISCHARGE_RESERVE_SOC,
     DEFAULT_PREDISCHARGE_MAX_EXPORT_POWER_W,
-    DEFAULT_CURTAILMENT_HEADROOM_MARGIN_PCT,
     CONF_NEGATIVE_PRICE_CHARGING_ENABLED,
     DEFAULT_NEGATIVE_PRICE_CHARGING_ENABLED,
     CONF_AVERAGE_PRICE_SENSOR,
@@ -1627,10 +1625,6 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
                         self.config_data[CONF_PREDISCHARGE_MAX_EXPORT_POWER_W] = user_input.get(
                             CONF_PREDISCHARGE_MAX_EXPORT_POWER_W, DEFAULT_PREDISCHARGE_MAX_EXPORT_POWER_W
                         )
-                        self.config_data[CONF_CURTAILMENT_HEADROOM_MARGIN_PCT] = user_input.get(
-                            CONF_CURTAILMENT_HEADROOM_MARGIN_PCT, DEFAULT_CURTAILMENT_HEADROOM_MARGIN_PCT
-                        )
-
                         return await self._finish_setup()
             except Exception as e:
                 _LOGGER.error("Error validating dynamic pricing config: %s", e)
@@ -1682,10 +1676,6 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
         schema_dict[vol.Optional(CONF_PREDISCHARGE_MAX_EXPORT_POWER_W, default=DEFAULT_PREDISCHARGE_MAX_EXPORT_POWER_W)] = NumberSelector(
             NumberSelectorConfig(min=0, max=10000, step=50, unit_of_measurement="W", mode=NumberSelectorMode.BOX)
         )
-        schema_dict[vol.Optional(CONF_CURTAILMENT_HEADROOM_MARGIN_PCT, default=DEFAULT_CURTAILMENT_HEADROOM_MARGIN_PCT)] = NumberSelector(
-            NumberSelectorConfig(min=0, max=100, step=5, unit_of_measurement="%", mode=NumberSelectorMode.BOX)
-        )
-
         return self.async_show_form(
             step_id="dynamic_pricing_config",
             data_schema=vol.Schema(schema_dict),
@@ -3515,10 +3505,6 @@ class OptionsFlowHandler(OptionsFlow):
                             CONF_PREDISCHARGE_MAX_EXPORT_POWER_W,
                             existing_config.get(CONF_PREDISCHARGE_MAX_EXPORT_POWER_W, DEFAULT_PREDISCHARGE_MAX_EXPORT_POWER_W),
                         )
-                        self.config_data[CONF_CURTAILMENT_HEADROOM_MARGIN_PCT] = user_input.get(
-                            CONF_CURTAILMENT_HEADROOM_MARGIN_PCT,
-                            existing_config.get(CONF_CURTAILMENT_HEADROOM_MARGIN_PCT, DEFAULT_CURTAILMENT_HEADROOM_MARGIN_PCT),
-                        )
                         return await self._save_and_finish()
             except Exception as e:
                 _LOGGER.error("Error validating dynamic pricing config: %s", e)
@@ -3547,9 +3533,6 @@ class OptionsFlowHandler(OptionsFlow):
         )
         default_export_power = existing_config.get(
             CONF_PREDISCHARGE_MAX_EXPORT_POWER_W, DEFAULT_PREDISCHARGE_MAX_EXPORT_POWER_W
-        )
-        default_headroom_margin = existing_config.get(
-            CONF_CURTAILMENT_HEADROOM_MARGIN_PCT, DEFAULT_CURTAILMENT_HEADROOM_MARGIN_PCT
         )
 
         schema_dict: dict = {
@@ -3605,10 +3588,6 @@ class OptionsFlowHandler(OptionsFlow):
         schema_dict[vol.Optional(CONF_PREDISCHARGE_MAX_EXPORT_POWER_W, default=default_export_power)] = NumberSelector(
             NumberSelectorConfig(min=0, max=10000, step=50, unit_of_measurement="W", mode=NumberSelectorMode.BOX)
         )
-        schema_dict[vol.Optional(CONF_CURTAILMENT_HEADROOM_MARGIN_PCT, default=default_headroom_margin)] = NumberSelector(
-            NumberSelectorConfig(min=0, max=100, step=5, unit_of_measurement="%", mode=NumberSelectorMode.BOX)
-        )
-
         return self.async_show_form(
             step_id="dynamic_pricing_config",
             data_schema=vol.Schema(schema_dict),

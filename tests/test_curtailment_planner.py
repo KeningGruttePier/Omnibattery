@@ -107,7 +107,7 @@ def test_headroom_sufficient_protects_without_selecting_discharge():
     assert plan.selected_discharge_slots == []
 
 
-def test_existing_headroom_and_margin_are_accounted_for():
+def test_existing_headroom_and_kwh_margin_are_accounted_for():
     risk = _slot(12, -0.05)
     slots = [_slot(11, 0.25), risk]
     base = dict(
@@ -122,7 +122,7 @@ def test_existing_headroom_and_margin_are_accounted_for():
         now=DAY,
     )
 
-    plan = plan_curtailment(**base, headroom_margin_pct=50.0)
+    plan = plan_curtailment(**base, headroom_margin_kwh=0.85)
 
     assert plan.required_headroom_kwh == pytest.approx(2.55)
     assert plan.current_headroom_kwh == pytest.approx(1.0)

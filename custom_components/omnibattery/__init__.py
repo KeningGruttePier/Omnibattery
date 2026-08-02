@@ -121,12 +121,10 @@ from .const import (
     CONF_NEGATIVE_INJECTION_THRESHOLD,
     CONF_PREDISCHARGE_RESERVE_SOC,
     CONF_PREDISCHARGE_MAX_EXPORT_POWER_W,
-    CONF_CURTAILMENT_HEADROOM_MARGIN_PCT,
     DEFAULT_SMART_PREDISCHARGE_ENABLED,
     DEFAULT_NEGATIVE_INJECTION_THRESHOLD,
     DEFAULT_PREDISCHARGE_RESERVE_SOC,
     DEFAULT_PREDISCHARGE_MAX_EXPORT_POWER_W,
-    DEFAULT_CURTAILMENT_HEADROOM_MARGIN_PCT,
     CONF_NEGATIVE_PRICE_CHARGING_ENABLED,
     DEFAULT_NEGATIVE_PRICE_CHARGING_ENABLED,
     CONF_AVERAGE_PRICE_SENSOR,
@@ -643,9 +641,6 @@ class ChargeDischargeController:
         self.predischarge_max_export_power_w = config_entry.data.get(
             CONF_PREDISCHARGE_MAX_EXPORT_POWER_W, DEFAULT_PREDISCHARGE_MAX_EXPORT_POWER_W
         )
-        self.curtailment_headroom_margin_pct = config_entry.data.get(
-            CONF_CURTAILMENT_HEADROOM_MARGIN_PCT, DEFAULT_CURTAILMENT_HEADROOM_MARGIN_PCT
-        )
         self.negative_price_charging_enabled = config_entry.data.get(
             CONF_NEGATIVE_PRICE_CHARGING_ENABLED,
             DEFAULT_NEGATIVE_PRICE_CHARGING_ENABLED,
@@ -1152,7 +1147,7 @@ class ChargeDischargeController:
             self.negative_injection_threshold,
             self.predischarge_reserve_soc,
             self.predischarge_max_export_power_w,
-            self.curtailment_headroom_margin_pct,
+            self._predictive_safety_margin_kwh,
         )
         old_negative_price_enabled = self.negative_price_charging_enabled
         # Update weekly full charge settings; reset completion state if day changed
@@ -1251,9 +1246,6 @@ class ChargeDischargeController:
         self.predischarge_max_export_power_w = self.config_entry.data.get(
             CONF_PREDISCHARGE_MAX_EXPORT_POWER_W, DEFAULT_PREDISCHARGE_MAX_EXPORT_POWER_W
         )
-        self.curtailment_headroom_margin_pct = self.config_entry.data.get(
-            CONF_CURTAILMENT_HEADROOM_MARGIN_PCT, DEFAULT_CURTAILMENT_HEADROOM_MARGIN_PCT
-        )
         self.negative_price_charging_enabled = self.config_entry.data.get(
             CONF_NEGATIVE_PRICE_CHARGING_ENABLED,
             DEFAULT_NEGATIVE_PRICE_CHARGING_ENABLED,
@@ -1262,7 +1254,7 @@ class ChargeDischargeController:
             self.negative_injection_threshold,
             self.predischarge_reserve_soc,
             self.predischarge_max_export_power_w,
-            self.curtailment_headroom_margin_pct,
+            self._predictive_safety_margin_kwh,
         )
         new_negative_price_enabled = self.negative_price_charging_enabled
         self.capacity_protection_enabled = self.config_entry.data.get(CONF_CAPACITY_PROTECTION_ENABLED, False)

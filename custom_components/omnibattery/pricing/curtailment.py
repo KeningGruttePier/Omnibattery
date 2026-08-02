@@ -315,7 +315,7 @@ def plan_curtailment(
     *,
     negative_injection_threshold: float = 0.0,
     predischarge_reserve_soc: float = 0.0,
-    headroom_margin_pct: float = 0.0,
+    headroom_margin_kwh: float = 0.0,
     charge_power_w: float | None = None,
     max_export_power_w: float = 0.0,
     solar_fraction_fn: Callable[[float], float] | None = None,
@@ -401,8 +401,17 @@ def plan_curtailment(
         plan.status, plan.reason = "no_risk", "no_negative_injection_window"
         return plan
 
-    margin = max(0.0, float(headroom_margin_pct or 0.0)) / 100.0
-    required_kwh *= 1.0 + margin
+    # Reuse the controller's common solar-forecast safety margin. It is an
+    # energy buffer, so anti-curtailment applies it additively rather than as
+    # a percentage of the forecast surplus.
+    if not _finite(headroom_margin_kwh):
+        plan.status, plan.reason = "fail_safe", "invalid_headroom_margin"
+        return plan
+    margin_kwh = min(
+        max(0.0, float(headroom_margin_kwh or 0.0)),
+        sum(snapshot.capacity_kwh for snapshot in valid_batteries),
+    )
+    required_kwh += margin_kwh
     plan.required_headroom_kwh = required_kwh
 
     current_headroom = sum(
