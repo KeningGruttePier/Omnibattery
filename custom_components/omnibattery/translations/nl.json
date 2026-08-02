@@ -295,8 +295,6 @@
           "discharge_price_threshold": "Ontlaad-prijsondergrens (optioneel)",
           "dp_price_discharge_control": "Alleen ontladen als prijs boven drempelwaarde",
           "negative_price_charging_enabled": "Opportunistisch laden bij negatieve prijzen inschakelen",
-          "negative_price_charging_threshold": "Drempelwaarde negatieve importprijs (valuta/kWh)",
-          "negative_price_charging_target_soc": "Doel-SOC bij negatieve prijs (%)",
           "smart_predischarge_enabled": "Slim voorontladen / anti-afregeling",
           "negative_injection_threshold": "Drempelwaarde negatieve teruglevering",
           "predischarge_reserve_soc": "SOC-reserve voor voorontladen (%)",
@@ -313,8 +311,6 @@
           "discharge_price_threshold": "Optionele aparte ondergrens voor prijsgestuurde ontlading. Ontlading wordt geblokkeerd zolang de prijs lager dan of gelijk aan deze waarde is, waardoor een neutrale band ontstaat tussen de maximale laadprijs (hierboven) en deze ondergrens: in die band laadt de batterij niet vanaf het net en ontlaadt deze niet (laden met zonne-overschot blijft werken). Laat leeg om de maximale prijs voor beide te gebruiken (huidig gedrag met één drempel).",
           "dp_price_discharge_control": "Indien ingeschakeld, ontlaadt de batterij alleen wanneer de huidige elektriciteitsprijs de geconfigureerde maximale prijsdrempel overschrijdt. Als er geen drempel is geconfigureerd, wordt het automatisch uit de prijssensor berekende daggemiddelde gebruikt. Als tijdslots het ontladen beperken, moet aan beide voorwaarden worden voldaan.",
           "negative_price_charging_enabled": "Optionele functie voor dynamische prijzen die tijdens de meest negatieve importprijssloten laadt, ook als de normale voorspelling geen netlading vereist. Een zonnevoorspellingssensor is niet nodig.",
-          "negative_price_charging_threshold": "Een slot komt in aanmerking wanneer de genormaliseerde importprijs lager dan of gelijk aan deze inclusieve drempel is. Dit staat los van de injectieprijsdrempel voor anti-afregeling.",
-          "negative_price_charging_target_soc": "Doel-SOC voor opportunistisch laden. Elke batterij stopt bij de laagste waarde van dit doel en de geconfigureerde maximale SOC.",
           "smart_predischarge_enabled": "Schakelt optioneel voorontladen alleen in de dynamische prijsmode in om ruimte te maken vóór slots met negatieve terugleveringsprijzen.",
           "negative_injection_threshold": "Prijzen gelijk aan of lager dan deze drempel zijn risicoslots wanneer een zonne-overschot wordt verwacht.",
           "predischarge_reserve_soc": "SOC die naast de bestaande minimumgrenzen moet worden gereserveerd.",
@@ -906,8 +902,6 @@
           "discharge_price_threshold": "Ontlaad-prijsondergrens (optioneel)",
           "dp_price_discharge_control": "Alleen ontladen als prijs boven drempelwaarde",
           "negative_price_charging_enabled": "Opportunistisch laden bij negatieve prijzen inschakelen",
-          "negative_price_charging_threshold": "Drempelwaarde negatieve importprijs (valuta/kWh)",
-          "negative_price_charging_target_soc": "Doel-SOC bij negatieve prijs (%)",
           "smart_predischarge_enabled": "Slim voorontladen / anti-afregeling",
           "negative_injection_threshold": "Drempelwaarde negatieve teruglevering",
           "predischarge_reserve_soc": "SOC-reserve voor voorontladen (%)",
@@ -924,8 +918,6 @@
           "discharge_price_threshold": "Optionele aparte ondergrens voor prijsgestuurde ontlading. Ontlading wordt geblokkeerd zolang de prijs lager dan of gelijk aan deze waarde is, waardoor een neutrale band ontstaat tussen de maximale laadprijs (hierboven) en deze ondergrens: in die band laadt de batterij niet vanaf het net en ontlaadt deze niet (laden met zonne-overschot blijft werken). Laat leeg om de maximale prijs voor beide te gebruiken (huidig gedrag met één drempel).",
           "dp_price_discharge_control": "Indien ingeschakeld, ontlaadt de batterij alleen wanneer de huidige elektriciteitsprijs de geconfigureerde maximale prijsdrempel overschrijdt. Als er geen drempel is geconfigureerd, wordt het automatisch uit de prijssensor berekende daggemiddelde gebruikt. Als tijdslots het ontladen beperken, moet aan beide voorwaarden worden voldaan.",
           "negative_price_charging_enabled": "Optionele functie voor dynamische prijzen die tijdens de meest negatieve importprijssloten laadt, ook als de normale voorspelling geen netlading vereist. Een zonnevoorspellingssensor is niet nodig.",
-          "negative_price_charging_threshold": "Een slot komt in aanmerking wanneer de genormaliseerde importprijs lager dan of gelijk aan deze inclusieve drempel is. Dit staat los van de injectieprijsdrempel voor anti-afregeling.",
-          "negative_price_charging_target_soc": "Doel-SOC voor opportunistisch laden. Elke batterij stopt bij de laagste waarde van dit doel en de geconfigureerde maximale SOC.",
           "smart_predischarge_enabled": "Schakelt optioneel voorontladen alleen in de dynamische prijsmode in om ruimte te maken vóór slots met negatieve terugleveringsprijzen.",
           "negative_injection_threshold": "Prijzen gelijk aan of lager dan deze drempel zijn risicoslots wanneer een zonne-overschot wordt verwacht.",
           "predischarge_reserve_soc": "SOC die naast de bestaande minimumgrenzen moet worden gereserveerd.",
@@ -1763,12 +1755,6 @@
       },
       "negative_injection_threshold": {
         "name": "Drempelwaarde negatieve teruglevering"
-      },
-      "negative_price_charging_threshold": {
-        "name": "Drempelwaarde negatieve importprijs"
-      },
-      "negative_price_charging_target_soc": {
-        "name": "Doel-SOC bij negatieve prijs"
       },
       "predischarge_reserve_soc": {
         "name": "SOC-reserve voor voorontladen"

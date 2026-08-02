@@ -72,12 +72,6 @@ def _dynamic_pricing_info(controller) -> dict[str, Any]:
         "negative_price_charging_enabled": getattr(
             controller, "negative_price_charging_enabled", False
         ),
-        "negative_price_charging_threshold": getattr(
-            controller, "negative_price_charging_threshold", 0.0
-        ),
-        "negative_price_charging_target_soc": getattr(
-            controller, "negative_price_charging_target_soc", 100.0
-        ),
         "active_slot_purpose": getattr(
             controller, "_active_dynamic_slot_purpose", None
         ),

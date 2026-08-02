@@ -295,8 +295,6 @@
           "discharge_price_threshold": "Preu mínim de descàrrega (opcional)",
           "dp_price_discharge_control": "Descarregar només quan el preu superi el llindar",
           "negative_price_charging_enabled": "Activar la càrrega oportunista per preu negatiu",
-          "negative_price_charging_threshold": "Llindar de preu negatiu d'importació (moneda/kWh)",
-          "negative_price_charging_target_soc": "SOC objectiu per preu negatiu (%)",
           "smart_predischarge_enabled": "Predescàrrega intel·ligent / anti-abocament",
           "negative_injection_threshold": "Llindar d'injecció negativa",
           "predischarge_reserve_soc": "Reserva de SOC de predescàrrega (%)",
@@ -313,8 +311,6 @@
           "discharge_price_threshold": "Llindar separat opcional per a la descàrrega per preu. La descàrrega es bloqueja mentre el preu sigui igual o inferior a aquest valor, obrint una banda neutra entre el preu màxim de càrrega (a dalt) i aquest mínim: en aquesta banda la bateria ni carrega de xarxa ni descarrega (la càrrega per excedent solar continua funcionant). Deixa-ho buit per reutilitzar el preu màxim per a tots dos (comportament actual d'un sol llindar).",
           "dp_price_discharge_control": "Si està activat, la bateria només descarrega quan el preu elèctric actual supera el preu màxim configurat. Si no hi ha llindar configurat, usa el preu mitjà del dia calculat automàticament a partir del sensor de preus. Si les franges horàries restringeixen la descàrrega, s'han de complir totes dues condicions.",
           "negative_price_charging_enabled": "Funció opcional de preus dinàmics que carrega durant les franges d'importació més negatives encara que la previsió normal no requereixi càrrega de xarxa. No cal cap sensor de previsió solar.",
-          "negative_price_charging_threshold": "Una franja compleix quan el preu normalitzat d'importació és igual o inferior a aquest llindar inclusiu. És independent del llindar de preu d'injecció de l'anti-abocament.",
-          "negative_price_charging_target_soc": "SOC objectiu per a la càrrega oportunista. Cada bateria s'atura al valor més baix entre aquest objectiu i el seu SOC màxim configurat.",
           "smart_predischarge_enabled": "Activa la predescàrrega optativa només en el mode de preus dinàmics per crear espai abans de franges amb preu d'injecció negatiu.",
           "negative_injection_threshold": "Preus iguals o inferiors a aquest llindar es consideren franges de risc quan hi ha excedent solar previst.",
           "predischarge_reserve_soc": "SOC que la predescàrrega ha de reservar, a més dels límits mínims existents.",
@@ -906,8 +902,6 @@
           "discharge_price_threshold": "Preu mínim de descàrrega (opcional)",
           "dp_price_discharge_control": "Descarrega només quan el preu superi el llindar",
           "negative_price_charging_enabled": "Activar la càrrega oportunista per preu negatiu",
-          "negative_price_charging_threshold": "Llindar de preu negatiu d'importació (moneda/kWh)",
-          "negative_price_charging_target_soc": "SOC objectiu per preu negatiu (%)",
           "smart_predischarge_enabled": "Predescàrrega intel·ligent / anti-abocament",
           "negative_injection_threshold": "Llindar d'injecció negativa",
           "predischarge_reserve_soc": "Reserva de SOC de predescàrrega (%)",
@@ -924,8 +918,6 @@
           "discharge_price_threshold": "Llindar separat opcional per a la descàrrega per preu. La descàrrega es bloqueja mentre el preu sigui igual o inferior a aquest valor, obrint una banda neutra entre el preu màxim de càrrega (a dalt) i aquest mínim: en aquesta banda la bateria ni carrega de xarxa ni descarrega (la càrrega per excedent solar continua funcionant). Deixa-ho buit per reutilitzar el preu màxim per a tots dos (comportament actual d'un sol llindar).",
           "dp_price_discharge_control": "Si està activat, la bateria només descarrega quan el preu elèctric actual supera el preu màxim configurat. Si no hi ha llindar configurat, usa el preu mitjà del dia calculat automàticament a partir del sensor de preus. Si les franges horàries restringeixen la descàrrega, s'han de complir totes dues condicions.",
           "negative_price_charging_enabled": "Funció opcional de preus dinàmics que carrega durant les franges d'importació més negatives encara que la previsió normal no requereixi càrrega de xarxa. No cal cap sensor de previsió solar.",
-          "negative_price_charging_threshold": "Una franja compleix quan el preu normalitzat d'importació és igual o inferior a aquest llindar inclusiu. És independent del llindar de preu d'injecció de l'anti-abocament.",
-          "negative_price_charging_target_soc": "SOC objectiu per a la càrrega oportunista. Cada bateria s'atura al valor més baix entre aquest objectiu i el seu SOC màxim configurat.",
           "smart_predischarge_enabled": "Activa la predescàrrega optativa només en el mode de preus dinàmics per crear espai abans de franges amb preu d'injecció negatiu.",
           "negative_injection_threshold": "Preus iguals o inferiors a aquest llindar es consideren franges de risc quan hi ha excedent solar previst.",
           "predischarge_reserve_soc": "SOC que la predescàrrega ha de reservar, a més dels límits mínims existents.",
@@ -1763,12 +1755,6 @@
       },
       "negative_injection_threshold": {
         "name": "Llindar d'injecció negativa"
-      },
-      "negative_price_charging_threshold": {
-        "name": "Llindar de preu negatiu d'importació"
-      },
-      "negative_price_charging_target_soc": {
-        "name": "SOC objectiu per preu negatiu"
       },
       "predischarge_reserve_soc": {
         "name": "Reserva de SOC de predescàrrega"

@@ -128,11 +128,7 @@ from .const import (
     DEFAULT_PREDISCHARGE_MAX_EXPORT_POWER_W,
     DEFAULT_CURTAILMENT_HEADROOM_MARGIN_PCT,
     CONF_NEGATIVE_PRICE_CHARGING_ENABLED,
-    CONF_NEGATIVE_PRICE_CHARGING_THRESHOLD,
-    CONF_NEGATIVE_PRICE_CHARGING_TARGET_SOC,
     DEFAULT_NEGATIVE_PRICE_CHARGING_ENABLED,
-    DEFAULT_NEGATIVE_PRICE_CHARGING_THRESHOLD,
-    DEFAULT_NEGATIVE_PRICE_CHARGING_TARGET_SOC,
     CONF_AVERAGE_PRICE_SENSOR,
     CONF_DP_PRICE_DISCHARGE_CONTROL,
     CONF_RT_PRICE_DISCHARGE_CONTROL,
@@ -654,14 +650,6 @@ class ChargeDischargeController:
             CONF_NEGATIVE_PRICE_CHARGING_ENABLED,
             DEFAULT_NEGATIVE_PRICE_CHARGING_ENABLED,
         )
-        self.negative_price_charging_threshold = config_entry.data.get(
-            CONF_NEGATIVE_PRICE_CHARGING_THRESHOLD,
-            DEFAULT_NEGATIVE_PRICE_CHARGING_THRESHOLD,
-        )
-        self.negative_price_charging_target_soc = config_entry.data.get(
-            CONF_NEGATIVE_PRICE_CHARGING_TARGET_SOC,
-            DEFAULT_NEGATIVE_PRICE_CHARGING_TARGET_SOC,
-        )
         self.dp_price_discharge_control: bool = config_entry.data.get(CONF_DP_PRICE_DISCHARGE_CONTROL, False)
         self._dp_daily_avg_price: Optional[float] = None  # Computed from price slots in _evaluate_dynamic_pricing
         self._dp_arbitrage_ceiling: Optional[float] = None  # Set per evaluation when the margin gate is on
@@ -1166,11 +1154,7 @@ class ChargeDischargeController:
             self.predischarge_max_export_power_w,
             self.curtailment_headroom_margin_pct,
         )
-        old_negative_price_config = (
-            self.negative_price_charging_enabled,
-            self.negative_price_charging_threshold,
-            self.negative_price_charging_target_soc,
-        )
+        old_negative_price_enabled = self.negative_price_charging_enabled
         # Update weekly full charge settings; reset completion state if day changed
         new_weekly_day = self.config_entry.data.get(CONF_WEEKLY_FULL_CHARGE_DAY, "sun")
         new_weekly_enabled = self.config_entry.data.get(CONF_ENABLE_WEEKLY_FULL_CHARGE, False)
@@ -1274,25 +1258,13 @@ class ChargeDischargeController:
             CONF_NEGATIVE_PRICE_CHARGING_ENABLED,
             DEFAULT_NEGATIVE_PRICE_CHARGING_ENABLED,
         )
-        self.negative_price_charging_threshold = self.config_entry.data.get(
-            CONF_NEGATIVE_PRICE_CHARGING_THRESHOLD,
-            DEFAULT_NEGATIVE_PRICE_CHARGING_THRESHOLD,
-        )
-        self.negative_price_charging_target_soc = self.config_entry.data.get(
-            CONF_NEGATIVE_PRICE_CHARGING_TARGET_SOC,
-            DEFAULT_NEGATIVE_PRICE_CHARGING_TARGET_SOC,
-        )
         new_curtailment_config = (
             self.negative_injection_threshold,
             self.predischarge_reserve_soc,
             self.predischarge_max_export_power_w,
             self.curtailment_headroom_margin_pct,
         )
-        new_negative_price_config = (
-            self.negative_price_charging_enabled,
-            self.negative_price_charging_threshold,
-            self.negative_price_charging_target_soc,
-        )
+        new_negative_price_enabled = self.negative_price_charging_enabled
         self.capacity_protection_enabled = self.config_entry.data.get(CONF_CAPACITY_PROTECTION_ENABLED, False)
         self.capacity_protection_excluded_devices = self.config_entry.data.get(
             CONF_CAPACITY_PROTECTION_EXCLUDED_DEVICES, False
@@ -1313,7 +1285,7 @@ class ChargeDischargeController:
 
         if (
             old_pricing_mode != self.predictive_charging_mode
-            or old_negative_price_config != new_negative_price_config
+            or old_negative_price_enabled != new_negative_price_enabled
             or self.predictive_charging_mode != PREDICTIVE_MODE_DYNAMIC_PRICING
         ):
             self._pricing_mgr.clear_negative_price_runtime(
@@ -3160,12 +3132,9 @@ class ChargeDischargeController:
         return targets
 
     def _compute_opportunistic_target_soc(self) -> Optional[dict]:
-        """Return the direct per-battery ceiling for negative-price charging."""
+        """Return each battery's configured maximum SOC as the opportunity ceiling."""
         targets = {
-            coordinator: min(
-                float(self.negative_price_charging_target_soc),
-                float(coordinator.max_soc),
-            )
+            coordinator: float(coordinator.max_soc)
             for coordinator in self.coordinators
             if coordinator.data is not None
             and getattr(coordinator, "is_available", True)

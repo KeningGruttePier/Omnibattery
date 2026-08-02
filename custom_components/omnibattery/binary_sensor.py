@@ -488,12 +488,6 @@ class PredictiveChargingStatusSensor(BinarySensorEntity):
             attrs["negative_price_charging_enabled"] = getattr(
                 self.controller, "negative_price_charging_enabled", False
             )
-            attrs["negative_price_charging_threshold"] = getattr(
-                self.controller, "negative_price_charging_threshold", 0.0
-            )
-            attrs["negative_price_charging_target_soc"] = getattr(
-                self.controller, "negative_price_charging_target_soc", 100.0
-            )
             attrs["active_slot_purpose"] = getattr(
                 self.controller, "_active_dynamic_slot_purpose", None
             )

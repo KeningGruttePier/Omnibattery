@@ -36,10 +36,6 @@ from .const import (
     CONF_PREDISCHARGE_RESERVE_SOC,
     CONF_PREDISCHARGE_MAX_EXPORT_POWER_W,
     CONF_CURTAILMENT_HEADROOM_MARGIN_PCT,
-    CONF_NEGATIVE_PRICE_CHARGING_THRESHOLD,
-    CONF_NEGATIVE_PRICE_CHARGING_TARGET_SOC,
-    DEFAULT_NEGATIVE_PRICE_CHARGING_THRESHOLD,
-    DEFAULT_NEGATIVE_PRICE_CHARGING_TARGET_SOC,
     MIN_CHARGE_HYSTERESIS_PERCENT,
     MAX_CHARGE_HYSTERESIS_PERCENT,
     DOMAIN,
@@ -126,8 +122,6 @@ async def async_setup_entry(
         entities.append(SmartPredischargeNumber(hass, entry, "reserve"))
         entities.append(SmartPredischargeNumber(hass, entry, "export"))
         entities.append(SmartPredischargeNumber(hass, entry, "margin"))
-        entities.append(NegativePriceChargingNumber(hass, entry, "threshold"))
-        entities.append(NegativePriceChargingNumber(hass, entry, "target_soc"))
 
     # Temperature charge limit sliders (system-level, when the feature is configured)
     if CONF_ENABLE_TEMP_CHARGE_LIMIT in entry.data:
@@ -560,103 +554,6 @@ class SmartPredischargeNumber(NumberEntity):
             "model": "Multi-Battery System",
         }
 
-
-class NegativePriceChargingNumber(NumberEntity):
-    """Hot-editable import-price threshold and opportunistic SOC target."""
-
-    _attr_has_entity_name = True
-    _attr_mode = NumberMode.BOX
-    _attr_entity_category = EntityCategory.CONFIG
-    _attr_should_poll = False
-
-    _DEFINITIONS = {
-        "threshold": (
-            CONF_NEGATIVE_PRICE_CHARGING_THRESHOLD,
-            DEFAULT_NEGATIVE_PRICE_CHARGING_THRESHOLD,
-            -2.0,
-            2.0,
-            0.001,
-            "mdi:cash-minus",
-        ),
-        "target_soc": (
-            CONF_NEGATIVE_PRICE_CHARGING_TARGET_SOC,
-            DEFAULT_NEGATIVE_PRICE_CHARGING_TARGET_SOC,
-            0.0,
-            100.0,
-            1.0,
-            "mdi:battery-charging-100",
-        ),
-    }
-
-    def __init__(self, hass: HomeAssistant, entry: ConfigEntry, kind: str) -> None:
-        self.hass = hass
-        self.entry = entry
-        self._kind = kind
-        key, default, minimum, maximum, step, icon = self._DEFINITIONS[kind]
-        self._conf_key = key
-        self._default = default
-        self._attr_translation_key = key
-        self._attr_unique_id = f"{SYSTEM_UNIQUE_ID_PREFIX}{key}"
-        self.entity_id = system_entity_id("number", key)
-        self._attr_icon = icon
-        self._attr_native_min_value = minimum
-        self._attr_native_max_value = maximum
-        self._attr_native_step = step
-        if kind == "threshold":
-            is_chf = entry.data.get(CONF_PRICE_INTEGRATION_TYPE) == PRICE_INTEGRATION_CKW
-            self._attr_native_unit_of_measurement = "CHF/kWh" if is_chf else "€/kWh"
-        else:
-            self._attr_native_unit_of_measurement = "%"
-
-    async def async_added_to_hass(self) -> None:
-        self.async_on_remove(self.entry.add_update_listener(self._handle_entry_update))
-
-    async def _handle_entry_update(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
-        self.async_write_ha_state()
-
-    @property
-    def native_value(self) -> float:
-        try:
-            return float(self.entry.data.get(self._conf_key, self._default))
-        except (TypeError, ValueError):
-            return float(self._default)
-
-    async def async_set_native_value(self, value: float) -> None:
-        controller = self.hass.data[DOMAIN][self.entry.entry_id].get("controller")
-        active_purpose = (
-            getattr(controller, "_active_dynamic_slot_purpose", None)
-            if controller is not None
-            else None
-        )
-        new_data = dict(self.entry.data)
-        new_data[self._conf_key] = float(value)
-        self.hass.config_entries.async_update_entry(self.entry, data=new_data)
-        if controller is not None:
-            if self._kind == "threshold":
-                controller.negative_price_charging_threshold = float(value)
-            else:
-                controller.negative_price_charging_target_soc = float(value)
-            if active_purpose == "negative_price":
-                await controller._pricing_mgr._stop_dynamic_price_slot(
-                    "negative_price_configuration_changed"
-                )
-            controller._pricing_mgr.clear_negative_price_runtime(
-                "configuration_changed"
-            )
-            if controller.negative_price_charging_enabled:
-                await controller._pricing_mgr._evaluate_dynamic_pricing(
-                    extended_horizon=True
-                )
-        self.async_write_ha_state()
-
-    @property
-    def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, "marstek_venus_system")},
-            "name": "Omnibattery System",
-            "manufacturer": "Omnibattery",
-            "model": "Multi-Battery System",
-        }
 
 
 class TempChargeLimitNumber(NumberEntity):

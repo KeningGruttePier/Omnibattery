@@ -604,11 +604,8 @@ class PricingManager:
         )
 
     def _opportunistic_target_for(self, coordinator) -> float:
-        """Return this battery's configured opportunistic ceiling."""
-        return min(
-            float(getattr(self._controller, "negative_price_charging_target_soc", 100.0)),
-            float(coordinator.max_soc),
-        )
+        """Return this battery's configured maximum SOC opportunity ceiling."""
+        return float(coordinator.max_soc)
 
     def _opportunistic_battery_eligible(self, coordinator) -> bool:
         """Return whether runtime ownership allows this battery to participate."""
@@ -670,11 +667,7 @@ class PricingManager:
         price = self._get_current_price()
         if price is None or not math.isfinite(price):
             return False
-        try:
-            threshold = float(self._controller.negative_price_charging_threshold)
-        except (TypeError, ValueError):
-            return False
-        return price <= threshold
+        return price < 0.0
 
     @staticmethod
     def _merge_slot_purpose(left: str | None, right: str) -> str:
@@ -1334,7 +1327,7 @@ class PricingManager:
 
         # Step 3: Build the two independent candidate calendars.  Deficit
         # selection keeps the established price ceiling/arbitrage behaviour.
-        # Opportunistic selection has its own inclusive import-price threshold
+        # Opportunistic selection only considers strictly negative import prices
         # and always takes the most-negative individual intervals first.
         deficit_kwh = decision_data["energy_deficit_kwh"]
         if deficit_charging_needed:
@@ -1376,9 +1369,9 @@ class PricingManager:
             self._controller.max_charge_capacity,
         )
         negative_price_selected = calculations.select_cheapest_slots_by_duration(
-            slots,
+            [slot for slot in slots if math.isfinite(slot.price) and slot.price < 0.0],
             negative_price_hours_needed,
-            getattr(self._controller, "negative_price_charging_threshold", 0.0),
+            None,
             now=eval_now,
         )
         opportunity_selected = bool(negative_price_selected)
@@ -1439,9 +1432,9 @@ class PricingManager:
             # shares the same interval: only the necessary deficit purpose keeps
             # the protected slot.
             negative_price_selected = calculations.select_cheapest_slots_by_duration(
-                safe_slots,
+                [slot for slot in safe_slots if math.isfinite(slot.price) and slot.price < 0.0],
                 negative_price_hours_needed,
-                getattr(self._controller, "negative_price_charging_threshold", 0.0),
+                None,
                 now=eval_now,
             )
             if (
@@ -1649,16 +1642,12 @@ class PricingManager:
 
         opportunity_needed = False
         if has_opportunity and self._negative_price_feature_enabled():
-            try:
-                threshold = float(self._controller.negative_price_charging_threshold)
-                opportunity_needed = bool(
-                    math.isfinite(next_slot.price)
-                    and next_slot.price <= threshold
-                    and self._opportunistic_target_pending()
-                    and not self._slot_overlaps_curtailment_risk(next_slot)
-                )
-            except (TypeError, ValueError):
-                opportunity_needed = False
+            opportunity_needed = bool(
+                math.isfinite(next_slot.price)
+                and next_slot.price < 0.0
+                and self._opportunistic_target_pending()
+                and not self._slot_overlaps_curtailment_risk(next_slot)
+            )
 
         if deficit_needed and opportunity_needed:
             effective_purpose = SLOT_PURPOSE_COMBINED

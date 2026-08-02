@@ -29,8 +29,6 @@ Automatically selects the **cheapest hours of the day** to cover the calculated 
 | **Solar forecast safety margin (kWh)** | (Optional) Extra energy buffer added to consumption forecast before deciding whether to charge (default 0 kWh) |
 | **Predictive grid charge margin (%)** | (Optional) Tops up the grid-charge amount to hedge optimistic solar forecasts — e.g. a 2 kWh grid need at 50 % charges 3 kWh. Capped at the gap to max SOC (default 0 %) |
 | **Negative-price opportunistic charging** | (Optional, default off) Charge in qualifying negative import-price slots even when the normal forecast has no deficit |
-| **Negative import-price threshold** | Inclusive normalized import-price threshold; default `0` currency/kWh |
-| **Negative-price target SOC** | Opportunistic target, capped independently by each battery's configured maximum SOC; default `100 %` |
 
 ![Configuration form — Dynamic Pricing mode](../../assets/screenshots/configuration/predictive-charging/dynamic-pricing-form.png){ width="650"  style="display: block; margin: 0 auto;"}
 
@@ -56,15 +54,15 @@ If HA restarts after the 00:05 window without a prior evaluation, the controller
 
 ## Negative-price opportunistic charging
 
-This **opt-in Dynamic Pricing feature** is intended for installations with or without solar. When enabled, Omnibattery independently finds hourly or 15-minute slots whose normalized **import price is less than or equal to** the configured threshold. It calculates the battery energy needed to reach the target SOC and selects the most-negative individual slots first. A solar forecast sensor is not required.
+This **opt-in Dynamic Pricing feature** is intended for installations with or without solar. When enabled, Omnibattery independently finds hourly or 15-minute slots whose normalized **import price is negative**. It calculates the battery energy needed to reach each battery's configured maximum SOC and selects the most-negative individual slots first. A solar forecast sensor is not required.
 
-The calendar records why each interval was selected: `deficit`, `negative_price`, or `combined`. A positive-price deficit slot therefore keeps the normal deficit-based SOC target; it cannot consume energy that is pending only for an opportunity. In a qualifying combined slot, the higher of the deficit and opportunistic targets applies. Each battery is always capped at `min(negative-price target SOC, battery max SOC)`.
+The calendar records why each interval was selected: `deficit`, `negative_price`, or `combined`. A positive-price deficit slot therefore keeps the normal deficit-based SOC target; it cannot consume energy that is pending only for an opportunity. In a qualifying combined slot, the higher of the deficit and opportunistic targets applies. Each battery uses its own configured maximum SOC as the opportunistic ceiling.
 
-Charging stops as soon as the active target is reached, and remaining opportunity-only slots are removed. A pure opportunity also stops if the live price becomes unavailable or rises above the inclusive threshold. Contracted power, per-battery and system charge limits, user blockers, manual ownership, backup, active balance, availability and all existing safety controls remain authoritative.
+Charging stops as soon as the battery's configured maximum SOC is reached, and remaining opportunity-only slots are removed. A pure opportunity also stops if the live price becomes unavailable or is no longer negative. Contracted power, per-battery and system charge limits, user blockers, manual ownership, backup, active balance, availability and all existing safety controls remain authoritative.
 
-The **Negative import-price threshold** is deliberately separate from the **Negative injection threshold** below. The former decides when importing energy is attractive; the latter identifies solar anti-curtailment risk. When both features identify the same solar-risk interval, Smart Pre-discharge reserves the battery headroom and suppresses opportunistic filling. A charge required to guarantee minimum SOC remains the safety exception. Missing solar data puts the anti-curtailment planner in fail-safe mode but does not cancel an otherwise valid import-price opportunity.
+The negative import-price condition is deliberately separate from the **Negative injection threshold** below. The former detects when importing energy is attractive; the latter identifies solar anti-curtailment risk. When both features identify the same solar-risk interval, Smart Pre-discharge reserves the battery headroom and suppresses opportunistic filling. A charge required to guarantee minimum SOC remains the safety exception. Missing solar data puts the anti-curtailment planner in fail-safe mode but does not cancel an otherwise valid import-price opportunity.
 
-The runtime switch and both numbers are available in the Omnibattery System controls, so automations can enable the feature or change its threshold/target without reopening the options flow.
+The runtime switch is available in the Omnibattery System controls, so automations can enable the feature without reopening the options flow.
 
 ---
 
