@@ -99,6 +99,7 @@ Only present when the [cell balance monitor](../features/cell-balance-monitor.md
 | `switch.*_backup_function` | Backup function — when enabled **and** AC offgrid power ≠ 0 W, the battery is excluded from PD control (no write commands sent) |
 | `switch.marstek_venus_system_override_predictive_charging` | Override predictive charging |
 | `switch.omnibattery_smart_predischarge` | Opt-in smart pre-discharge / anti-curtailment (Dynamic Pricing only) |
+| `switch.omnibattery_negative_price_charging` | Opt-in opportunistic charging at negative import prices (Dynamic Pricing only) |
 
 ## Buttons
 

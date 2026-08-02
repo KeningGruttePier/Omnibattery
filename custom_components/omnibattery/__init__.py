@@ -127,6 +127,8 @@ from .const import (
     DEFAULT_PREDISCHARGE_RESERVE_SOC,
     DEFAULT_PREDISCHARGE_MAX_EXPORT_POWER_W,
     DEFAULT_CURTAILMENT_HEADROOM_MARGIN_PCT,
+    CONF_NEGATIVE_PRICE_CHARGING_ENABLED,
+    DEFAULT_NEGATIVE_PRICE_CHARGING_ENABLED,
     CONF_AVERAGE_PRICE_SENSOR,
     CONF_DP_PRICE_DISCHARGE_CONTROL,
     CONF_RT_PRICE_DISCHARGE_CONTROL,
@@ -186,7 +188,14 @@ from .control.weekly_full_charge import WeeklyFullChargeManager
 from .control.active_balance_mode import ActiveBalanceModeManager
 from .control.max_soc_charge import MaxSocChargeManager
 from .control.temperature_limit import TemperatureChargeLimitManager
-from .pricing import DynamicPricingSchedule, calculations, notifications
+from .pricing import (
+    DynamicPricingSchedule,
+    SLOT_PURPOSE_COMBINED,
+    SLOT_PURPOSE_DEFICIT,
+    SLOT_PURPOSE_NEGATIVE_PRICE,
+    calculations,
+    notifications,
+)
 from .pricing.engine import PricingManager
 
 _LOGGER = logging.getLogger(__name__)
@@ -602,6 +611,10 @@ class ChargeDischargeController:
         self._last_decision_data = None  # Store last decision for diagnostics
         self._slot_entry_time = None  # When we first entered the time slot (for 5-min delay)
         self._predictive_charge_target_soc: Optional[dict] = None  # Per-battery grid-only SOC targets {coordinator: target_%}
+        # Snapshot of the deficit-only target at entry to a typed dynamic-price
+        # slot.  If a combined slot later loses its opportunistic purpose, this
+        # avoids rebasing the same planned deficit on top of energy already stored.
+        self._predictive_deficit_target_soc: Optional[dict] = None
 
         # Real-time Price Mode state
         self.average_price_sensor = config_entry.data.get(CONF_AVERAGE_PRICE_SENSOR, None)
@@ -633,6 +646,10 @@ class ChargeDischargeController:
         self.curtailment_headroom_margin_pct = config_entry.data.get(
             CONF_CURTAILMENT_HEADROOM_MARGIN_PCT, DEFAULT_CURTAILMENT_HEADROOM_MARGIN_PCT
         )
+        self.negative_price_charging_enabled = config_entry.data.get(
+            CONF_NEGATIVE_PRICE_CHARGING_ENABLED,
+            DEFAULT_NEGATIVE_PRICE_CHARGING_ENABLED,
+        )
         self.dp_price_discharge_control: bool = config_entry.data.get(CONF_DP_PRICE_DISCHARGE_CONTROL, False)
         self._dp_daily_avg_price: Optional[float] = None  # Computed from price slots in _evaluate_dynamic_pricing
         self._dp_arbitrage_ceiling: Optional[float] = None  # Set per evaluation when the margin gate is on
@@ -659,6 +676,9 @@ class ChargeDischargeController:
         self._current_price_slot_active = False
         self._dp_eval_retry_count = 0  # Retry counter if tomorrow prices not available at 23:00
         self._dp_pre_evaluated_slots: dict = {}  # slot.start (datetime) → should_charge (bool)
+        self._dp_pre_evaluated_purposes: dict = {}  # slot.start → effective typed purpose
+        self._dp_completed_slots: set = set()  # slot.start values completed in this plan
+        self._active_dynamic_slot_purpose: Optional[str] = None
         self._price_data_status = "not_evaluated"
         self._price_health_last_check = None      # monotonic ts of last health poll
         self._price_data_bad_since = None         # monotonic ts price parsing started failing
@@ -1134,6 +1154,7 @@ class ChargeDischargeController:
             self.predischarge_max_export_power_w,
             self.curtailment_headroom_margin_pct,
         )
+        old_negative_price_enabled = self.negative_price_charging_enabled
         # Update weekly full charge settings; reset completion state if day changed
         new_weekly_day = self.config_entry.data.get(CONF_WEEKLY_FULL_CHARGE_DAY, "sun")
         new_weekly_enabled = self.config_entry.data.get(CONF_ENABLE_WEEKLY_FULL_CHARGE, False)
@@ -1233,12 +1254,17 @@ class ChargeDischargeController:
         self.curtailment_headroom_margin_pct = self.config_entry.data.get(
             CONF_CURTAILMENT_HEADROOM_MARGIN_PCT, DEFAULT_CURTAILMENT_HEADROOM_MARGIN_PCT
         )
+        self.negative_price_charging_enabled = self.config_entry.data.get(
+            CONF_NEGATIVE_PRICE_CHARGING_ENABLED,
+            DEFAULT_NEGATIVE_PRICE_CHARGING_ENABLED,
+        )
         new_curtailment_config = (
             self.negative_injection_threshold,
             self.predischarge_reserve_soc,
             self.predischarge_max_export_power_w,
             self.curtailment_headroom_margin_pct,
         )
+        new_negative_price_enabled = self.negative_price_charging_enabled
         self.capacity_protection_enabled = self.config_entry.data.get(CONF_CAPACITY_PROTECTION_ENABLED, False)
         self.capacity_protection_excluded_devices = self.config_entry.data.get(
             CONF_CAPACITY_PROTECTION_EXCLUDED_DEVICES, False
@@ -1254,6 +1280,15 @@ class ChargeDischargeController:
             or not self.smart_predischarge_enabled
         ):
             self._pricing_mgr.clear_curtailment_runtime(
+                "mode_or_configuration_changed"
+            )
+
+        if (
+            old_pricing_mode != self.predictive_charging_mode
+            or old_negative_price_enabled != new_negative_price_enabled
+            or self.predictive_charging_mode != PREDICTIVE_MODE_DYNAMIC_PRICING
+        ):
+            self._pricing_mgr.clear_negative_price_runtime(
                 "mode_or_configuration_changed"
             )
 
@@ -1705,6 +1740,19 @@ class ChargeDischargeController:
 
     def _effective_charge_max_soc(self, coordinator, weekly_100_unlocked: bool) -> tuple[float, str]:
         """Return the current per-battery charge ceiling and the source of that ceiling."""
+        # A typed opportunity must stop at its explicit target even when a
+        # weekly-full-charge window happens to overlap.  The weekly routine can
+        # continue toward 100% after opportunistic grid ownership is released.
+        if (
+            self.grid_charging_active
+            and self._predictive_charge_target_soc is not None
+            and getattr(self, "_active_dynamic_slot_purpose", None)
+            in {SLOT_PURPOSE_NEGATIVE_PRICE, SLOT_PURPOSE_COMBINED}
+        ):
+            per_battery_target = self._predictive_charge_target_soc.get(coordinator)
+            if per_battery_target is not None:
+                return min(coordinator.max_soc, per_battery_target), "predictive_target"
+
         if weekly_100_unlocked:
             return 100, "weekly_full_charge"
 
@@ -3010,8 +3058,8 @@ class ChargeDischargeController:
 
         return self._check_time_window()
 
-    def _compute_predictive_target_soc(self) -> Optional[dict]:
-        """Calculate per-battery grid-only SOC targets for predictive charging.
+    def _compute_deficit_target_soc(self) -> Optional[dict]:
+        """Calculate per-battery grid-only SOC targets for a forecast deficit.
 
         Each battery's share of grid charge is proportional to its gap to max_soc,
         so batteries with a larger gap get more grid charge and batteries that are
@@ -3083,6 +3131,58 @@ class ChargeDischargeController:
         )
         return targets
 
+    def _compute_opportunistic_target_soc(self) -> Optional[dict]:
+        """Return each battery's configured maximum SOC as the opportunity ceiling."""
+        targets = {
+            coordinator: float(coordinator.max_soc)
+            for coordinator in self.coordinators
+            if coordinator.data is not None
+            and getattr(coordinator, "is_available", True)
+        }
+        return targets or None
+
+    def _compute_predictive_target_soc(self) -> Optional[dict]:
+        """Return the SOC target authorized by the active typed price slot.
+
+        Deficit targets remain authoritative in ordinary slots.  The
+        opportunistic target is introduced only while a slot is explicitly
+        marked ``negative_price`` or ``combined`` by the pricing calendar.
+        """
+        purpose = getattr(self, "_active_dynamic_slot_purpose", None)
+        # Call the helpers through the class so this method remains usable in
+        # the lightweight controller stand-ins used by the planning tests.
+        deficit_targets = ChargeDischargeController._compute_deficit_target_soc(self)
+        self._predictive_deficit_target_soc = (
+            deficit_targets
+            if purpose in {SLOT_PURPOSE_DEFICIT, SLOT_PURPOSE_COMBINED}
+            else None
+        )
+        if purpose not in {SLOT_PURPOSE_NEGATIVE_PRICE, SLOT_PURPOSE_COMBINED}:
+            return deficit_targets
+
+        opportunistic_targets = ChargeDischargeController._compute_opportunistic_target_soc(
+            self
+        )
+        if purpose == SLOT_PURPOSE_NEGATIVE_PRICE:
+            return opportunistic_targets
+        if not opportunistic_targets:
+            return deficit_targets
+        if not deficit_targets:
+            return opportunistic_targets
+
+        combined = {}
+        for coordinator in set(deficit_targets) | set(opportunistic_targets):
+            targets = [
+                mapping[coordinator]
+                for mapping in (deficit_targets, opportunistic_targets)
+                if coordinator in mapping
+            ]
+            combined[coordinator] = min(
+                float(coordinator.max_soc),
+                max(targets),
+            )
+        return combined
+
     async def _handle_predictive_grid_charging(self):
         """
         Handle predictive grid charging mode.
@@ -3121,10 +3221,22 @@ class ChargeDischargeController:
         # Apply sensor filtering (shared time-constant EMA).
         sensor_filtered = self._filter_grid_sample(sensor_raw, sensor_elapsed_s)
         
-        # Get available batteries (respecting max_soc)
+        # Establish the typed per-battery ceiling before availability is
+        # evaluated.  This prevents a battery that already reached its
+        # opportunistic target from receiving even the first control-cycle
+        # command while another battery still needs charge.
+        if (
+            not self._grid_charging_initialized
+            or self._predictive_charge_target_soc is None
+        ):
+            self._predictive_charge_target_soc = self._compute_predictive_target_soc()
+
+        # Get available batteries (respecting the active target and max_soc)
         available_batteries = self._get_available_batteries(is_charging=True)
         if not available_batteries:
-            _LOGGER.info("Predictive charging complete: all batteries at max_soc - resuming normal operation")
+            _LOGGER.info(
+                "Predictive charging complete: all batteries reached their active SOC target"
+            )
             self.grid_charging_active = False
             self._grid_charging_initialized = False
             self.first_execution = True
@@ -3152,7 +3264,6 @@ class ChargeDischargeController:
             self.previous_power = -min(max_battery_charge, target_power)  # Start at max charge
             self._grid_charging_initialized = True
             self.first_execution = False  # Mark as initialized to avoid conflicts
-            self._predictive_charge_target_soc = self._compute_predictive_target_soc()
             _LOGGER.info("Initialized predictive charging: target=%dW, initial_charge=%dW",
                         target_power, abs(self.previous_power))
         
@@ -6402,6 +6513,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             # Remove the opt-in runtime override/blockers before the control
             # timer and entities disappear.  The plan itself is never persisted.
             controller._pricing_mgr.clear_curtailment_runtime("unload")
+            controller._pricing_mgr.clear_negative_price_runtime("unload")
 
         # 1. Cancel periodic timers FIRST to stop control loop and coordinator refresh
         # These run every 2.0s / 1.5s and would write registers on a closing connection

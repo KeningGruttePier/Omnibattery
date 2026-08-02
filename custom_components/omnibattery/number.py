@@ -555,6 +555,7 @@ class SmartPredischargeNumber(NumberEntity):
         }
 
 
+
 class TempChargeLimitNumber(NumberEntity):
     """Live-editable temperature charge-derate parameter (limit / band / floor).
 

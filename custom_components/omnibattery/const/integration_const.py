@@ -613,6 +613,12 @@ DEFAULT_PREDISCHARGE_RESERVE_SOC = 0.0
 DEFAULT_PREDISCHARGE_MAX_EXPORT_POWER_W = 0.0
 DEFAULT_CURTAILMENT_HEADROOM_MARGIN_PCT = 0.0
 
+# Opportunistic import charging.  This is deliberately separate from
+# CONF_NEGATIVE_INJECTION_THRESHOLD: the latter prices exported solar for
+# anti-curtailment, while this feature reacts to negative grid-import prices.
+CONF_NEGATIVE_PRICE_CHARGING_ENABLED = "negative_price_charging_enabled"
+DEFAULT_NEGATIVE_PRICE_CHARGING_ENABLED = False
+
 PREDICTIVE_MODE_TIME_SLOT = "time_slot"
 PREDICTIVE_MODE_DYNAMIC_PRICING = "dynamic_pricing"
 PREDICTIVE_MODE_REALTIME_PRICE = "realtime_price"

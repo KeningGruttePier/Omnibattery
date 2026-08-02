@@ -87,6 +87,7 @@ Solo presentes cuando el [monitor de equilibrio de celdas](../features/cell-bala
 | `switch.*_backup_function` | Función de reserva — cuando está activo **y** la potencia AC offgrid ≠ 0 W, la batería queda excluida del control PD (no se envían comandos de escritura) |
 | `switch.marstek_venus_system_override_predictive_charging` | Cancelar carga predictiva |
 | `switch.omnibattery_smart_predischarge` | Activar predescarga inteligente / anti-vertido (solo Precio Dinámico) |
+| `switch.omnibattery_negative_price_charging` | Activar carga oportunista con precios negativos de importación (solo Precio Dinámico) |
 
 ## Botones
 

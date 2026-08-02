@@ -196,6 +196,7 @@ def format_dynamic_pricing_notification(
     else:
         hours_needed = schedule.hours_needed
         n_slots = len(schedule.selected_slots)
+        schedule_type = getattr(schedule, "schedule_type", "deficit")
         slots_label = f"{n_slots} slot{'s' if n_slots != 1 else ''}" if n_slots != int(hours_needed) else ""
         hours_label = f"{hours_needed:.1f}h" + (f" ({slots_label})" if slots_label else "")
         title = f"Predictive Charging: Price Optimization - {hours_label} selected"
@@ -203,9 +204,30 @@ def format_dynamic_pricing_notification(
         cost_unit = unit.split("/")[0]  # "€/kWh" → "€", "CHF" → "CHF"
         slot_lines = "\n".join(
             f"  • {s.start.strftime('%H:%M')}-{s.end.strftime('%H:%M')} → {s.price:.4f} {unit}"
+            + (
+                f" [{schedule.purpose_for(s)}]"
+                if hasattr(schedule, "purpose_for")
+                else ""
+            )
             for s in schedule.selected_slots
         )
-        if not schedule.charging_needed:
+        if schedule_type == "negative_price":
+            title = f"Negative-price charging: {hours_label} selected"
+            opportunity_energy = float(
+                getattr(schedule, "negative_price_energy_kwh", 0.0) or 0.0
+            )
+            message = (
+                f"🔋 Battery: {avg_soc:.0f}% ({usable_energy:.2f} kWh usable)\n"
+                f"⚡ Opportunistic charge planned: {opportunity_energy:.2f} kWh\n"
+                f"No predictive energy deficit is required.\n\n"
+                f"💰 Most-negative qualifying slots:\n{slot_lines}\n\n"
+                f"Average price: {schedule.average_price:.4f} {unit}\n"
+                f"Estimated cost: ~{schedule.estimated_cost:.2f} {cost_unit}\n"
+                f"{price_config_line}"
+                f"Max charge power: {min(max_contracted_power, max_charge_capacity)}W "
+                f"(ICP: {max_contracted_power}W, batteries: {max_charge_capacity}W)"
+            )
+        elif not schedule.charging_needed:
             title = f"Predictive Charging: Price Info - {hours_label} cheapest"
             message = (
                 f"✓ No grid charging needed today\n\n"
@@ -219,11 +241,18 @@ def format_dynamic_pricing_notification(
                 f"No charging will activate."
             )
         else:
+            opportunity_line = ""
+            if schedule_type == "combined":
+                opportunity_line = (
+                    "⚡ Negative-price opportunity: "
+                    f"{float(getattr(schedule, 'negative_price_energy_kwh', 0.0) or 0.0):.2f} kWh\n"
+                )
             message = (
                 f"🔋 Battery: {avg_soc:.0f}% ({usable_energy:.2f} kWh usable)\n"
                 f"☀️ Solar forecast: {solar_str}\n"
                 f"📊 Consumption: {consumption_str}\n"
                 f"⚡ Energy deficit: {energy_deficit:.2f} kWh\n"
+                f"{opportunity_line}"
                 f"🔌 Grid charge planned: {planned_grid_charge:.2f} kWh → "
                 f"{hours_needed:.1f}h of charging needed\n\n"
                 f"💰 Selected hours (cheapest):\n{slot_lines}\n\n"

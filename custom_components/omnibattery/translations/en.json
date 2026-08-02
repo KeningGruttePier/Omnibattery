@@ -288,6 +288,7 @@
           "max_price_threshold": "Maximum price threshold (optional)",
           "discharge_price_threshold": "Discharge price floor (optional)",
           "dp_price_discharge_control": "Only discharge when price is above threshold",
+          "negative_price_charging_enabled": "Enable negative-price opportunistic charging",
           "smart_predischarge_enabled": "Enable Smart Pre-discharge / Anti-curtailment",
           "negative_injection_threshold": "Negative injection threshold (currency/kWh)",
           "predischarge_reserve_soc": "Pre-discharge reserve SOC (%)",
@@ -303,6 +304,7 @@
           "max_price_threshold": "Slots above this price will not be selected. When price-gated discharge is enabled, this value is also used as the discharge threshold unless a separate discharge floor is set below. Use major currency/kWh: €/kWh for Nordpool/PVPC, CHF/kWh for CKW. HACS Nordpool prices configured in cents are converted automatically. Leave empty to use all slots and use the daily average as the discharge threshold.",
           "discharge_price_threshold": "Optional separate floor for price-gated discharge. Discharge is blocked while the price is at or below this value, opening an idle band between the charge ceiling above and this floor: in that band the battery neither grid-charges nor discharges (solar-surplus charging still works). Leave empty to reuse the maximum price threshold for both (current single-threshold behavior).",
           "dp_price_discharge_control": "When enabled, the battery only discharges when the current electricity price exceeds the configured maximum price threshold. If no threshold is configured, it uses today's average price computed automatically from the price sensor. If time slots restrict discharge, both conditions must be met.",
+          "negative_price_charging_enabled": "Opt-in dynamic-pricing feature that charges during the most negative import-price slots even when the normal energy forecast does not require grid charging. A solar forecast sensor is not required.",
           "smart_predischarge_enabled": "Opt-in dynamic-pricing anti-curtailment. It creates headroom before forecast PV reaches a negative-price window while preserving all SOC, user and battery safety limits.",
           "negative_injection_threshold": "Protect slots whose normalized price is at or below this inclusive threshold when forecast PV exceeds estimated household consumption.",
           "predischarge_reserve_soc": "Additional SOC floor for pre-discharge. 0 uses the configured and guaranteed minimum SOC floors.",
@@ -887,6 +889,7 @@
           "max_price_threshold": "Maximum price threshold (optional)",
           "discharge_price_threshold": "Discharge price floor (optional)",
           "dp_price_discharge_control": "Only discharge when price is above threshold",
+          "negative_price_charging_enabled": "Enable negative-price opportunistic charging",
           "smart_predischarge_enabled": "Enable Smart Pre-discharge / Anti-curtailment",
           "negative_injection_threshold": "Negative injection threshold (currency/kWh)",
           "predischarge_reserve_soc": "Pre-discharge reserve SOC (%)",
@@ -902,6 +905,7 @@
           "max_price_threshold": "Slots above this price will not be selected. When price-gated discharge is enabled, this value is also used as the discharge threshold unless a separate discharge floor is set below. Use major currency/kWh: €/kWh for Nordpool/PVPC, CHF/kWh for CKW. HACS Nordpool prices configured in cents are converted automatically. Leave empty to use all slots and use the daily average as the discharge threshold.",
           "discharge_price_threshold": "Optional separate floor for price-gated discharge. Discharge is blocked while the price is at or below this value, opening an idle band between the charge ceiling above and this floor: in that band the battery neither grid-charges nor discharges (solar-surplus charging still works). Leave empty to reuse the maximum price threshold for both (current single-threshold behavior).",
           "dp_price_discharge_control": "When enabled, the battery only discharges when the current electricity price exceeds the configured maximum price threshold. If no threshold is configured, it uses today's average price computed automatically from the price sensor. If time slots restrict discharge, both conditions must be met.",
+          "negative_price_charging_enabled": "Opt-in dynamic-pricing feature that charges during the most negative import-price slots even when the normal energy forecast does not require grid charging. A solar forecast sensor is not required.",
           "smart_predischarge_enabled": "Opt-in dynamic-pricing anti-curtailment. It creates headroom before forecast PV reaches a negative-price window while preserving all SOC, user and battery safety limits.",
           "negative_injection_threshold": "Protect slots whose normalized price is at or below this inclusive threshold when forecast PV exceeds estimated household consumption.",
           "predischarge_reserve_soc": "Additional SOC floor for pre-discharge. 0 uses the configured and guaranteed minimum SOC floors.",
@@ -1171,6 +1175,9 @@
       },
       "smart_predischarge": {
         "name": "Smart Pre-discharge / Anti-curtailment"
+      },
+      "negative_price_charging": {
+        "name": "Negative-price opportunistic charging"
       },
       "rt_price_discharge_control": {
         "name": "Price-Based Discharge"

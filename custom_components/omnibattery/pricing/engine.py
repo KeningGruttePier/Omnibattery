@@ -45,7 +45,15 @@ from ..const import (
     T_START_FALLBACK_HOUR,
     FLOOR_HYSTERESIS_PCT,
 )
-from . import PriceSlot, DynamicPricingSchedule, calculations, notifications
+from . import (
+    DynamicPricingSchedule,
+    PriceSlot,
+    SLOT_PURPOSE_COMBINED,
+    SLOT_PURPOSE_DEFICIT,
+    SLOT_PURPOSE_NEGATIVE_PRICE,
+    calculations,
+    notifications,
+)
 from .curtailment import (
     BatterySnapshot,
     CurtailmentPlan,
@@ -585,6 +593,244 @@ class PricingManager:
         now = datetime.now()
         return any(s.start <= now < s.end for s in self._controller._dynamic_pricing_schedule.selected_slots)
 
+    def _negative_price_feature_enabled(self) -> bool:
+        """Return the complete scope gate for opportunistic import charging."""
+        controller = self._controller
+        return bool(
+            getattr(controller, "negative_price_charging_enabled", False)
+            and getattr(controller, "predictive_charging_enabled", False)
+            and getattr(controller, "predictive_charging_mode", None)
+            == PREDICTIVE_MODE_DYNAMIC_PRICING
+        )
+
+    def _opportunistic_target_for(self, coordinator) -> float:
+        """Return this battery's configured maximum SOC opportunity ceiling."""
+        return float(coordinator.max_soc)
+
+    def _opportunistic_battery_eligible(self, coordinator) -> bool:
+        """Return whether runtime ownership allows this battery to participate."""
+        if (
+            getattr(coordinator, "data", None) is None
+            or not getattr(coordinator, "is_available", True)
+            or not getattr(coordinator, "allow_charge", True)
+            or getattr(coordinator, "rs485_user_disabled", False)
+        ):
+            return False
+        controller = self._controller
+        tracker = getattr(controller, "_non_responsive", None)
+        if tracker is not None and tracker.is_excluded(coordinator):
+            return False
+        for method_name in (
+            "_is_active_balance_mode_running",
+            "_is_backup_function_active",
+            "_is_manual_slot_owned",
+        ):
+            method = getattr(controller, method_name, None)
+            if method is not None and method(coordinator):
+                return False
+        return True
+
+    def _negative_price_energy_needed_kwh(self) -> float:
+        """Battery energy still required to reach all opportunistic SOC targets."""
+        needed = 0.0
+        for coordinator in getattr(self._controller, "coordinators", []):
+            data = getattr(coordinator, "data", None)
+            if not self._opportunistic_battery_eligible(coordinator):
+                continue
+            try:
+                capacity = float(data.get("battery_total_energy", 0.0) or 0.0)
+                soc = float(data.get("battery_soc", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                continue
+            if capacity <= 0:
+                continue
+            needed += max(0.0, self._opportunistic_target_for(coordinator) - soc) / 100.0 * capacity
+        return needed
+
+    def _opportunistic_target_pending(self) -> bool:
+        """Return whether at least one battery remains below its own target."""
+        for coordinator in getattr(self._controller, "coordinators", []):
+            data = getattr(coordinator, "data", None)
+            if not self._opportunistic_battery_eligible(coordinator):
+                continue
+            try:
+                if float(data.get("battery_soc", 0.0) or 0.0) < self._opportunistic_target_for(coordinator):
+                    return True
+            except (TypeError, ValueError):
+                continue
+        return False
+
+    def _current_price_is_opportunistic(self) -> bool:
+        """Validate the live normalized import price against the inclusive gate."""
+        if not self._negative_price_feature_enabled():
+            return False
+        price = self._get_current_price()
+        if price is None or not math.isfinite(price):
+            return False
+        return price < 0.0
+
+    @staticmethod
+    def _merge_slot_purpose(left: str | None, right: str) -> str:
+        """Combine independent reasons assigned to the same physical interval."""
+        if left is None or left == right:
+            return right
+        return SLOT_PURPOSE_COMBINED
+
+    @staticmethod
+    def _schedule_type_from_purposes(purposes) -> str:
+        """Summarise typed slots as deficit, negative_price or combined."""
+        values = set(purposes)
+        if SLOT_PURPOSE_COMBINED in values or {
+            SLOT_PURPOSE_DEFICIT,
+            SLOT_PURPOSE_NEGATIVE_PRICE,
+        }.issubset(values):
+            return SLOT_PURPOSE_COMBINED
+        if SLOT_PURPOSE_NEGATIVE_PRICE in values:
+            return SLOT_PURPOSE_NEGATIVE_PRICE
+        return SLOT_PURPOSE_DEFICIT
+
+    def _slot_overlaps_curtailment_risk(self, slot: PriceSlot) -> bool:
+        """Return whether Smart Pre-discharge protects this solar-risk window."""
+        if not self._smart_predischarge_enabled():
+            return False
+        plan = getattr(self._controller, "_curtailment_plan", None)
+        return bool(
+            plan
+            and not bool(getattr(plan, "is_fail_safe", False))
+            and any(
+                slot.start < risk.end and risk.start < slot.end
+                for risk in getattr(plan, "risk_slots", [])
+            )
+        )
+
+    def _effective_slot_purpose(self, slot: PriceSlot) -> str | None:
+        """Return the purpose still authorised for a slot at this instant."""
+        schedule = getattr(self._controller, "_dynamic_pricing_schedule", None)
+        if schedule is None:
+            return None
+        purpose = (
+            schedule.purpose_for(slot)
+            if hasattr(schedule, "purpose_for")
+            else getattr(schedule, "slot_purposes", {}).get(slot, SLOT_PURPOSE_DEFICIT)
+        )
+
+        pre_purposes = getattr(self._controller, "_dp_pre_evaluated_purposes", {})
+        if slot.start in pre_purposes:
+            purpose = pre_purposes[slot.start]
+            if purpose is None:
+                return None
+
+        has_deficit = purpose in {SLOT_PURPOSE_DEFICIT, SLOT_PURPOSE_COMBINED}
+        has_opportunity = purpose in {
+            SLOT_PURPOSE_NEGATIVE_PRICE,
+            SLOT_PURPOSE_COMBINED,
+        }
+        deficit_needed = bool(
+            getattr(
+                schedule,
+                "deficit_charging_needed",
+                getattr(schedule, "charging_needed", True),
+            )
+        )
+        if (
+            slot.start in getattr(self._controller, "_dp_pre_evaluated_slots", {})
+            and slot.start not in pre_purposes
+        ):
+            deficit_needed = bool(
+                self._controller._dp_pre_evaluated_slots[slot.start]
+            )
+
+        opportunity_needed = bool(
+            has_opportunity
+            and self._current_price_is_opportunistic()
+            and self._opportunistic_target_pending()
+            and not self._slot_overlaps_curtailment_risk(slot)
+        )
+        deficit_needed = has_deficit and deficit_needed
+        if deficit_needed and opportunity_needed:
+            return SLOT_PURPOSE_COMBINED
+        if opportunity_needed:
+            return SLOT_PURPOSE_NEGATIVE_PRICE
+        if deficit_needed:
+            return SLOT_PURPOSE_DEFICIT
+        return None
+
+    def _prune_completed_opportunities(self) -> None:
+        """Drop future opportunistic work once every battery reached its target."""
+        schedule = getattr(self._controller, "_dynamic_pricing_schedule", None)
+        if schedule is None or not hasattr(schedule, "slot_purposes"):
+            return
+        keep = []
+        purposes = {}
+        deficit_needed = bool(getattr(schedule, "deficit_charging_needed", False))
+        for slot in schedule.selected_slots:
+            purpose = schedule.purpose_for(slot)
+            if purpose == SLOT_PURPOSE_NEGATIVE_PRICE:
+                continue
+            if purpose == SLOT_PURPOSE_COMBINED:
+                if not deficit_needed:
+                    continue
+                purpose = SLOT_PURPOSE_DEFICIT
+            keep.append(slot)
+            purposes[slot] = purpose
+        schedule.selected_slots = keep
+        schedule.slot_purposes = purposes
+        schedule.negative_price_charging_needed = False
+        schedule.negative_price_hours_needed = 0.0
+        schedule.negative_price_energy_kwh = 0.0
+        schedule.charging_needed = deficit_needed
+        schedule.schedule_type = self._schedule_type_from_purposes(purposes.values())
+        schedule.hours_needed = sum(
+            max(0.0, (slot.end - slot.start).total_seconds() / 3600.0)
+            for slot in keep
+        )
+        if keep:
+            schedule.average_price = sum(slot.price for slot in keep) / len(keep)
+            effective_power_kw = min(
+                float(getattr(self._controller, "max_contracted_power", 0.0)),
+                float(getattr(self._controller, "max_charge_capacity", 0.0)),
+            ) / 1000.0
+            schedule.estimated_cost = sum(
+                slot.price
+                * effective_power_kw
+                * max(0.0, (slot.end - slot.start).total_seconds() / 3600.0)
+                for slot in keep
+            )
+        if not keep:
+            self._controller._dynamic_pricing_schedule = None
+
+    def clear_negative_price_runtime(self, reason: str = "cleanup") -> None:
+        """Clear transient opportunity state without disturbing deficit charging."""
+        self._prune_completed_opportunities()
+        controller = self._controller
+        active_purpose = getattr(controller, "_active_dynamic_slot_purpose", None)
+        if active_purpose == SLOT_PURPOSE_NEGATIVE_PRICE:
+            controller.grid_charging_active = False
+            controller._current_price_slot_active = False
+            controller._grid_charging_initialized = False
+            controller._active_dynamic_slot_purpose = None
+            controller._predictive_charge_target_soc = None
+            controller.previous_power = 0
+            controller.previous_error = 0
+        elif active_purpose == SLOT_PURPOSE_COMBINED:
+            controller._active_dynamic_slot_purpose = SLOT_PURPOSE_DEFICIT
+            deficit_target = getattr(
+                controller, "_predictive_deficit_target_soc", None
+            )
+            controller._predictive_charge_target_soc = deficit_target
+            if deficit_target is None:
+                controller._grid_charging_initialized = False
+        elif active_purpose == SLOT_PURPOSE_DEFICIT:
+            # Cleanup is opportunity-specific; an ordinary active deficit slot
+            # keeps both ownership and its already-calculated target.
+            pass
+        else:
+            controller._active_dynamic_slot_purpose = None
+            controller._predictive_charge_target_soc = None
+        if hasattr(controller, "_dp_pre_evaluated_purposes"):
+            controller._dp_pre_evaluated_purposes = {}
+        _LOGGER.debug("Negative-price charging runtime cleared: %s", reason)
+
     # =========================================================================
     # SMART PREDISCHARGE / ANTI-CURTAILMENT
     # =========================================================================
@@ -1045,7 +1291,7 @@ class PricingManager:
         # the overnight discharge, so a battery that drains far below it must be
         # able to re-plan upward in time for the cheap midday slots.
         self._controller._dp_last_eval_soc = decision_data.get("avg_soc")
-        charging_needed = decision_data["should_charge"]
+        deficit_charging_needed = bool(decision_data["should_charge"])
 
         # Step 2: Parse price data (always, even without deficit — for diagnostics)
         if extended_horizon:
@@ -1059,7 +1305,11 @@ class PricingManager:
             _LOGGER.debug("Dynamic pricing: daily average price %.4f from %d slots", self._controller._dp_daily_avg_price, len(slots))
         if not slots:
             self._build_curtailment_plan([], [], now=now)
-            if not charging_needed:
+            opportunity_pending = bool(
+                self._negative_price_feature_enabled()
+                and self._opportunistic_target_pending()
+            )
+            if not deficit_charging_needed and not opportunity_pending:
                 # No deficit + no price data: nothing to evaluate
                 self._controller._dynamic_pricing_schedule = None
                 self._controller._dynamic_pricing_evaluated_date = today
@@ -1067,7 +1317,7 @@ class PricingManager:
                 _LOGGER.info("Dynamic pricing: no charging needed and no price data available")
                 await self._send_dynamic_pricing_notification(decision_data=decision_data, schedule=None)
                 return
-            # Has deficit but no price data: retry
+            # A deficit or pending opportunistic target needs prices: retry.
             self._controller._dp_eval_retry_count += 1
             _LOGGER.warning(
                 "Dynamic pricing: no price data available at 00:05 (retry %d/4)",
@@ -1075,11 +1325,14 @@ class PricingManager:
             )
             return  # Will retry up to 4 times (~30 min intervals via control loop)
 
-        # Step 3: Calculate hours needed and select cheapest slots
+        # Step 3: Build the two independent candidate calendars.  Deficit
+        # selection keeps the established price ceiling/arbitrage behaviour.
+        # Opportunistic selection only considers strictly negative import prices
+        # and always takes the most-negative individual intervals first.
         deficit_kwh = decision_data["energy_deficit_kwh"]
-        if charging_needed:
+        if deficit_charging_needed:
             planned_charge_kwh = decision_data.get("planned_grid_charge_kwh", deficit_kwh)
-            hours_needed = calculations.calculate_charging_hours_needed(
+            deficit_hours_needed = calculations.calculate_charging_hours_needed(
                 planned_charge_kwh,
                 self._controller.max_contracted_power,
                 self._controller.max_charge_capacity,
@@ -1087,7 +1340,7 @@ class PricingManager:
         else:
             # No deficit — use daily consumption as reference so the number of
             # selected hours is meaningful (same basis the algorithm uses to decide)
-            hours_needed = calculations.calculate_charging_hours_needed(
+            deficit_hours_needed = calculations.calculate_charging_hours_needed(
                 decision_data["avg_consumption_kwh"], self._controller.max_contracted_power, self._controller.max_charge_capacity
             )
         # One instant, one computation. `ceiling` is what actually filters;
@@ -1095,80 +1348,154 @@ class PricingManager:
         eval_now = datetime.now()
         ceiling, arb_ceiling = calculations.effective_charge_ceiling(
             slots,
-            hours_needed,
+            deficit_hours_needed,
             self._controller.max_price_threshold,
             self._controller.min_arbitrage_margin,
             self._controller.round_trip_efficiency,
             now=eval_now,
         )
         self._controller._dp_arbitrage_ceiling = arb_ceiling
-        selected = calculations.select_cheapest_hours(
-            slots, hours_needed, ceiling, now=eval_now
+        # Do not add the legacy informational cheap-hour calendar to an active
+        # opportunity-only schedule: those slots are not a deficit and must not
+        # make the calendar look combined or become executable by accident.
+        negative_price_energy_kwh = (
+            self._negative_price_energy_needed_kwh()
+            if self._negative_price_feature_enabled()
+            else 0.0
         )
+        negative_price_hours_needed = calculations.calculate_exact_charging_hours_needed(
+            negative_price_energy_kwh,
+            self._controller.max_contracted_power,
+            self._controller.max_charge_capacity,
+        )
+        negative_price_selected = calculations.select_cheapest_slots_by_duration(
+            [slot for slot in slots if math.isfinite(slot.price) and slot.price < 0.0],
+            negative_price_hours_needed,
+            None,
+            now=eval_now,
+        )
+        opportunity_selected = bool(negative_price_selected)
+
+        if deficit_charging_needed or not opportunity_selected:
+            deficit_selected = calculations.select_cheapest_hours(
+                slots, deficit_hours_needed, ceiling, now=eval_now
+            )
+        else:
+            deficit_selected = []
+
+        def _combine_selected() -> tuple[list[PriceSlot], dict[PriceSlot, str]]:
+            purposes: dict[PriceSlot, str] = {}
+            for slot in deficit_selected:
+                purposes[slot] = self._merge_slot_purpose(
+                    purposes.get(slot), SLOT_PURPOSE_DEFICIT
+                )
+            for slot in negative_price_selected:
+                purposes[slot] = self._merge_slot_purpose(
+                    purposes.get(slot), SLOT_PURPOSE_NEGATIVE_PRICE
+                )
+            return sorted(purposes, key=lambda slot: slot.start), purposes
+
+        selected, slot_purposes = _combine_selected()
 
         if not selected:
             self._build_curtailment_plan(slots, [], now=now)
             self._controller._dynamic_pricing_schedule = None
             self._controller._dynamic_pricing_evaluated_date = today
             self._controller._dp_eval_retry_count = 0
-            _LOGGER.warning("Dynamic pricing: no slots selected (all above threshold?)")
+            _LOGGER.warning("Dynamic pricing: no slots selected (all above thresholds?)")
             await self._send_dynamic_pricing_notification(decision_data=decision_data, schedule=None)
             return
 
         # A negative-price solar-surplus slot is protected from ordinary grid
         # charging.  Build once with the tentative schedule, remove conflicts,
         # then build the final plan with the remaining cheap slots reserved.
+        # Risk detection is independent of reservations in the curtailment
+        # planner. Pass the tentative charge calendar so its pre-discharge
+        # candidates are coherent, then use the reported risk windows to remove
+        # opportunistic overlap below.
         tentative_plan = self._build_curtailment_plan(slots, selected, now=now)
         # Guaranteed-minimum SOC is the safety exception: if that floor is the
         # reason for grid charging, keep its selected slot even when it overlaps
         # a risk window.  The risk guard still prevents battery discharge.
-        if tentative_plan.risk_slots and not decision_data.get("floor_active", False):
-            protected_selected = [
-                slot
-                for slot in selected
-                if not any(
+        if tentative_plan.risk_slots:
+            def _safe(slot: PriceSlot) -> bool:
+                return not any(
                     slot.start < risk.end and risk.start < slot.end
                     for risk in tentative_plan.risk_slots
                 )
-            ]
-            if len(protected_selected) != len(selected):
+
+            safe_slots = [slot for slot in slots if _safe(slot)]
+            old_selected_count = len(selected)
+
+            # Opportunistic energy is never allowed to consume reserved solar
+            # headroom.  This remains true when a guaranteed-minimum-SOC deficit
+            # shares the same interval: only the necessary deficit purpose keeps
+            # the protected slot.
+            negative_price_selected = calculations.select_cheapest_slots_by_duration(
+                [slot for slot in safe_slots if math.isfinite(slot.price) and slot.price < 0.0],
+                negative_price_hours_needed,
+                None,
+                now=eval_now,
+            )
+            if (
+                deficit_charging_needed
+                and not decision_data.get("floor_active", False)
+            ):
+                # Ordinary deficit charging also avoids the risk window, while
+                # the existing guaranteed-floor safety exception may keep it.
+                deficit_selected = calculations.select_cheapest_hours(
+                    safe_slots, deficit_hours_needed, ceiling, now=eval_now
+                )
+            elif not deficit_charging_needed and opportunity_selected:
+                # The legacy no-deficit calendar is informational only.  Do not
+                # resurrect it while relocating a real opportunity, or the safe
+                # negative slot would be mislabeled ``combined`` and gain a
+                # fictitious deficit purpose.
+                deficit_selected = []
+            selected, slot_purposes = _combine_selected()
+            if len(selected) != old_selected_count:
                 _LOGGER.info(
-                    "Dynamic pricing: removed %d grid-charge slots overlapping solar negative-price windows",
-                    len(selected) - len(protected_selected),
+                    "Dynamic pricing: adjusted %d grid-charge slots around protected solar windows",
+                    abs(old_selected_count - len(selected)),
                 )
-                # Refill from other normalized slots where possible so the
-                # joint evaluation protects the solar window without needlessly
-                # losing the original grid-charge energy target.
-                safe_slots = [
-                    slot
-                    for slot in slots
-                    if not any(
-                        slot.start < risk.end and risk.start < slot.end
-                        for risk in tentative_plan.risk_slots
-                    )
-                ]
-                reselected = calculations.select_cheapest_hours(
-                    safe_slots, hours_needed, ceiling, now=eval_now
+            if not selected:
+                self._build_curtailment_plan(slots, [], now=now)
+                self._controller._dynamic_pricing_schedule = None
+                self._controller._dynamic_pricing_evaluated_date = today
+                self._controller._dp_eval_retry_count = 0
+                await self._send_dynamic_pricing_notification(
+                    decision_data=decision_data, schedule=None
                 )
-                selected = reselected or protected_selected
-                if not selected:
-                    self._build_curtailment_plan(slots, [], now=now)
-                    self._controller._dynamic_pricing_schedule = None
-                    self._controller._dynamic_pricing_evaluated_date = today
-                    self._controller._dp_eval_retry_count = 0
-                    await self._send_dynamic_pricing_notification(
-                        decision_data=decision_data, schedule=None
-                    )
-                    return
-                self._build_curtailment_plan(slots, selected, now=now)
+                return
+            self._build_curtailment_plan(
+                slots,
+                [slot for slot in selected if _safe(slot)],
+                now=now,
+            )
+        else:
+            # Rebuild with the final charge reservations so pre-discharge never
+            # competes with a legitimate selected interval.
+            self._build_curtailment_plan(slots, selected, now=now)
 
         # Step 4: Build schedule
         avg_price = sum(s.price for s in selected) / len(selected)
         effective_power_kw = min(self._controller.max_contracted_power, self._controller.max_charge_capacity) / 1000.0
-        estimated_cost = avg_price * effective_power_kw * hours_needed
+        selected_hours = sum(
+            max(0.0, (slot.end - slot.start).total_seconds() / 3600.0)
+            for slot in selected
+        )
+        estimated_cost = sum(
+            slot.price
+            * effective_power_kw
+            * max(0.0, (slot.end - slot.start).total_seconds() / 3600.0)
+            for slot in selected
+        )
+        opportunity_selected = bool(negative_price_selected)
+        charging_needed = deficit_charging_needed or opportunity_selected
+        schedule_type = self._schedule_type_from_purposes(slot_purposes.values())
 
         schedule = DynamicPricingSchedule(
-            hours_needed=hours_needed,
+            hours_needed=selected_hours,
             selected_slots=selected,
             average_price=avg_price,
             estimated_cost=estimated_cost,
@@ -1176,8 +1503,23 @@ class PricingManager:
             evaluation_time=now,
             energy_deficit_kwh=deficit_kwh,
             charging_needed=charging_needed,
+            slot_purposes=slot_purposes,
+            schedule_type=schedule_type,
+            deficit_charging_needed=deficit_charging_needed,
+            negative_price_charging_needed=opportunity_selected,
+            deficit_hours_needed=(deficit_hours_needed if deficit_charging_needed else 0.0),
+            negative_price_hours_needed=(
+                negative_price_hours_needed if opportunity_selected else 0.0
+            ),
+            negative_price_energy_kwh=(
+                negative_price_energy_kwh if opportunity_selected else 0.0
+            ),
         )
         self._controller._dynamic_pricing_schedule = schedule
+        self._controller._dp_pre_evaluated_slots = {}
+        self._controller._dp_pre_evaluated_purposes = {}
+        self._controller._dp_completed_slots = set()
+        self._controller._active_dynamic_slot_purpose = None
         # Use the date of the selected slots (tomorrow at eval time) so the midnight
         # reset only fires the day AFTER the slots — not before they can be used.
         slots_date = max(s.start.date() for s in selected) if selected else (now.date() + timedelta(days=1))
@@ -1185,8 +1527,8 @@ class PricingManager:
         self._controller._dp_eval_retry_count = 0
 
         _LOGGER.info(
-            "Dynamic pricing: evaluation complete — %d slots selected, %.1fh, avg=%.3f %s, charging_needed=%s",
-            len(selected), hours_needed, avg_price, self._get_price_unit(), charging_needed
+            "Dynamic pricing: evaluation complete — %d slots selected, %.2fh, avg=%.3f %s, type=%s, charging_needed=%s",
+            len(selected), selected_hours, avg_price, self._get_price_unit(), schedule_type, charging_needed
         )
         await self._send_dynamic_pricing_notification(decision_data=decision_data, schedule=schedule)
 
@@ -1239,7 +1581,7 @@ class PricingManager:
         )
 
     async def _check_dp_pre_slot_reevaluation(self) -> None:
-        """Re-evaluate energy balance 1 hour before each upcoming dynamic pricing slot.
+        """Re-evaluate each typed purpose one hour before an upcoming slot.
 
         If the system already charged in an earlier slot and the battery is now
         sufficiently charged (solar + current SOC covers consumption), marks the
@@ -1277,11 +1619,58 @@ class PricingManager:
             "Dynamic pricing: running pre-slot re-evaluation for slot at %s",
             next_slot.start.strftime("%H:%M")
         )
-        decision = await self._controller._should_activate_grid_charging()
-        should_charge = decision["should_charge"]
-        self._controller._dp_pre_evaluated_slots[next_slot.start] = should_charge
+        schedule = self._controller._dynamic_pricing_schedule
+        purpose = (
+            schedule.purpose_for(next_slot)
+            if hasattr(schedule, "purpose_for")
+            else SLOT_PURPOSE_DEFICIT
+        )
+        has_deficit = purpose in {SLOT_PURPOSE_DEFICIT, SLOT_PURPOSE_COMBINED}
+        has_opportunity = purpose in {
+            SLOT_PURPOSE_NEGATIVE_PRICE,
+            SLOT_PURPOSE_COMBINED,
+        }
 
-        if should_charge:
+        decision = None
+        deficit_needed = False
+        if has_deficit and bool(
+            getattr(schedule, "deficit_charging_needed", schedule.charging_needed)
+        ):
+            decision = await self._controller._should_activate_grid_charging()
+            self._controller._last_decision_data = decision
+            deficit_needed = bool(decision["should_charge"])
+
+        opportunity_needed = False
+        if has_opportunity and self._negative_price_feature_enabled():
+            opportunity_needed = bool(
+                math.isfinite(next_slot.price)
+                and next_slot.price < 0.0
+                and self._opportunistic_target_pending()
+                and not self._slot_overlaps_curtailment_risk(next_slot)
+            )
+
+        if deficit_needed and opportunity_needed:
+            effective_purpose = SLOT_PURPOSE_COMBINED
+        elif opportunity_needed:
+            effective_purpose = SLOT_PURPOSE_NEGATIVE_PRICE
+        elif deficit_needed:
+            effective_purpose = SLOT_PURPOSE_DEFICIT
+        else:
+            effective_purpose = None
+
+        should_charge = effective_purpose is not None
+        self._controller._dp_pre_evaluated_slots[next_slot.start] = should_charge
+        if not hasattr(self._controller, "_dp_pre_evaluated_purposes"):
+            self._controller._dp_pre_evaluated_purposes = {}
+        self._controller._dp_pre_evaluated_purposes[next_slot.start] = effective_purpose
+
+        # Reaching the opportunity target after an earlier slot removes every
+        # remaining opportunity instead of allowing another slot to fill toward
+        # max_soc. Combined slots retain only their deficit purpose.
+        if has_opportunity and not self._opportunistic_target_pending():
+            self._prune_completed_opportunities()
+
+        if deficit_needed and decision is not None:
             await self._send_dp_pre_slot_reevaluation_notification(next_slot, decision)
 
     async def _send_dp_pre_slot_reevaluation_notification(
@@ -1531,8 +1920,27 @@ class PricingManager:
             # upcoming slots and publish the deficit for the enforcer. #411
             sched = self._controller._dynamic_pricing_schedule
             upcoming = [s for s in sched.selected_slots if s.start > now] if sched else []
-            if upcoming and not sched.charging_needed:
+            if upcoming and not bool(
+                getattr(sched, "deficit_charging_needed", sched.charging_needed)
+            ):
+                if not hasattr(sched, "slot_purposes"):
+                    sched.slot_purposes = {
+                        slot: SLOT_PURPOSE_DEFICIT for slot in sched.selected_slots
+                    }
+                for slot in upcoming:
+                    sched.slot_purposes[slot] = self._merge_slot_purpose(
+                        sched.slot_purposes.get(slot), SLOT_PURPOSE_DEFICIT
+                    )
                 sched.charging_needed = True
+                sched.deficit_charging_needed = True
+                sched.deficit_hours_needed = calculations.calculate_charging_hours_needed(
+                    planned_evening_charge_kwh,
+                    self._controller.max_contracted_power,
+                    self._controller.max_charge_capacity,
+                )
+                sched.schedule_type = self._schedule_type_from_purposes(
+                    sched.slot_purposes.values()
+                )
                 decision = self._controller._last_decision_data
                 if not isinstance(decision, dict):
                     decision = {}
@@ -1569,12 +1977,33 @@ class PricingManager:
 
         # --- Merge into schedule ---
         if self._controller._dynamic_pricing_schedule:
+            schedule = self._controller._dynamic_pricing_schedule
             merged = sorted(
-                self._controller._dynamic_pricing_schedule.selected_slots + selected,
+                schedule.selected_slots + selected,
                 key=lambda s: s.start,
             )
-            self._controller._dynamic_pricing_schedule.selected_slots = merged
-            self._controller._dynamic_pricing_schedule.charging_needed = True
+            purposes = dict(getattr(schedule, "slot_purposes", {}))
+            for slot in schedule.selected_slots:
+                purposes.setdefault(slot, SLOT_PURPOSE_DEFICIT)
+            for slot in selected:
+                purposes[slot] = self._merge_slot_purpose(
+                    purposes.get(slot), SLOT_PURPOSE_DEFICIT
+                )
+            schedule.selected_slots = merged
+            schedule.slot_purposes = purposes
+            schedule.charging_needed = True
+            schedule.deficit_charging_needed = True
+            schedule.deficit_hours_needed = max(
+                float(getattr(schedule, "deficit_hours_needed", 0.0)),
+                hours_needed,
+            )
+            schedule.schedule_type = self._schedule_type_from_purposes(
+                purposes.values()
+            )
+            schedule.hours_needed = sum(
+                max(0.0, (slot.end - slot.start).total_seconds() / 3600.0)
+                for slot in merged
+            )
             self._controller._dynamic_pricing_evaluated_date = max(s.start.date() for s in merged)
         else:
             avg_price = sum(s.price for s in selected) / len(selected)
@@ -1588,6 +2017,9 @@ class PricingManager:
                 evaluation_time=now,
                 energy_deficit_kwh=evening_deficit_kwh,
                 charging_needed=True,
+                schedule_type=SLOT_PURPOSE_DEFICIT,
+                deficit_charging_needed=True,
+                deficit_hours_needed=hours_needed,
             )
             self._controller._dynamic_pricing_evaluated_date = max(s.start.date() for s in selected)
 
@@ -1601,6 +2033,8 @@ class PricingManager:
         decision["energy_deficit_kwh"] = evening_deficit_kwh
         decision["planned_grid_charge_kwh"] = planned_evening_charge_kwh
         self._controller._last_decision_data = decision
+        self._controller._dp_pre_evaluated_slots = {}
+        self._controller._dp_pre_evaluated_purposes = {}
 
         _LOGGER.info(
             "Evening recharge: scheduled %d slot(s) (%.1fh) for %.2f kWh deficit",
@@ -1635,6 +2069,43 @@ class PricingManager:
     # =========================================================================
     # DYNAMIC PRICING: Control loop handler
     # =========================================================================
+
+    def _active_predictive_targets_pending(self) -> bool:
+        """Return whether a live per-battery target still has charge headroom."""
+        targets = getattr(self._controller, "_predictive_charge_target_soc", None)
+        if not targets:
+            return False
+        for coordinator, target in targets.items():
+            data = getattr(coordinator, "data", None)
+            if not self._opportunistic_battery_eligible(coordinator):
+                continue
+            try:
+                if float(data.get("battery_soc", 0.0) or 0.0) < float(target):
+                    return True
+            except (TypeError, ValueError):
+                continue
+        return False
+
+    async def _stop_dynamic_price_slot(
+        self, reason: str, *, write_idle: bool = True
+    ) -> None:
+        """Stop a live price-slot charge and return battery ownership safely."""
+        controller = self._controller
+        controller._current_price_slot_active = False
+        controller._grid_charging_initialized = False
+        controller.grid_charging_active = False
+        controller._active_dynamic_slot_purpose = None
+        controller._predictive_charge_target_soc = None
+        controller._predictive_deficit_target_soc = None
+        controller.previous_power = 0
+        controller.previous_error = 0
+        controller.first_execution = True
+        if write_idle:
+            for coordinator in getattr(controller, "coordinators", []):
+                if controller._is_active_balance_mode_running(coordinator):
+                    continue
+                await controller._set_battery_power(coordinator, 0, 0)
+        _LOGGER.info("Dynamic pricing: stopped active slot (%s)", reason)
 
     async def handle_dynamic_pricing_predictive_charging(self) -> None:
         """Handle predictive charging in dynamic pricing mode (called every 2.5s)."""
@@ -1682,22 +2153,73 @@ class PricingManager:
                 self._controller._current_price_slot_active = False
                 self._controller._dp_eval_retry_count = 0
                 self._controller._dp_pre_evaluated_slots = {}
+                self._controller._dp_pre_evaluated_purposes = {}
+                self._controller._dp_completed_slots = set()
+                self._controller._active_dynamic_slot_purpose = None
                 self._controller._dp_daily_avg_price = None
                 self._controller._dp_arbitrage_ceiling = None
                 self._controller._dp_evening_reevaluated_date = None
                 self._controller._dp_last_eval_soc = None
                 self.clear_curtailment_runtime("new_day")
 
-        # Phase 4: Check if we're in a selected cheap slot
+        # Reaching the opportunistic target outside the control handler (for
+        # example through solar or a manual charge) invalidates every remaining
+        # opportunity before the current/future calendar is considered.
+        schedule = getattr(self._controller, "_dynamic_pricing_schedule", None)
+        if (
+            schedule is not None
+            and bool(getattr(schedule, "negative_price_charging_needed", False))
+            and not self._opportunistic_target_pending()
+        ):
+            self._prune_completed_opportunities()
+            if self._controller._current_price_slot_active:
+                if (
+                    self._controller._active_dynamic_slot_purpose
+                    == SLOT_PURPOSE_NEGATIVE_PRICE
+                ):
+                    await self._stop_dynamic_price_slot("soc_target_reached")
+                elif (
+                    self._controller._active_dynamic_slot_purpose
+                    == SLOT_PURPOSE_COMBINED
+                ):
+                    self._controller._active_dynamic_slot_purpose = (
+                        SLOT_PURPOSE_DEFICIT
+                    )
+                    deficit_target = getattr(
+                        self._controller, "_predictive_deficit_target_soc", None
+                    )
+                    self._controller._predictive_charge_target_soc = deficit_target
+                    if deficit_target is None:
+                        self._controller._grid_charging_initialized = False
+
+        # Phase 4: Check if we're in a selected typed price slot.
         if self._controller._dynamic_pricing_schedule and not self._controller.predictive_charging_overridden:
             in_slot = self.is_in_dynamic_pricing_slot()
+            current_slot = next(
+                (
+                    slot
+                    for slot in self._controller._dynamic_pricing_schedule.selected_slots
+                    if slot.start <= now < slot.end
+                ),
+                None,
+            )
 
             if in_slot and not self._controller._current_price_slot_active:
-                # Informational schedule only — no grid charging needed
-                if not self._controller._dynamic_pricing_schedule.charging_needed:
+                effective_purpose = (
+                    self._effective_slot_purpose(current_slot)
+                    if current_slot is not None
+                    else None
+                )
+                if (
+                    current_slot is not None
+                    and current_slot.start in getattr(self._controller, "_dp_completed_slots", set())
+                ):
+                    effective_purpose = None
+
+                # Informational/completed schedule — no grid charging needed.
+                if effective_purpose is None:
                     _LOGGER.debug(
-                        "Dynamic pricing: inside cheap slot window but charging not needed "
-                        "(solar/battery sufficient) — skipping"
+                        "Dynamic pricing: inside selected slot but no typed purpose remains — skipping"
                     )
                     # Fall through to discharge control below (do not return early)
 
@@ -1709,43 +2231,70 @@ class PricingManager:
                     # Fall through to discharge control below (do not return early)
 
                 else:
-                    # Find which slot we're entering
-                    current_slot = next(
-                        (s for s in self._controller._dynamic_pricing_schedule.selected_slots if s.start <= now < s.end),
-                        None
+                    # Entering an authorised typed slot.
+                    self._controller._current_price_slot_active = True
+                    self._controller._grid_charging_initialized = False
+                    self._controller._active_dynamic_slot_purpose = effective_purpose
+                    self._controller.grid_charging_active = True
+                    if current_slot:
+                        await self._send_dynamic_pricing_slot_start_notification(current_slot)
+                    _LOGGER.info(
+                        "Dynamic pricing: entering %s slot %s",
+                        effective_purpose,
+                        current_slot.start.strftime("%H:%M") if current_slot else "unknown",
                     )
 
-                    # Skip if pre-evaluation decided charging is no longer needed for this slot
-                    if current_slot and self._controller._dp_pre_evaluated_slots.get(current_slot.start) is False:
-                        _LOGGER.info(
-                            "Dynamic pricing: skipping slot %s — pre-evaluation found sufficient energy",
-                            current_slot.start.strftime("%H:%M")
-                        )
-                        # Fall through to discharge control below (do not return early)
-
-                    else:
-                        # Entering a cheap slot
-                        self._controller._current_price_slot_active = True
-                        self._controller._grid_charging_initialized = False
-                        self._controller.grid_charging_active = True
-                        if current_slot:
-                            await self._send_dynamic_pricing_slot_start_notification(current_slot)
-                        _LOGGER.info(
-                            "Dynamic pricing: entering cheap slot %s",
-                            current_slot.start.strftime("%H:%M") if current_slot else "unknown"
-                        )
-
             elif not in_slot and self._controller._current_price_slot_active:
-                # Exiting a cheap slot
-                self._controller._current_price_slot_active = False
-                self._controller._grid_charging_initialized = False
-                self._controller.grid_charging_active = False
-                self._controller.previous_power = 0
-                self._controller.previous_error = 0
-                _LOGGER.info("Dynamic pricing: exiting cheap slot — resuming normal control")
+                # Normal PD takes ownership later in this same cycle; avoid an
+                # intermediate idle write that would conflict with that command.
+                await self._stop_dynamic_price_slot("slot_ended", write_idle=False)
 
             if self._controller._current_price_slot_active:
+                # Revalidate the live import price and curtailment window every
+                # cycle. A combined slot may safely downgrade to deficit; a pure
+                # opportunity stops immediately when its authorization vanishes.
+                if (
+                    self._controller._active_dynamic_slot_purpose
+                    in {SLOT_PURPOSE_NEGATIVE_PRICE, SLOT_PURPOSE_COMBINED}
+                    and not self._opportunistic_target_pending()
+                ):
+                    self._prune_completed_opportunities()
+                effective_purpose = (
+                    self._effective_slot_purpose(current_slot)
+                    if current_slot is not None
+                    else None
+                )
+                if effective_purpose is None:
+                    if not self._opportunistic_target_pending():
+                        self._prune_completed_opportunities()
+                    await self._stop_dynamic_price_slot("purpose_no_longer_valid")
+                    return
+                if effective_purpose != self._controller._active_dynamic_slot_purpose:
+                    previous_purpose = self._controller._active_dynamic_slot_purpose
+                    self._controller._active_dynamic_slot_purpose = effective_purpose
+                    if (
+                        previous_purpose == SLOT_PURPOSE_COMBINED
+                        and effective_purpose == SLOT_PURPOSE_DEFICIT
+                    ):
+                        deficit_target = getattr(
+                            self._controller,
+                            "_predictive_deficit_target_soc",
+                            None,
+                        )
+                        self._controller._predictive_charge_target_soc = deficit_target
+                        if deficit_target is None:
+                            self._controller._grid_charging_initialized = False
+                    else:
+                        self._controller._grid_charging_initialized = False
+                        self._controller._predictive_charge_target_soc = None
                 await self._controller._handle_predictive_grid_charging()
+                if not self._controller.grid_charging_active:
+                    if not self._active_predictive_targets_pending():
+                        if current_slot is not None:
+                            self._controller._dp_completed_slots.add(current_slot.start)
+                        if not self._opportunistic_target_pending():
+                            self._prune_completed_opportunities()
+                        await self._stop_dynamic_price_slot("soc_target_reached")
                 return
 
         # Phase 5: Override active — resume normal PD control

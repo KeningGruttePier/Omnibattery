@@ -35,6 +35,7 @@ from .const import (
     CONF_DP_PRICE_DISCHARGE_CONTROL,
     CONF_RT_PRICE_DISCHARGE_CONTROL,
     CONF_SMART_PREDISCHARGE_ENABLED,
+    CONF_NEGATIVE_PRICE_CHARGING_ENABLED,
     PREDICTIVE_MODE_DYNAMIC_PRICING,
     PREDICTIVE_MODE_REALTIME_PRICE,
     CONF_SYSTEM_MAX_CHARGE_POWER,
@@ -93,6 +94,7 @@ async def async_setup_entry(
         if mode == PREDICTIVE_MODE_DYNAMIC_PRICING:
             entities.append(PriceDischargeControlSwitch(hass, entry, controller, "dp"))
             entities.append(SmartPredischargeSwitch(hass, entry, controller))
+            entities.append(NegativePriceChargingSwitch(hass, entry, controller))
         elif mode == PREDICTIVE_MODE_REALTIME_PRICE:
             entities.append(PriceDischargeControlSwitch(hass, entry, controller, "rt"))
 
@@ -1827,6 +1829,69 @@ class SmartPredischargeSwitch(SwitchEntity):
         self.hass.config_entries.async_update_entry(self.entry, data=new_data)
         self.controller._pricing_mgr.clear_curtailment_runtime("disabled")
         _LOGGER.info("Smart pre-discharge DISABLED")
+        self.async_write_ha_state()
+
+    @property
+    def device_info(self):
+        return {
+            "identifiers": {(DOMAIN, "marstek_venus_system")},
+            "name": "Omnibattery System",
+            "manufacturer": "Omnibattery",
+            "model": "Multi-Battery System",
+        }
+
+
+class NegativePriceChargingSwitch(SwitchEntity):
+    """Runtime opt-in for opportunistic charging at negative import prices."""
+
+    def __init__(self, hass: HomeAssistant, entry: ConfigEntry, controller) -> None:
+        self.hass = hass
+        self.entry = entry
+        self.controller = controller
+        self._attr_has_entity_name = True
+        self._attr_translation_key = "negative_price_charging"
+        self._attr_unique_id = f"{SYSTEM_UNIQUE_ID_PREFIX}negative_price_charging"
+        self.entity_id = system_entity_id("switch", "negative_price_charging")
+        self._attr_icon = "mdi:battery-charging-100"
+        self._attr_should_poll = False
+
+    @property
+    def is_on(self) -> bool:
+        return bool(self.controller.negative_price_charging_enabled)
+
+    async def async_turn_on(self, **kwargs) -> None:
+        """Enable the feature and immediately rebuild the typed calendar."""
+        self.controller.negative_price_charging_enabled = True
+        new_data = dict(self.entry.data)
+        new_data[CONF_NEGATIVE_PRICE_CHARGING_ENABLED] = True
+        self.hass.config_entries.async_update_entry(self.entry, data=new_data)
+        try:
+            await self.controller._pricing_mgr._evaluate_dynamic_pricing(
+                extended_horizon=True
+            )
+        except Exception as err:
+            _LOGGER.warning(
+                "Negative-price charging evaluation failed after enable: %s", err
+            )
+            self.controller._pricing_mgr.clear_negative_price_runtime(
+                "evaluation_error"
+            )
+        self.async_write_ha_state()
+
+    async def async_turn_off(self, **kwargs) -> None:
+        """Disable and remove only opportunistic work from the live schedule."""
+        active_purpose = getattr(
+            self.controller, "_active_dynamic_slot_purpose", None
+        )
+        self.controller.negative_price_charging_enabled = False
+        new_data = dict(self.entry.data)
+        new_data[CONF_NEGATIVE_PRICE_CHARGING_ENABLED] = False
+        self.hass.config_entries.async_update_entry(self.entry, data=new_data)
+        if active_purpose == "negative_price":
+            await self.controller._pricing_mgr._stop_dynamic_price_slot(
+                "negative_price_feature_disabled"
+            )
+        self.controller._pricing_mgr.clear_negative_price_runtime("disabled")
         self.async_write_ha_state()
 
     @property

@@ -294,6 +294,7 @@
           "max_price_threshold": "Seuil de prix maximum (€/kWh, optionnel)",
           "discharge_price_threshold": "Prix plancher de décharge (optionnel)",
           "dp_price_discharge_control": "Décharger uniquement si le prix dépasse le seuil",
+          "negative_price_charging_enabled": "Activer la charge opportuniste à prix négatif",
           "smart_predischarge_enabled": "Pré-décharge intelligente / anti-écrêtement",
           "negative_injection_threshold": "Seuil d'injection négative",
           "predischarge_reserve_soc": "Réserve de SOC de pré-décharge (%)",
@@ -309,6 +310,7 @@
           "max_price_threshold": "Les créneaux au-dessus de ce prix ne seront pas sélectionnés. Quand le contrôle de décharge par prix est activé, cette valeur sert aussi de seuil de décharge. Utiliser la devise principale/kWh : €/kWh pour Nordpool/PVPC, CHF/kWh pour CKW. Les prix Nordpool HACS configurés en centimes sont convertis automatiquement. Laisser vide pour utiliser tous les créneaux et utiliser la moyenne journalière comme seuil de décharge. Sauf si un prix plancher de décharge distinct est défini ci-dessous.",
           "discharge_price_threshold": "Seuil distinct optionnel pour la décharge pilotée par le prix. La décharge est bloquée tant que le prix est inférieur ou égal à cette valeur, ouvrant une bande neutre entre le prix maximal de charge (au-dessus) et ce plancher : dans cette bande, la batterie ne se charge pas depuis le réseau et ne se décharge pas (la charge par surplus solaire fonctionne toujours). Laissez vide pour réutiliser le prix maximal pour les deux (comportement actuel à seuil unique).",
           "dp_price_discharge_control": "Si activé, la batterie ne se décharge que lorsque le prix actuel dépasse le seuil de prix maximum configuré. Si aucun seuil n'est configuré, la moyenne journalière calculée automatiquement depuis le capteur de prix est utilisée. Si les plages horaires limitent la décharge, les deux conditions doivent être remplies.",
+          "negative_price_charging_enabled": "Fonction optionnelle de tarification dynamique qui charge pendant les créneaux d'importation les plus négatifs, même si la prévision normale ne demande pas de charge réseau. Aucun capteur de prévision solaire n'est requis.",
           "smart_predischarge_enabled": "Active la pré-décharge optionnelle uniquement en mode de tarification dynamique pour créer de l'espace avant les créneaux d'injection négative.",
           "negative_injection_threshold": "Les prix inférieurs ou égaux à ce seuil sont considérés comme des créneaux à risque lorsqu'un surplus solaire est prévu.",
           "predischarge_reserve_soc": "SOC à réserver en plus des limites minimales existantes.",
@@ -899,6 +901,7 @@
           "max_price_threshold": "Seuil de prix maximum (€/kWh, optionnel)",
           "discharge_price_threshold": "Prix plancher de décharge (optionnel)",
           "dp_price_discharge_control": "Décharger uniquement si le prix dépasse le seuil",
+          "negative_price_charging_enabled": "Activer la charge opportuniste à prix négatif",
           "smart_predischarge_enabled": "Pré-décharge intelligente / anti-écrêtement",
           "negative_injection_threshold": "Seuil d'injection négative",
           "predischarge_reserve_soc": "Réserve de SOC de pré-décharge (%)",
@@ -914,6 +917,7 @@
           "max_price_threshold": "Les créneaux au-dessus de ce prix ne seront pas sélectionnés. Quand le contrôle de décharge par prix est activé, cette valeur sert aussi de seuil de décharge. Utiliser la devise principale/kWh : €/kWh pour Nordpool/PVPC, CHF/kWh pour CKW. Les prix Nordpool HACS configurés en centimes sont convertis automatiquement. Laisser vide pour utiliser tous les créneaux et utiliser la moyenne journalière comme seuil de décharge. Sauf si un prix plancher de décharge distinct est défini ci-dessous.",
           "discharge_price_threshold": "Seuil distinct optionnel pour la décharge pilotée par le prix. La décharge est bloquée tant que le prix est inférieur ou égal à cette valeur, ouvrant une bande neutre entre le prix maximal de charge (au-dessus) et ce plancher : dans cette bande, la batterie ne se charge pas depuis le réseau et ne se décharge pas (la charge par surplus solaire fonctionne toujours). Laissez vide pour réutiliser le prix maximal pour les deux (comportement actuel à seuil unique).",
           "dp_price_discharge_control": "Si activé, la batterie ne se décharge que lorsque le prix actuel dépasse le seuil de prix maximum configuré. Si aucun seuil n'est configuré, la moyenne journalière calculée automatiquement depuis le capteur de prix est utilisée. Si les plages horaires limitent la décharge, les deux conditions doivent être remplies.",
+          "negative_price_charging_enabled": "Fonction optionnelle de tarification dynamique qui charge pendant les créneaux d'importation les plus négatifs, même si la prévision normale ne demande pas de charge réseau. Aucun capteur de prévision solaire n'est requis.",
           "smart_predischarge_enabled": "Active la pré-décharge optionnelle uniquement en mode de tarification dynamique pour créer de l'espace avant les créneaux d'injection négative.",
           "negative_injection_threshold": "Les prix inférieurs ou égaux à ce seuil sont considérés comme des créneaux à risque lorsqu'un surplus solaire est prévu.",
           "predischarge_reserve_soc": "SOC à réserver en plus des limites minimales existantes.",
@@ -1255,6 +1259,9 @@
       },
       "smart_predischarge": {
         "name": "Pré-décharge intelligente / anti-écrêtement"
+      },
+      "negative_price_charging": {
+        "name": "Charge opportuniste à prix négatif"
       },
       "rt_price_discharge_control": {
         "name": "Décharge selon le prix"

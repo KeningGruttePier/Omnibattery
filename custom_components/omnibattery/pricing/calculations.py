@@ -351,6 +351,23 @@ def calculate_charging_hours_needed(deficit_kwh: float, max_contracted_power: fl
     return math.ceil(hours * 2) / 2  # Round up to nearest 0.5h
 
 
+def calculate_exact_charging_hours_needed(
+    energy_kwh: float,
+    max_contracted_power: float,
+    max_charge_capacity: float,
+) -> float:
+    """Return unrounded charging time for an explicit battery-energy target.
+
+    Opportunistic charging may use 15-minute prices, so rounding every request
+    to a half-hour would select unnecessary intervals.  Runtime SOC enforcement
+    remains authoritative when the final physical slot is longer than needed.
+    """
+    effective_power_kw = min(max_contracted_power, max_charge_capacity) / 1000.0
+    if energy_kwh <= 0 or effective_power_kw <= 0:
+        return 0.0
+    return energy_kwh / (effective_power_kw * CHARGE_EFFICIENCY)
+
+
 def calculate_planned_grid_charge_kwh(
     deficit_kwh: float,
     battery_headroom_kwh: float,
@@ -640,3 +657,43 @@ def select_cheapest_hours(
 
     # Return sorted by start time for chronological execution
     return sorted(selected, key=lambda s: s.start)
+
+
+def select_cheapest_slots_by_duration(
+    slots: list,
+    hours_needed: float,
+    max_price_threshold,
+    now=None,
+) -> list:
+    """Select the cheapest individual intervals until ``hours_needed`` is met.
+
+    Unlike :func:`select_cheapest_hours`, this intentionally does not group
+    sub-hourly intervals into one-hour blocks.  Negative-price opportunities
+    must consume the most-negative intervals first at both hourly and 15-minute
+    granularity.  The threshold comparison is inclusive.
+    """
+    if now is None:
+        now = datetime.now()
+    if hours_needed <= 0:
+        return []
+
+    future_slots = [slot for slot in slots if slot.end > now]
+    if max_price_threshold is not None:
+        future_slots = [
+            slot for slot in future_slots if slot.price <= max_price_threshold
+        ]
+
+    selected = []
+    accumulated_h = 0.0
+    for slot in sorted(future_slots, key=lambda item: (item.price, item.start)):
+        # A startup/manual evaluation may run inside the current interval.  Only
+        # its remaining time can contribute energy toward the SOC target.
+        effective_start = max(slot.start, now)
+        duration_h = (slot.end - effective_start).total_seconds() / 3600.0
+        if duration_h <= 0:
+            continue
+        selected.append(slot)
+        accumulated_h += duration_h
+        if accumulated_h >= hours_needed:
+            break
+    return sorted(selected, key=lambda item: item.start)

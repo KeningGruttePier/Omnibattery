@@ -63,6 +63,53 @@ def _tracker_info(controller, coordinator) -> dict[str, Any]:
     }
 
 
+def _dynamic_pricing_info(controller) -> dict[str, Any]:
+    """Return JSON-safe typed calendar diagnostics."""
+    if controller is None:
+        return {}
+    schedule = getattr(controller, "_dynamic_pricing_schedule", None)
+    info = {
+        "negative_price_charging_enabled": getattr(
+            controller, "negative_price_charging_enabled", False
+        ),
+        "active_slot_purpose": getattr(
+            controller, "_active_dynamic_slot_purpose", None
+        ),
+    }
+    if schedule is None:
+        info["schedule_type"] = None
+        info["selected_slots"] = []
+        return info
+    info.update(
+        {
+            "schedule_type": getattr(schedule, "schedule_type", "deficit"),
+            "deficit_charging_needed": getattr(
+                schedule, "deficit_charging_needed", schedule.charging_needed
+            ),
+            "negative_price_charging_needed": getattr(
+                schedule, "negative_price_charging_needed", False
+            ),
+            "negative_price_energy_kwh": getattr(
+                schedule, "negative_price_energy_kwh", 0.0
+            ),
+            "selected_slots": [
+                {
+                    "start": slot.start.isoformat(),
+                    "end": slot.end.isoformat(),
+                    "price": slot.price,
+                    "purpose": (
+                        schedule.purpose_for(slot)
+                        if hasattr(schedule, "purpose_for")
+                        else "deficit"
+                    ),
+                }
+                for slot in schedule.selected_slots
+            ],
+        }
+    )
+    return info
+
+
 async def async_get_config_entry_diagnostics(
     hass: HomeAssistant, entry: ConfigEntry
 ) -> dict[str, Any]:
@@ -88,4 +135,5 @@ async def async_get_config_entry_diagnostics(
             "options": async_redact_data(dict(entry.options), TO_REDACT),
         },
         "batteries": batteries,
+        "dynamic_pricing": _dynamic_pricing_info(controller),
     }
