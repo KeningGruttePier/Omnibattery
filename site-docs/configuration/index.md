@@ -26,7 +26,6 @@ flowchart TD
 | Section | Description | Required |
 |------|-------------|:--------:|
 | [Sensors](main-sensor.md) | Grid consumption sensor and solar sensor (home consumption is derived) | ✅ |
-| Batteries | Number of battery units | ✅ |
 | [Batteries](batteries.md) | Per-battery configuration: name, IP, port, version, power limits and SOC | ✅ |
 | [Time slots](time-slots.md) | Discharge/charge windows with per-slot parameters | ❌ |
 | [Excluded devices](excluded-devices.md) | Heavy loads to ignore | ❌ |
