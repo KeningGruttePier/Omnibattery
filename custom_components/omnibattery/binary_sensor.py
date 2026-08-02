@@ -485,13 +485,47 @@ class PredictiveChargingStatusSensor(BinarySensorEntity):
         if self.controller.predictive_charging_mode == "dynamic_pricing":
             attrs["price_data_status"] = getattr(self.controller, "_price_data_status", "not_evaluated")
             attrs["max_price_threshold"] = self.controller.max_price_threshold
+            attrs["negative_price_charging_enabled"] = getattr(
+                self.controller, "negative_price_charging_enabled", False
+            )
+            attrs["negative_price_charging_threshold"] = getattr(
+                self.controller, "negative_price_charging_threshold", 0.0
+            )
+            attrs["negative_price_charging_target_soc"] = getattr(
+                self.controller, "negative_price_charging_target_soc", 100.0
+            )
+            attrs["active_slot_purpose"] = getattr(
+                self.controller, "_active_dynamic_slot_purpose", None
+            )
 
         if self.controller._dynamic_pricing_schedule:
             schedule = self.controller._dynamic_pricing_schedule
             attrs["charging_needed"] = schedule.charging_needed
+            attrs["schedule_type"] = getattr(schedule, "schedule_type", "deficit")
+            attrs["deficit_charging_needed"] = getattr(
+                schedule, "deficit_charging_needed", schedule.charging_needed
+            )
+            attrs["negative_price_charging_needed"] = getattr(
+                schedule, "negative_price_charging_needed", False
+            )
+            attrs["negative_price_energy_kwh"] = getattr(
+                schedule, "negative_price_energy_kwh", 0.0
+            )
+            attrs["negative_price_hours_needed"] = getattr(
+                schedule, "negative_price_hours_needed", 0.0
+            )
             attrs["hours_needed"] = schedule.hours_needed
             attrs["selected_hours"] = [
-                {"start": s.start.isoformat(), "end": s.end.isoformat(), "price": s.price}
+                {
+                    "start": s.start.isoformat(),
+                    "end": s.end.isoformat(),
+                    "price": s.price,
+                    "purpose": (
+                        schedule.purpose_for(s)
+                        if hasattr(schedule, "purpose_for")
+                        else "deficit"
+                    ),
+                }
                 for s in schedule.selected_slots
             ]
             attrs["average_price"] = schedule.average_price

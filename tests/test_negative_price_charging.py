@@ -1,0 +1,821 @@
+"""Regression tests for Dynamic Pricing negative-price opportunistic charging."""
+from __future__ import annotations
+
+import asyncio
+from datetime import datetime, timedelta
+from types import SimpleNamespace
+
+import pytest
+
+from custom_components.omnibattery import ChargeDischargeController
+from custom_components.omnibattery.const import (
+    CONF_NEGATIVE_PRICE_CHARGING_ENABLED,
+    CONF_NEGATIVE_PRICE_CHARGING_TARGET_SOC,
+    CONF_NEGATIVE_PRICE_CHARGING_THRESHOLD,
+    DEFAULT_NEGATIVE_PRICE_CHARGING_ENABLED,
+    DEFAULT_NEGATIVE_PRICE_CHARGING_TARGET_SOC,
+    DEFAULT_NEGATIVE_PRICE_CHARGING_THRESHOLD,
+    DEFAULT_ROUND_TRIP_EFFICIENCY,
+    DOMAIN,
+    PREDICTIVE_MODE_DYNAMIC_PRICING,
+)
+from custom_components.omnibattery import diagnostics
+from custom_components.omnibattery.number import NegativePriceChargingNumber
+from custom_components.omnibattery.pricing import (
+    CurtailmentPlan,
+    DynamicPricingSchedule,
+    PriceSlot,
+    SLOT_PURPOSE_COMBINED,
+    SLOT_PURPOSE_DEFICIT,
+    SLOT_PURPOSE_NEGATIVE_PRICE,
+    calculations,
+)
+from custom_components.omnibattery.pricing.engine import PricingManager
+from custom_components.omnibattery.switch import NegativePriceChargingSwitch
+
+
+class _Battery:
+    """Small battery stand-in with the telemetry used by the pricing engine."""
+
+    def __init__(
+        self,
+        name: str,
+        soc: float,
+        capacity_kwh: float,
+        *,
+        max_soc: float = 100.0,
+        available: bool = True,
+    ) -> None:
+        self.name = name
+        self.max_soc = max_soc
+        self.is_available = available
+        self.data = {
+            "battery_soc": soc,
+            "battery_total_energy": capacity_kwh,
+        }
+
+
+def _decision(*, should_charge: bool = False, deficit: float = 0.0) -> dict:
+    return {
+        "should_charge": should_charge,
+        "avg_soc": 30.0,
+        "avg_consumption_kwh": 4.0,
+        "energy_deficit_kwh": deficit,
+        "planned_grid_charge_kwh": deficit,
+        "solar_forecast_kwh": None,
+        "usable_energy_kwh": 2.0,
+        "total_available_kwh": 2.0,
+        "days_in_history": 0,
+    }
+
+
+def _controller(
+    batteries: list[_Battery],
+    *,
+    enabled: bool = True,
+    threshold: float = 0.0,
+    target_soc: float = 80.0,
+    decision: dict | None = None,
+) -> SimpleNamespace:
+    async def should_activate():
+        return decision or _decision()
+
+    return SimpleNamespace(
+        coordinators=batteries,
+        predictive_charging_enabled=True,
+        predictive_charging_mode=PREDICTIVE_MODE_DYNAMIC_PRICING,
+        predictive_charging_overridden=False,
+        negative_price_charging_enabled=enabled,
+        negative_price_charging_threshold=threshold,
+        negative_price_charging_target_soc=target_soc,
+        smart_predischarge_enabled=False,
+        max_contracted_power=4000,
+        max_charge_capacity=4000,
+        max_price_threshold=None,
+        min_arbitrage_margin=None,
+        round_trip_efficiency=DEFAULT_ROUND_TRIP_EFFICIENCY,
+        price_integration_type="nordpool",
+        price_sensor="sensor.price",
+        _should_activate_grid_charging=should_activate,
+        _last_decision_data=None,
+        _dynamic_pricing_schedule=None,
+        _dynamic_pricing_evaluated_date=None,
+        _dp_eval_retry_count=0,
+        _dp_last_eval_soc=None,
+        _dp_arbitrage_ceiling=None,
+        _dp_daily_avg_price=None,
+        _dp_pre_evaluated_slots={},
+        _dp_pre_evaluated_purposes={},
+        _dp_completed_slots=set(),
+        _current_price_slot_active=False,
+        _active_dynamic_slot_purpose=None,
+        _predictive_charge_target_soc=None,
+        grid_charging_active=False,
+        _grid_charging_initialized=False,
+        previous_power=0,
+        previous_error=0,
+        first_execution=True,
+    )
+
+
+async def _noop(*_args, **_kwargs):
+    return None
+
+
+def _evaluate(ctrl: SimpleNamespace, slots: list[PriceSlot]) -> PricingManager:
+    manager = PricingManager(SimpleNamespace(), ctrl)
+    manager._maybe_refresh_service_prices = _noop
+    manager._parse_price_data = lambda horizon_end=None: slots
+    manager._send_dynamic_pricing_notification = _noop
+    manager._build_curtailment_plan = lambda *_args, **_kwargs: CurtailmentPlan(
+        status="no_risk", reason="none"
+    )
+    asyncio.run(manager._evaluate_dynamic_pricing())
+    return manager
+
+
+def _future_slots(prices: list[float], minutes: int = 60) -> list[PriceSlot]:
+    start = datetime.now() + timedelta(hours=2)
+    return [
+        PriceSlot(
+            start=start + timedelta(minutes=minutes * index),
+            end=start + timedelta(minutes=minutes * (index + 1)),
+            price=price,
+        )
+        for index, price in enumerate(prices)
+    ]
+
+
+def _schedule(
+    slots: list[PriceSlot],
+    purposes: dict[PriceSlot, str],
+    *,
+    deficit_needed: bool = False,
+) -> DynamicPricingSchedule:
+    values = set(purposes.values())
+    schedule_type = (
+        SLOT_PURPOSE_COMBINED
+        if SLOT_PURPOSE_COMBINED in values or len(values) > 1
+        else next(iter(values))
+    )
+    return DynamicPricingSchedule(
+        hours_needed=sum(
+            (slot.end - slot.start).total_seconds() / 3600 for slot in slots
+        ),
+        selected_slots=slots,
+        average_price=sum(slot.price for slot in slots) / len(slots),
+        estimated_cost=0.0,
+        total_available_slots=len(slots),
+        evaluation_time=datetime.now(),
+        energy_deficit_kwh=1.0 if deficit_needed else 0.0,
+        charging_needed=True,
+        slot_purposes=purposes,
+        schedule_type=schedule_type,
+        deficit_charging_needed=deficit_needed,
+        negative_price_charging_needed=any(
+            purpose in {SLOT_PURPOSE_NEGATIVE_PRICE, SLOT_PURPOSE_COMBINED}
+            for purpose in purposes.values()
+        ),
+    )
+
+
+def test_feature_disabled_keeps_informational_deficit_calendar_behavior():
+    slots = _future_slots([-0.20, -0.10, 0.10])
+    ctrl = _controller([_Battery("b1", 20, 10)], enabled=False)
+
+    _evaluate(ctrl, slots)
+
+    schedule = ctrl._dynamic_pricing_schedule
+    assert schedule.charging_needed is False
+    assert schedule.negative_price_charging_needed is False
+    assert schedule.schedule_type == SLOT_PURPOSE_DEFICIT
+    assert set(schedule.slot_purposes.values()) == {SLOT_PURPOSE_DEFICIT}
+
+
+def test_defaults_are_opt_in_and_dynamic_pricing_scope_is_enforced():
+    assert DEFAULT_NEGATIVE_PRICE_CHARGING_ENABLED is False
+    assert DEFAULT_NEGATIVE_PRICE_CHARGING_THRESHOLD == 0.0
+    assert DEFAULT_NEGATIVE_PRICE_CHARGING_TARGET_SOC == 100.0
+
+    ctrl = _controller([_Battery("b1", 20, 10)])
+    ctrl.predictive_charging_mode = "realtime_price"
+
+    assert PricingManager(SimpleNamespace(), ctrl)._negative_price_feature_enabled() is False
+
+
+def test_no_solar_no_deficit_negative_price_creates_real_charge_calendar():
+    slots = _future_slots([-0.05, -0.30, -0.10])
+    ctrl = _controller([_Battery("b1", 50, 4)], target_soc=75)
+
+    _evaluate(ctrl, slots)
+
+    schedule = ctrl._dynamic_pricing_schedule
+    assert schedule.charging_needed is True
+    assert schedule.deficit_charging_needed is False
+    assert schedule.negative_price_charging_needed is True
+    assert schedule.schedule_type == SLOT_PURPOSE_NEGATIVE_PRICE
+    assert [slot.price for slot in schedule.selected_slots] == [-0.30]
+    assert schedule.negative_price_energy_kwh == pytest.approx(1.0)
+
+
+def test_no_price_at_or_below_threshold_does_not_charge_opportunistically():
+    ctrl = _controller([_Battery("b1", 20, 10)], threshold=-0.01)
+
+    _evaluate(ctrl, _future_slots([0.0, 0.05, 0.10]))
+
+    schedule = ctrl._dynamic_pricing_schedule
+    assert schedule is not None  # legacy informational cheapest-slot calendar
+    assert schedule.charging_needed is False
+    assert schedule.negative_price_charging_needed is False
+
+
+def test_missing_price_data_retries_when_opportunity_target_is_pending():
+    ctrl = _controller([_Battery("b1", 20, 10)], target_soc=80)
+
+    _evaluate(ctrl, [])
+
+    assert ctrl._dynamic_pricing_schedule is None
+    assert ctrl._dynamic_pricing_evaluated_date is None
+    assert ctrl._dp_eval_retry_count == 1
+
+
+def test_threshold_is_inclusive_and_most_negative_slots_are_selected():
+    slots = _future_slots([-0.10, -0.40, -0.20, 0.01])
+
+    selected = calculations.select_cheapest_slots_by_duration(
+        slots, hours_needed=2.0, max_price_threshold=-0.10
+    )
+
+    assert {slot.price for slot in selected} == {-0.40, -0.20}
+    inclusive = calculations.select_cheapest_slots_by_duration(
+        [slots[0]], hours_needed=1.0, max_price_threshold=-0.10
+    )
+    assert inclusive == [slots[0]]
+
+
+def test_current_partial_slot_counts_only_its_remaining_duration():
+    now = datetime.now()
+    almost_finished = PriceSlot(
+        start=now - timedelta(minutes=14),
+        end=now + timedelta(minutes=1),
+        price=-0.50,
+    )
+    next_slot = PriceSlot(
+        start=now + timedelta(minutes=1),
+        end=now + timedelta(minutes=16),
+        price=-0.20,
+    )
+
+    selected = calculations.select_cheapest_slots_by_duration(
+        [almost_finished, next_slot],
+        hours_needed=0.20,
+        max_price_threshold=0.0,
+        now=now,
+    )
+
+    assert selected == [almost_finished, next_slot]
+
+
+@pytest.mark.parametrize(
+    ("minutes", "energy_kwh", "expected_count"),
+    [(60, 3.0, 1), (15, 1.6, 2)],
+)
+def test_hourly_and_quarter_hour_opportunities_use_needed_duration(
+    minutes: int, energy_kwh: float, expected_count: int
+):
+    # At 4 kW and 85% efficiency these requests need 0.882 h and 0.471 h.
+    battery = _Battery("b1", 50, energy_kwh * 2)
+    ctrl = _controller([battery], target_soc=100)
+    slots = _future_slots([-0.10, -0.40, -0.30, -0.20], minutes)
+
+    _evaluate(ctrl, slots)
+
+    selected = ctrl._dynamic_pricing_schedule.selected_slots
+    assert len(selected) == expected_count
+    assert [slot.price for slot in selected] == sorted(
+        [slot.price for slot in selected]
+    )
+    assert set(slot.price for slot in selected) == set(
+        sorted(slot.price for slot in slots)[:expected_count]
+    )
+
+
+def test_energy_and_targets_cover_multiple_different_batteries():
+    first = _Battery("large", 20, 10, max_soc=80)
+    second = _Battery("small", 60, 5, max_soc=100)
+    ctrl = _controller([first, second], target_soc=90)
+    manager = PricingManager(SimpleNamespace(), ctrl)
+
+    assert manager._negative_price_energy_needed_kwh() == pytest.approx(7.5)
+
+    ctrl._active_dynamic_slot_purpose = SLOT_PURPOSE_NEGATIVE_PRICE
+    targets = ChargeDischargeController._compute_predictive_target_soc(ctrl)
+    assert targets[first] == 80
+    assert targets[second] == 90
+
+
+def test_opportunity_target_stays_authoritative_during_weekly_full_charge():
+    battery = _Battery("b1", 70, 10, max_soc=100)
+    ctrl = SimpleNamespace(
+        grid_charging_active=True,
+        _active_dynamic_slot_purpose=SLOT_PURPOSE_NEGATIVE_PRICE,
+        _predictive_charge_target_soc={battery: 80.0},
+    )
+
+    ceiling, source = ChargeDischargeController._effective_charge_max_soc(
+        ctrl, battery, weekly_100_unlocked=True
+    )
+
+    assert (ceiling, source) == (80.0, "predictive_target")
+
+
+def test_unavailable_battery_does_not_create_opportunistic_energy():
+    battery = _Battery("offline", 10, 10, available=False)
+    ctrl = _controller([battery], target_soc=90)
+    manager = PricingManager(SimpleNamespace(), ctrl)
+
+    assert manager._negative_price_energy_needed_kwh() == 0.0
+    assert manager._opportunistic_target_pending() is False
+
+
+def test_exact_duration_uses_contracted_and_system_charge_bottlenecks():
+    assert calculations.calculate_exact_charging_hours_needed(1.7, 1000, 4000) == 2.0
+    assert calculations.calculate_exact_charging_hours_needed(1.7, 4000, 1000) == 2.0
+
+
+def test_combined_calendar_keeps_positive_slot_deficit_only():
+    battery = _Battery("b1", 20, 10)
+    ctrl = _controller(
+        [battery],
+        target_soc=80,
+        decision=_decision(should_charge=True, deficit=5.0),
+    )
+    slots = _future_slots([-0.20, 0.05, 0.40])
+
+    _evaluate(ctrl, slots)
+
+    schedule = ctrl._dynamic_pricing_schedule
+    assert schedule.schedule_type == SLOT_PURPOSE_COMBINED
+    assert schedule.purpose_for(slots[0]) == SLOT_PURPOSE_COMBINED
+    assert schedule.purpose_for(slots[1]) == SLOT_PURPOSE_DEFICIT
+
+    ctrl._last_decision_data = _decision(should_charge=True, deficit=2.0)
+    ctrl._predictive_grid_charge_margin_pct = 0.0
+    ctrl._active_dynamic_slot_purpose = SLOT_PURPOSE_DEFICIT
+    positive_target = ChargeDischargeController._compute_predictive_target_soc(ctrl)
+    ctrl._active_dynamic_slot_purpose = SLOT_PURPOSE_COMBINED
+    combined_target = ChargeDischargeController._compute_predictive_target_soc(ctrl)
+    assert positive_target[battery] == pytest.approx(40.0)
+    assert combined_target[battery] == 80.0
+
+
+def test_pre_slot_reevaluation_preserves_valid_opportunity_without_deficit_call():
+    battery = _Battery("b1", 30, 10)
+    ctrl = _controller([battery], target_soc=80)
+    slot = PriceSlot(
+        datetime.now() + timedelta(hours=1),
+        datetime.now() + timedelta(hours=2),
+        -0.10,
+    )
+    ctrl._dynamic_pricing_schedule = _schedule(
+        [slot], {slot: SLOT_PURPOSE_NEGATIVE_PRICE}
+    )
+    ctrl._current_price_slot_active = False
+    calls = []
+
+    async def should_not_run():
+        calls.append(True)
+        return _decision()
+
+    ctrl._should_activate_grid_charging = should_not_run
+    manager = PricingManager(SimpleNamespace(), ctrl)
+    manager._slot_overlaps_curtailment_risk = lambda _slot: False
+
+    asyncio.run(manager._check_dp_pre_slot_reevaluation())
+
+    assert calls == []
+    assert ctrl._dp_pre_evaluated_slots[slot.start] is True
+    assert (
+        ctrl._dp_pre_evaluated_purposes[slot.start]
+        == SLOT_PURPOSE_NEGATIVE_PRICE
+    )
+
+
+@pytest.mark.parametrize("current_price", [None, float("nan"), 0.01])
+def test_invalid_or_above_threshold_live_price_revokes_pure_opportunity(
+    current_price: float | None,
+):
+    battery = _Battery("b1", 30, 10)
+    ctrl = _controller([battery], threshold=0.0, target_soc=80)
+    slot = _future_slots([-0.10])[0]
+    ctrl._dynamic_pricing_schedule = _schedule(
+        [slot], {slot: SLOT_PURPOSE_NEGATIVE_PRICE}
+    )
+    manager = PricingManager(SimpleNamespace(), ctrl)
+    manager._get_current_price = lambda: current_price
+    manager._slot_overlaps_curtailment_risk = lambda _slot: False
+
+    assert manager._effective_slot_purpose(slot) is None
+
+
+def test_live_price_equal_to_threshold_remains_authorized():
+    battery = _Battery("b1", 30, 10)
+    ctrl = _controller([battery], threshold=-0.10, target_soc=80)
+    slot = _future_slots([-0.10])[0]
+    ctrl._dynamic_pricing_schedule = _schedule(
+        [slot], {slot: SLOT_PURPOSE_NEGATIVE_PRICE}
+    )
+    manager = PricingManager(SimpleNamespace(), ctrl)
+    manager._get_current_price = lambda: -0.10
+    manager._slot_overlaps_curtailment_risk = lambda _slot: False
+
+    assert manager._effective_slot_purpose(slot) == SLOT_PURPOSE_NEGATIVE_PRICE
+
+
+def test_smart_predischarge_risk_revokes_opportunity_but_fail_safe_does_not():
+    battery = _Battery("b1", 30, 10)
+    ctrl = _controller([battery], target_soc=80)
+    ctrl.smart_predischarge_enabled = True
+    slot = _future_slots([-0.10])[0]
+    ctrl._dynamic_pricing_schedule = _schedule(
+        [slot], {slot: SLOT_PURPOSE_NEGATIVE_PRICE}
+    )
+    ctrl._curtailment_plan = CurtailmentPlan(
+        status="planned", reason="solar_risk", risk_slots=[slot]
+    )
+    manager = PricingManager(SimpleNamespace(), ctrl)
+    manager._get_current_price = lambda: -0.10
+
+    assert manager._effective_slot_purpose(slot) is None
+
+    # Missing solar/forecast data makes the solar planner fail safe; it must not
+    # veto an otherwise valid import-price opportunity.
+    ctrl._curtailment_plan = CurtailmentPlan(
+        status="fail_safe", reason="missing_forecast", risk_slots=[slot]
+    )
+    assert manager._effective_slot_purpose(slot) == SLOT_PURPOSE_NEGATIVE_PRICE
+
+
+def test_evaluation_moves_opportunity_out_of_solar_risk_window():
+    battery = _Battery("b1", 50, 4)
+    ctrl = _controller([battery], target_soc=75)
+    risky, safe = _future_slots([-0.50, -0.20])
+    manager = PricingManager(SimpleNamespace(), ctrl)
+    manager._maybe_refresh_service_prices = _noop
+    manager._parse_price_data = lambda horizon_end=None: [risky, safe]
+    manager._send_dynamic_pricing_notification = _noop
+    manager._build_curtailment_plan = lambda *_args, **_kwargs: CurtailmentPlan(
+        status="planned", reason="solar_risk", risk_slots=[risky]
+    )
+
+    asyncio.run(manager._evaluate_dynamic_pricing())
+
+    schedule = ctrl._dynamic_pricing_schedule
+    assert schedule.selected_slots == [safe]
+    assert schedule.purpose_for(safe) == SLOT_PURPOSE_NEGATIVE_PRICE
+
+
+def test_guaranteed_minimum_floor_keeps_only_deficit_in_solar_risk_window():
+    battery = _Battery("b1", 10, 4)
+    decision = _decision(should_charge=True, deficit=1.0)
+    decision["floor_active"] = True
+    ctrl = _controller([battery], target_soc=80, decision=decision)
+    risky = _future_slots([-0.50])[0]
+    manager = PricingManager(SimpleNamespace(), ctrl)
+    manager._maybe_refresh_service_prices = _noop
+    manager._parse_price_data = lambda horizon_end=None: [risky]
+    manager._send_dynamic_pricing_notification = _noop
+    manager._build_curtailment_plan = lambda *_args, **_kwargs: CurtailmentPlan(
+        status="planned", reason="solar_risk", risk_slots=[risky]
+    )
+
+    asyncio.run(manager._evaluate_dynamic_pricing())
+
+    schedule = ctrl._dynamic_pricing_schedule
+    assert schedule.selected_slots == [risky]
+    assert schedule.purpose_for(risky) == SLOT_PURPOSE_DEFICIT
+    assert schedule.negative_price_charging_needed is False
+
+
+def _prepare_runtime_manager(
+    ctrl: SimpleNamespace, slot: PriceSlot, commands: list
+) -> PricingManager:
+    ctrl._dynamic_pricing_schedule = _schedule(
+        [slot], {slot: SLOT_PURPOSE_NEGATIVE_PRICE}
+    )
+    ctrl._dynamic_pricing_evaluated_date = datetime.now().date()
+    ctrl._dp_evening_reevaluated_date = datetime.now().date()
+    ctrl._current_price_slot_active = True
+    ctrl._active_dynamic_slot_purpose = SLOT_PURPOSE_NEGATIVE_PRICE
+    ctrl.grid_charging_active = True
+    ctrl._predictive_charge_target_soc = {
+        battery: ctrl.negative_price_charging_target_soc
+        for battery in ctrl.coordinators
+    }
+    ctrl._is_active_balance_mode_running = lambda _battery: False
+
+    async def set_power(battery, charge, discharge):
+        commands.append((battery.name, charge, discharge))
+
+    ctrl._set_battery_power = set_power
+    manager = PricingManager(SimpleNamespace(), ctrl)
+    manager._maybe_refresh_service_prices = _noop
+    manager._check_dp_pre_slot_reevaluation = _noop
+    manager._is_evening_reevaluation_time = lambda: False
+    manager._is_dp_soc_drop_reeval = lambda: False
+    manager._get_current_price = lambda: slot.price
+    return manager
+
+
+def test_reaching_target_stops_inside_slot_prunes_future_and_does_not_resume():
+    battery = _Battery("b1", 80, 10, max_soc=100)
+    ctrl = _controller([battery], target_soc=80)
+    now = datetime.now()
+    slot = PriceSlot(now - timedelta(minutes=10), now + timedelta(minutes=50), -0.20)
+    commands: list = []
+    manager = _prepare_runtime_manager(ctrl, slot, commands)
+
+    asyncio.run(manager.handle_dynamic_pricing_predictive_charging())
+
+    assert ctrl.grid_charging_active is False
+    assert ctrl._current_price_slot_active is False
+    assert ctrl._dynamic_pricing_schedule is None
+    assert commands == [("b1", 0, 0)]
+
+    # A later SOC dip in the same physical interval cannot resurrect the removed
+    # opportunity and charge on toward max_soc.
+    battery.data["battery_soc"] = 79
+    asyncio.run(manager.handle_dynamic_pricing_predictive_charging())
+    assert ctrl.grid_charging_active is False
+    assert commands == [("b1", 0, 0)]
+
+
+def test_live_price_above_threshold_stops_active_pure_opportunity_safely():
+    battery = _Battery("b1", 30, 10)
+    ctrl = _controller([battery], threshold=0.0, target_soc=80)
+    now = datetime.now()
+    slot = PriceSlot(now - timedelta(minutes=10), now + timedelta(minutes=50), -0.20)
+    commands: list = []
+    manager = _prepare_runtime_manager(ctrl, slot, commands)
+    manager._get_current_price = lambda: 0.01
+
+    asyncio.run(manager.handle_dynamic_pricing_predictive_charging())
+
+    assert ctrl.grid_charging_active is False
+    assert ctrl._current_price_slot_active is False
+    assert commands == [("b1", 0, 0)]
+
+
+def test_charge_blocker_prevents_entering_an_opportunity_slot():
+    battery = _Battery("b1", 30, 10)
+    ctrl = _controller([battery], target_soc=80)
+    now = datetime.now()
+    slot = PriceSlot(now - timedelta(minutes=10), now + timedelta(minutes=50), -0.20)
+    ctrl._dynamic_pricing_schedule = _schedule(
+        [slot], {slot: SLOT_PURPOSE_NEGATIVE_PRICE}
+    )
+    ctrl._dynamic_pricing_evaluated_date = now.date()
+    ctrl._dp_evening_reevaluated_date = now.date()
+    ctrl.is_charge_blocked = lambda: True
+    manager = PricingManager(SimpleNamespace(), ctrl)
+    manager._maybe_refresh_service_prices = _noop
+    manager._check_dp_pre_slot_reevaluation = _noop
+    manager._is_evening_reevaluation_time = lambda: False
+    manager._is_dp_soc_drop_reeval = lambda: False
+    manager._get_current_price = lambda: -0.20
+
+    asyncio.run(manager.handle_dynamic_pricing_predictive_charging())
+
+    assert ctrl.grid_charging_active is False
+    assert ctrl._current_price_slot_active is False
+
+
+def test_cleanup_removes_only_opportunity_purpose_from_combined_calendar():
+    battery = _Battery("b1", 30, 10)
+    ctrl = _controller([battery], target_soc=80)
+    slot = _future_slots([-0.20])[0]
+    ctrl._dynamic_pricing_schedule = _schedule(
+        [slot], {slot: SLOT_PURPOSE_COMBINED}, deficit_needed=True
+    )
+    ctrl._active_dynamic_slot_purpose = SLOT_PURPOSE_COMBINED
+    ctrl._current_price_slot_active = True
+    ctrl.grid_charging_active = True
+    manager = PricingManager(SimpleNamespace(), ctrl)
+
+    manager.clear_negative_price_runtime("mode_changed")
+
+    schedule = ctrl._dynamic_pricing_schedule
+    assert schedule is not None
+    assert schedule.schedule_type == SLOT_PURPOSE_DEFICIT
+    assert schedule.purpose_for(slot) == SLOT_PURPOSE_DEFICIT
+    assert schedule.negative_price_charging_needed is False
+    assert ctrl._active_dynamic_slot_purpose == SLOT_PURPOSE_DEFICIT
+
+
+def test_cleanup_clears_all_pure_opportunity_runtime_state():
+    battery = _Battery("b1", 30, 10)
+    ctrl = _controller([battery], target_soc=80)
+    slot = _future_slots([-0.20])[0]
+    ctrl._dynamic_pricing_schedule = _schedule(
+        [slot], {slot: SLOT_PURPOSE_NEGATIVE_PRICE}
+    )
+    ctrl._active_dynamic_slot_purpose = SLOT_PURPOSE_NEGATIVE_PRICE
+    ctrl._current_price_slot_active = True
+    ctrl.grid_charging_active = True
+
+    PricingManager(SimpleNamespace(), ctrl).clear_negative_price_runtime("unload")
+
+    assert ctrl._dynamic_pricing_schedule is None
+    assert ctrl._active_dynamic_slot_purpose is None
+    assert ctrl._current_price_slot_active is False
+    assert ctrl.grid_charging_active is False
+
+
+def test_cleanup_does_not_disturb_active_deficit_target():
+    battery = _Battery("b1", 30, 10)
+    ctrl = _controller([battery], enabled=False)
+    slot = _future_slots([0.10])[0]
+    ctrl._dynamic_pricing_schedule = _schedule(
+        [slot], {slot: SLOT_PURPOSE_DEFICIT}, deficit_needed=True
+    )
+    target = {battery: 55.0}
+    ctrl._active_dynamic_slot_purpose = SLOT_PURPOSE_DEFICIT
+    ctrl._current_price_slot_active = True
+    ctrl.grid_charging_active = True
+    ctrl._predictive_charge_target_soc = target
+
+    PricingManager(SimpleNamespace(), ctrl).clear_negative_price_runtime(
+        "unrelated_config_update"
+    )
+
+    assert ctrl._active_dynamic_slot_purpose == SLOT_PURPOSE_DEFICIT
+    assert ctrl._predictive_charge_target_soc is target
+    assert ctrl._current_price_slot_active is True
+    assert ctrl.grid_charging_active is True
+
+
+def test_combined_downgrade_preserves_original_deficit_target_snapshot():
+    battery = _Battery("b1", 80, 10)
+    ctrl = _controller(
+        [battery],
+        target_soc=80,
+        decision=_decision(should_charge=True, deficit=2.0),
+    )
+    slot = _future_slots([-0.20])[0]
+    ctrl._dynamic_pricing_schedule = _schedule(
+        [slot], {slot: SLOT_PURPOSE_COMBINED}, deficit_needed=True
+    )
+    ctrl._active_dynamic_slot_purpose = SLOT_PURPOSE_COMBINED
+    ctrl._current_price_slot_active = True
+    ctrl.grid_charging_active = True
+    ctrl._grid_charging_initialized = True
+    ctrl._predictive_charge_target_soc = {battery: 80.0}
+    ctrl._predictive_deficit_target_soc = {battery: 40.0}
+
+    manager = PricingManager(SimpleNamespace(), ctrl)
+    manager.clear_negative_price_runtime("opportunity_complete")
+
+    assert ctrl._active_dynamic_slot_purpose == SLOT_PURPOSE_DEFICIT
+    assert ctrl._predictive_charge_target_soc == {battery: 40.0}
+    assert ctrl._grid_charging_initialized is True
+
+
+def test_combined_runtime_stops_when_opportunity_already_covers_deficit():
+    battery = _Battery("b1", 80, 10)
+    ctrl = _controller(
+        [battery],
+        target_soc=80,
+        decision=_decision(should_charge=True, deficit=2.0),
+    )
+    now = datetime.now()
+    slot = PriceSlot(
+        now - timedelta(minutes=10),
+        now + timedelta(minutes=50),
+        -0.20,
+    )
+    commands: list = []
+    manager = _prepare_runtime_manager(ctrl, slot, commands)
+    ctrl._dynamic_pricing_schedule = _schedule(
+        [slot], {slot: SLOT_PURPOSE_COMBINED}, deficit_needed=True
+    )
+    ctrl._active_dynamic_slot_purpose = SLOT_PURPOSE_COMBINED
+    ctrl._predictive_charge_target_soc = {battery: 80.0}
+    ctrl._predictive_deficit_target_soc = {battery: 40.0}
+
+    async def handle_charge():
+        # The already-stored opportunity energy covered the smaller deficit;
+        # the stale 2 kWh plan must not be rebased from the new 80% SOC.
+        assert ctrl._predictive_charge_target_soc == {battery: 40.0}
+        ctrl.grid_charging_active = False
+
+    ctrl._handle_predictive_grid_charging = handle_charge
+
+    asyncio.run(manager.handle_dynamic_pricing_predictive_charging())
+
+    assert ctrl.grid_charging_active is False
+    assert ctrl._current_price_slot_active is False
+    assert commands == [("b1", 0, 0)]
+
+
+def test_runtime_switch_persists_enable_and_disable_with_safe_cleanup():
+    calls: list = []
+
+    class _Pricing:
+        async def _evaluate_dynamic_pricing(self, extended_horizon=False):
+            calls.append(("evaluate", extended_horizon))
+
+        async def _stop_dynamic_price_slot(self, reason):
+            calls.append(("stop", reason))
+
+        def clear_negative_price_runtime(self, reason):
+            calls.append(("clear", reason))
+
+    controller = SimpleNamespace(
+        negative_price_charging_enabled=False,
+        _active_dynamic_slot_purpose=None,
+        _pricing_mgr=_Pricing(),
+    )
+    entry = SimpleNamespace(entry_id="entry", data={})
+
+    def update_entry(target, *, data):
+        target.data = data
+
+    hass = SimpleNamespace(
+        config_entries=SimpleNamespace(async_update_entry=update_entry)
+    )
+    entity = NegativePriceChargingSwitch(hass, entry, controller)
+    entity.async_write_ha_state = lambda: None
+
+    asyncio.run(entity.async_turn_on())
+    assert entry.data[CONF_NEGATIVE_PRICE_CHARGING_ENABLED] is True
+    assert controller.negative_price_charging_enabled is True
+    assert ("evaluate", True) in calls
+
+    controller._active_dynamic_slot_purpose = SLOT_PURPOSE_NEGATIVE_PRICE
+    asyncio.run(entity.async_turn_off())
+    assert entry.data[CONF_NEGATIVE_PRICE_CHARGING_ENABLED] is False
+    assert controller.negative_price_charging_enabled is False
+    assert ("stop", "negative_price_feature_disabled") in calls
+    assert ("clear", "disabled") in calls
+
+
+@pytest.mark.parametrize(
+    ("kind", "value", "config_key"),
+    [
+        ("threshold", -0.075, CONF_NEGATIVE_PRICE_CHARGING_THRESHOLD),
+        ("target_soc", 72.0, CONF_NEGATIVE_PRICE_CHARGING_TARGET_SOC),
+    ],
+)
+def test_runtime_numbers_persist_and_rebuild_enabled_calendar(
+    kind: str, value: float, config_key: str
+):
+    calls: list = []
+
+    class _Pricing:
+        def clear_negative_price_runtime(self, reason):
+            calls.append(("clear", reason))
+
+        async def _evaluate_dynamic_pricing(self, extended_horizon=False):
+            calls.append(("evaluate", extended_horizon))
+
+    controller = SimpleNamespace(
+        negative_price_charging_enabled=True,
+        negative_price_charging_threshold=0.0,
+        negative_price_charging_target_soc=100.0,
+        _pricing_mgr=_Pricing(),
+    )
+    entry = SimpleNamespace(entry_id="entry", data={})
+
+    def update_entry(target, *, data):
+        target.data = data
+
+    hass = SimpleNamespace(
+        config_entries=SimpleNamespace(async_update_entry=update_entry),
+        data={DOMAIN: {"entry": {"controller": controller}}},
+    )
+    entity = NegativePriceChargingNumber(hass, entry, kind)
+    entity.async_write_ha_state = lambda: None
+
+    asyncio.run(entity.async_set_native_value(value))
+
+    assert entry.data[config_key] == value
+    assert ("clear", "configuration_changed") in calls
+    assert ("evaluate", True) in calls
+
+
+def test_download_diagnostics_exposes_typed_calendar():
+    slot = _future_slots([-0.20])[0]
+    schedule = _schedule([slot], {slot: SLOT_PURPOSE_NEGATIVE_PRICE})
+    controller = SimpleNamespace(
+        negative_price_charging_enabled=True,
+        negative_price_charging_threshold=0.0,
+        negative_price_charging_target_soc=80.0,
+        _active_dynamic_slot_purpose=SLOT_PURPOSE_NEGATIVE_PRICE,
+        _dynamic_pricing_schedule=schedule,
+    )
+
+    info = diagnostics._dynamic_pricing_info(controller)
+
+    assert info["schedule_type"] == SLOT_PURPOSE_NEGATIVE_PRICE
+    assert info["selected_slots"][0]["purpose"] == SLOT_PURPOSE_NEGATIVE_PRICE
+    assert info["active_slot_purpose"] == SLOT_PURPOSE_NEGATIVE_PRICE

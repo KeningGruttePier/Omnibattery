@@ -28,6 +28,9 @@ Selecciona automáticamente las **horas más baratas del día** para cubrir el d
 | **Suelo de precio de descarga (€)** | (Opcional) Suelo separado para la descarga condicionada — abre una banda de reposo entre el techo de carga y este suelo. Vacío = reutiliza el umbral máximo para ambos. Ver [Suelo de precio de descarga separado](#suelo-de-precio-de-descarga-separado) |
 | **Margen de seguridad de previsión solar (kWh)** | (Opcional) Buffer de energía adicional añadido a la previsión de consumo antes de decidir si cargar (por defecto 0 kWh) |
 | **Margen de carga de red predictiva (%)** | (Opcional) Aumenta la cantidad de carga de red para cubrir previsiones solares optimistas — p. ej. una necesidad de 2 kWh de red al 50 % carga 3 kWh. Limitado al hueco hasta el SOC máximo (por defecto 0 %) |
+| **Carga oportunista por precio negativo** | (Opcional, desactivada por defecto) Carga en franjas de importación negativas válidas aunque la previsión normal no detecte déficit |
+| **Umbral de precio negativo de importación** | Umbral inclusivo del precio normalizado de importación; por defecto `0` moneda/kWh |
+| **SOC objetivo por precio negativo** | Objetivo oportunista, limitado por el SOC máximo configurado de cada batería; por defecto `100 %` |
 
 ![Formulario de configuración — Modo Precio Dinámico](../../assets/screenshots/configuration/predictive-charging/dynamic-pricing-form.png){ width="650"  style="display: block; margin: 0 auto;"}
 
@@ -48,6 +51,20 @@ Si los datos de precios no están disponibles a las 00:05, el sistema reintenta 
 ### Reinicio de HA a mitad del día
 
 Si HA se reinicia después de la ventana de las 00:05 sin evaluación previa, el controlador lanza una evaluación automática en el arranque (tras 15 segundos) considerando solo los slots del día actual.
+
+---
+
+## Carga oportunista por precio negativo
+
+Esta función **optativa y exclusiva de Precio Dinámico** sirve para instalaciones con o sin paneles solares. Al activarla, Omnibattery busca de forma independiente franjas horarias o de 15 minutos cuyo **precio normalizado de importación sea menor o igual que** el umbral configurado. Calcula la energía necesaria para llegar al SOC objetivo y elige primero las franjas individuales más negativas. No necesita sensor de previsión solar.
+
+El calendario registra el motivo de cada franja: `deficit`, `negative_price` o `combined`. Por eso una franja positiva seleccionada por déficit conserva el objetivo normal calculado por déficit y no puede consumir energía pendiente solo por oportunidad. En una franja negativa combinada se aplica el mayor de ambos objetivos. Cada batería queda siempre limitada a `min(SOC objetivo por precio negativo, SOC máximo de la batería)`.
+
+La carga se detiene en cuanto alcanza el objetivo activo y se eliminan las oportunidades futuras que ya no hacen falta. Una oportunidad pura también se detiene si el precio en vivo deja de estar disponible o supera el umbral inclusivo. Siguen siendo autoritativos la potencia contratada, los límites individuales y del sistema, bloqueos del usuario, control manual, backup, balance activo, disponibilidad y todas las protecciones existentes.
+
+El **Umbral de precio negativo de importación** es independiente del **Umbral de inyección negativa** descrito abajo. El primero decide cuándo conviene importar; el segundo detecta riesgo solar de anti-vertido. Si ambas funciones coinciden en una ventana solar de riesgo, la Predescarga inteligente reserva el espacio y evita que la carga oportunista lo llene. La carga necesaria para garantizar el SOC mínimo sigue siendo la excepción de seguridad. La falta de datos solares pone el planner anti-vertido en modo seguro, pero no cancela una oportunidad válida por precio de importación.
+
+El interruptor y los dos números están disponibles en los controles del sistema Omnibattery, por lo que una automatización puede activar la función o cambiar su umbral/objetivo sin reabrir el flujo de opciones.
 
 ---
 

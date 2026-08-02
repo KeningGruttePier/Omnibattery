@@ -309,6 +309,9 @@
           "price_sensor": "Electricity price sensor",
           "max_price_threshold": "Maximum price threshold (optional)",
           "dp_price_discharge_control": "Only discharge when price is above threshold",
+          "negative_price_charging_enabled": "Enable negative-price opportunistic charging",
+          "negative_price_charging_threshold": "Negative import-price threshold (currency/kWh)",
+          "negative_price_charging_target_soc": "Negative-price target SOC (%)",
           "smart_predischarge_enabled": "Enable Smart Pre-discharge / Anti-curtailment",
           "negative_injection_threshold": "Negative injection threshold (currency/kWh)",
           "predischarge_reserve_soc": "Pre-discharge reserve SOC (%)",
@@ -323,6 +326,9 @@
           "price_sensor": "Sensor providing electricity prices (e.g., the official Nord Pool current-price sensor, a HACS Nordpool sensor, sensor.esios_pvpc for PVPC, or your CKW sensor for Switzerland)",
           "max_price_threshold": "Slots above this price will not be selected. When price-gated discharge is enabled, this value is also used as the discharge threshold. Use major currency/kWh: €/kWh for Nordpool/PVPC, CHF/kWh for CKW. HACS Nordpool prices configured in cents are converted automatically. Leave empty to use all slots and use the daily average as the discharge threshold.",
           "dp_price_discharge_control": "When enabled, the battery only discharges when the current electricity price exceeds the configured maximum price threshold. If no threshold is configured, it uses today's average price computed automatically from the price sensor. If time slots restrict discharge, both conditions must be met.",
+          "negative_price_charging_enabled": "Opt-in dynamic-pricing feature that charges during the most negative import-price slots even when the normal energy forecast does not require grid charging. A solar forecast sensor is not required.",
+          "negative_price_charging_threshold": "A slot qualifies when its normalized import price is equal to or below this inclusive threshold. This is independent from the anti-curtailment injection-price threshold.",
+          "negative_price_charging_target_soc": "Target SOC for opportunistic charging. Each battery stops at the lower of this target and its configured maximum SOC.",
           "smart_predischarge_enabled": "Opt-in dynamic-pricing feature. It creates battery headroom before forecast PV surplus reaches a price slot at or below the negative-injection threshold. Existing SOC floors, user limits, time slots, manual ownership, backup and capacity protection remain authoritative.",
           "negative_injection_threshold": "A future slot is considered at risk when its normalized price is at or below this inclusive threshold and forecast PV exceeds estimated household consumption.",
           "predischarge_reserve_soc": "Additional SOC floor for pre-discharge. 0 uses each battery's configured minimum and guaranteed minimum SOC floors.",
@@ -883,6 +889,9 @@
           "price_sensor": "Electricity price sensor",
           "max_price_threshold": "Maximum price threshold (optional)",
           "dp_price_discharge_control": "Only discharge when price is above threshold",
+          "negative_price_charging_enabled": "Enable negative-price opportunistic charging",
+          "negative_price_charging_threshold": "Negative import-price threshold (currency/kWh)",
+          "negative_price_charging_target_soc": "Negative-price target SOC (%)",
           "smart_predischarge_enabled": "Enable Smart Pre-discharge / Anti-curtailment",
           "negative_injection_threshold": "Negative injection threshold (currency/kWh)",
           "predischarge_reserve_soc": "Pre-discharge reserve SOC (%)",
@@ -897,6 +906,9 @@
           "price_sensor": "Sensor providing electricity prices (e.g., the official Nord Pool current-price sensor, a HACS Nordpool sensor, sensor.esios_pvpc for PVPC, or your CKW sensor for Switzerland)",
           "max_price_threshold": "Slots above this price will not be selected. When price-gated discharge is enabled, this value is also used as the discharge threshold. Use major currency/kWh: €/kWh for Nordpool/PVPC, CHF/kWh for CKW. HACS Nordpool prices configured in cents are converted automatically. Leave empty to use all slots and use the daily average as the discharge threshold.",
           "dp_price_discharge_control": "When enabled, the battery only discharges when the current electricity price exceeds the configured maximum price threshold. If no threshold is configured, it uses today's average price computed automatically from the price sensor. If time slots restrict discharge, both conditions must be met.",
+          "negative_price_charging_enabled": "Opt-in dynamic-pricing feature that charges during the most negative import-price slots even when the normal energy forecast does not require grid charging. A solar forecast sensor is not required.",
+          "negative_price_charging_threshold": "A slot qualifies when its normalized import price is equal to or below this inclusive threshold. This is independent from the anti-curtailment injection-price threshold.",
+          "negative_price_charging_target_soc": "Target SOC for opportunistic charging. Each battery stops at the lower of this target and its configured maximum SOC.",
           "smart_predischarge_enabled": "Opt-in dynamic-pricing feature. It creates battery headroom before forecast PV surplus reaches a price slot at or below the negative-injection threshold. Existing SOC floors, user limits, time slots, manual ownership, backup and capacity protection remain authoritative.",
           "negative_injection_threshold": "A future slot is considered at risk when its normalized price is at or below this inclusive threshold and forecast PV exceeds estimated household consumption.",
           "predischarge_reserve_soc": "Additional SOC floor for pre-discharge. 0 uses each battery's configured minimum and guaranteed minimum SOC floors.",
@@ -1237,6 +1249,9 @@
       },
       "smart_predischarge": {
         "name": "Smart Pre-discharge / Anti-curtailment"
+      },
+      "negative_price_charging": {
+        "name": "Negative-price opportunistic charging"
       },
       "rt_price_discharge_control": {
         "name": "Price-Based Discharge"
@@ -1763,6 +1778,12 @@
       },
       "negative_injection_threshold": {
         "name": "Negative Injection Threshold"
+      },
+      "negative_price_charging_threshold": {
+        "name": "Negative Import-Price Threshold"
+      },
+      "negative_price_charging_target_soc": {
+        "name": "Negative-Price Target SOC"
       },
       "predischarge_reserve_soc": {
         "name": "Pre-discharge Reserve SOC"

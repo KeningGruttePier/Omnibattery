@@ -294,6 +294,9 @@
           "max_price_threshold": "Precio máximo (opcional)",
           "discharge_price_threshold": "Precio mínimo de descarga (opcional)",
           "dp_price_discharge_control": "Descargar solo cuando el precio supere el umbral",
+          "negative_price_charging_enabled": "Activar carga oportunista por precio negativo",
+          "negative_price_charging_threshold": "Umbral de precio negativo de importación (moneda/kWh)",
+          "negative_price_charging_target_soc": "SOC objetivo por precio negativo (%)",
           "smart_predischarge_enabled": "Predescarga inteligente / anti-vertido",
           "negative_injection_threshold": "Umbral de inyección negativa",
           "predischarge_reserve_soc": "Reserva de SOC de predescarga (%)",
@@ -309,6 +312,9 @@
           "max_price_threshold": "Las horas por encima de este precio no serán seleccionadas. Cuando el control de descarga por precio está activado, este valor también se usa como umbral de descarga salvo que configures abajo un precio mínimo de descarga aparte. Usa moneda principal/kWh: €/kWh para Nordpool/PVPC, CHF/kWh para CKW. Los precios Nordpool HACS configurados en céntimos se convierten automáticamente. Deja vacío para usar todas las horas y usar la media diaria como umbral de descarga.",
           "discharge_price_threshold": "Umbral separado opcional para la descarga por precio. La descarga se bloquea mientras el precio sea igual o inferior a este valor, abriendo una banda neutra entre el precio máximo de carga (arriba) y este mínimo: en esa banda la batería ni carga de red ni descarga (la carga por excedente solar sigue funcionando). Déjalo vacío para reutilizar el precio máximo para ambos (comportamiento actual de umbral único).",
           "dp_price_discharge_control": "Si está activado, la batería solo descarga cuando el precio eléctrico actual supera el precio máximo configurado. Si no hay umbral configurado, usa el precio medio del día calculado automáticamente a partir del sensor de precios. Si las franjas horarias restringen la descarga, ambas condiciones deben cumplirse.",
+          "negative_price_charging_enabled": "Función opcional de precios dinámicos que carga durante las franjas de importación más negativas aunque la previsión normal no requiera cargar desde la red. No necesita un sensor de previsión solar.",
+          "negative_price_charging_threshold": "Una franja cumple cuando su precio normalizado de importación es igual o inferior a este umbral inclusivo. Es independiente del umbral de precio de inyección del anti-vertido.",
+          "negative_price_charging_target_soc": "SOC objetivo para la carga oportunista. Cada batería se detiene en el menor valor entre este objetivo y su SOC máximo configurado.",
           "smart_predischarge_enabled": "Activa la predescarga opcional solo en el modo de precios dinámicos para crear espacio antes de franjas con precio de inyección negativo.",
           "negative_injection_threshold": "Los precios iguales o inferiores a este umbral son franjas de riesgo cuando se espera excedente solar.",
           "predischarge_reserve_soc": "SOC que debe reservar la predescarga, además de los límites mínimos existentes.",
@@ -899,6 +905,9 @@
           "max_price_threshold": "Precio máximo (opcional)",
           "discharge_price_threshold": "Precio mínimo de descarga (opcional)",
           "dp_price_discharge_control": "Descargar solo cuando el precio supere el umbral",
+          "negative_price_charging_enabled": "Activar carga oportunista por precio negativo",
+          "negative_price_charging_threshold": "Umbral de precio negativo de importación (moneda/kWh)",
+          "negative_price_charging_target_soc": "SOC objetivo por precio negativo (%)",
           "smart_predischarge_enabled": "Predescarga inteligente / anti-vertido",
           "negative_injection_threshold": "Umbral de inyección negativa",
           "predischarge_reserve_soc": "Reserva de SOC de predescarga (%)",
@@ -914,6 +923,9 @@
           "max_price_threshold": "Las horas por encima de este precio no serán seleccionadas. Cuando el control de descarga por precio está activado, este valor también se usa como umbral de descarga salvo que configures abajo un precio mínimo de descarga aparte. Usa moneda principal/kWh: €/kWh para Nordpool/PVPC, CHF/kWh para CKW. Los precios Nordpool HACS configurados en céntimos se convierten automáticamente. Deja vacío para usar todas las horas y usar la media diaria como umbral de descarga.",
           "discharge_price_threshold": "Umbral separado opcional para la descarga por precio. La descarga se bloquea mientras el precio sea igual o inferior a este valor, abriendo una banda neutra entre el precio máximo de carga (arriba) y este mínimo: en esa banda la batería ni carga de red ni descarga (la carga por excedente solar sigue funcionando). Déjalo vacío para reutilizar el precio máximo para ambos (comportamiento actual de umbral único).",
           "dp_price_discharge_control": "Si está activado, la batería solo descarga cuando el precio eléctrico actual supera el precio máximo configurado. Si no hay umbral configurado, usa el precio medio del día calculado automáticamente a partir del sensor de precios. Si las franjas horarias restringen la descarga, ambas condiciones deben cumplirse.",
+          "negative_price_charging_enabled": "Función opcional de precios dinámicos que carga durante las franjas de importación más negativas aunque la previsión normal no requiera cargar desde la red. No necesita un sensor de previsión solar.",
+          "negative_price_charging_threshold": "Una franja cumple cuando su precio normalizado de importación es igual o inferior a este umbral inclusivo. Es independiente del umbral de precio de inyección del anti-vertido.",
+          "negative_price_charging_target_soc": "SOC objetivo para la carga oportunista. Cada batería se detiene en el menor valor entre este objetivo y su SOC máximo configurado.",
           "smart_predischarge_enabled": "Activa la predescarga opcional solo en el modo de precios dinámicos para crear espacio antes de franjas con precio de inyección negativo.",
           "negative_injection_threshold": "Los precios iguales o inferiores a este umbral son franjas de riesgo cuando se espera excedente solar.",
           "predischarge_reserve_soc": "SOC que debe reservar la predescarga, además de los límites mínimos existentes.",
@@ -1183,6 +1195,9 @@
       },
       "smart_predischarge": {
         "name": "Predescarga inteligente / anti-vertido"
+      },
+      "negative_price_charging": {
+        "name": "Carga oportunista por precio negativo"
       },
       "rt_price_discharge_control": {
         "name": "Descarga según precio"
@@ -1751,6 +1766,12 @@
       },
       "negative_injection_threshold": {
         "name": "Umbral de inyección negativa"
+      },
+      "negative_price_charging_threshold": {
+        "name": "Umbral de precio negativo de importación"
+      },
+      "negative_price_charging_target_soc": {
+        "name": "SOC objetivo por precio negativo"
       },
       "predischarge_reserve_soc": {
         "name": "Reserva de SOC de predescarga"

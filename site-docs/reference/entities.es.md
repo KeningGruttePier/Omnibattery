@@ -66,6 +66,8 @@ Solo presentes cuando el [monitor de equilibrio de celdas](../features/cell-bala
 | `number.marstek_venus_system_system_max_charge_power` | Límite opcional de carga combinada para todo el sistema (`0 W` = desactivado). Solo se crea cuando los límites del sistema están activados. | 0–15000 W |
 | `number.marstek_venus_system_system_max_discharge_power` | Límite opcional de descarga combinada para todo el sistema (`0 W` = desactivado). Solo se crea cuando los límites del sistema están activados. | 0–15000 W |
 | `number.omnibattery_negative_injection_threshold` | Umbral inclusivo de precio para franjas de riesgo de inyección negativa | -2–2 moneda/kWh |
+| `number.omnibattery_negative_price_charging_threshold` | Umbral inclusivo del precio normalizado de importación para carga oportunista | -2–2 moneda/kWh |
+| `number.omnibattery_negative_price_charging_target_soc` | SOC objetivo oportunista, limitado por el SOC máximo de cada batería | 0–100 % |
 | `number.omnibattery_predischarge_reserve_soc` | Suelo de SOC adicional para la predescarga inteligente | 0–100 % |
 | `number.omnibattery_predischarge_max_export_power_w` | Exportación máxima durante la predescarga (`0 W` = solo autoconsumo) | 0–10000 W |
 | `number.omnibattery_curtailment_headroom_margin_pct` | Margen adicional de espacio | 0–100 % |
@@ -87,6 +89,7 @@ Solo presentes cuando el [monitor de equilibrio de celdas](../features/cell-bala
 | `switch.*_backup_function` | Función de reserva — cuando está activo **y** la potencia AC offgrid ≠ 0 W, la batería queda excluida del control PD (no se envían comandos de escritura) |
 | `switch.marstek_venus_system_override_predictive_charging` | Cancelar carga predictiva |
 | `switch.omnibattery_smart_predischarge` | Activar predescarga inteligente / anti-vertido (solo Precio Dinámico) |
+| `switch.omnibattery_negative_price_charging` | Activar carga oportunista con precios negativos de importación (solo Precio Dinámico) |
 
 ## Botones
 

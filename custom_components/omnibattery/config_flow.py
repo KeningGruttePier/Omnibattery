@@ -82,6 +82,12 @@ from .const import (
     DEFAULT_PREDISCHARGE_RESERVE_SOC,
     DEFAULT_PREDISCHARGE_MAX_EXPORT_POWER_W,
     DEFAULT_CURTAILMENT_HEADROOM_MARGIN_PCT,
+    CONF_NEGATIVE_PRICE_CHARGING_ENABLED,
+    CONF_NEGATIVE_PRICE_CHARGING_THRESHOLD,
+    CONF_NEGATIVE_PRICE_CHARGING_TARGET_SOC,
+    DEFAULT_NEGATIVE_PRICE_CHARGING_ENABLED,
+    DEFAULT_NEGATIVE_PRICE_CHARGING_THRESHOLD,
+    DEFAULT_NEGATIVE_PRICE_CHARGING_TARGET_SOC,
     CONF_AVERAGE_PRICE_SENSOR,
     CONF_DP_PRICE_DISCHARGE_CONTROL,
     CONF_RT_PRICE_DISCHARGE_CONTROL,
@@ -1609,6 +1615,18 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
                         self.config_data["charging_time_slot"] = None
                         self.config_data[CONF_PREDICTIVE_SAFETY_MARGIN_KWH] = user_input.get(CONF_PREDICTIVE_SAFETY_MARGIN_KWH, DEFAULT_PREDICTIVE_SAFETY_MARGIN_KWH)
                         self.config_data[CONF_PREDICTIVE_GRID_CHARGE_MARGIN_PCT] = user_input.get(CONF_PREDICTIVE_GRID_CHARGE_MARGIN_PCT, DEFAULT_PREDICTIVE_GRID_CHARGE_MARGIN_PCT)
+                        self.config_data[CONF_NEGATIVE_PRICE_CHARGING_ENABLED] = user_input.get(
+                            CONF_NEGATIVE_PRICE_CHARGING_ENABLED,
+                            DEFAULT_NEGATIVE_PRICE_CHARGING_ENABLED,
+                        )
+                        self.config_data[CONF_NEGATIVE_PRICE_CHARGING_THRESHOLD] = user_input.get(
+                            CONF_NEGATIVE_PRICE_CHARGING_THRESHOLD,
+                            DEFAULT_NEGATIVE_PRICE_CHARGING_THRESHOLD,
+                        )
+                        self.config_data[CONF_NEGATIVE_PRICE_CHARGING_TARGET_SOC] = user_input.get(
+                            CONF_NEGATIVE_PRICE_CHARGING_TARGET_SOC,
+                            DEFAULT_NEGATIVE_PRICE_CHARGING_TARGET_SOC,
+                        )
                         self.config_data[CONF_SMART_PREDISCHARGE_ENABLED] = user_input.get(
                             CONF_SMART_PREDISCHARGE_ENABLED, DEFAULT_SMART_PREDISCHARGE_ENABLED
                         )
@@ -1664,6 +1682,13 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
         )
         schema_dict[vol.Optional(CONF_PREDICTIVE_GRID_CHARGE_MARGIN_PCT, default=DEFAULT_PREDICTIVE_GRID_CHARGE_MARGIN_PCT)] = NumberSelector(
             NumberSelectorConfig(min=0, max=100, step=5, unit_of_measurement="%", mode=NumberSelectorMode.BOX)
+        )
+        schema_dict[vol.Optional(CONF_NEGATIVE_PRICE_CHARGING_ENABLED, default=DEFAULT_NEGATIVE_PRICE_CHARGING_ENABLED)] = bool
+        schema_dict[vol.Optional(CONF_NEGATIVE_PRICE_CHARGING_THRESHOLD, default=DEFAULT_NEGATIVE_PRICE_CHARGING_THRESHOLD)] = NumberSelector(
+            NumberSelectorConfig(min=-2, max=2, step=0.001, unit_of_measurement="€/kWh", mode=NumberSelectorMode.BOX)
+        )
+        schema_dict[vol.Optional(CONF_NEGATIVE_PRICE_CHARGING_TARGET_SOC, default=DEFAULT_NEGATIVE_PRICE_CHARGING_TARGET_SOC)] = NumberSelector(
+            NumberSelectorConfig(min=0, max=100, step=1, unit_of_measurement="%", mode=NumberSelectorMode.BOX)
         )
         schema_dict[vol.Optional(CONF_SMART_PREDISCHARGE_ENABLED, default=DEFAULT_SMART_PREDISCHARGE_ENABLED)] = bool
         schema_dict[vol.Optional(CONF_NEGATIVE_INJECTION_THRESHOLD, default=DEFAULT_NEGATIVE_INJECTION_THRESHOLD)] = NumberSelector(
@@ -3488,6 +3513,18 @@ class OptionsFlowHandler(OptionsFlow):
                         self.config_data["charging_time_slot"] = None
                         self.config_data[CONF_PREDICTIVE_SAFETY_MARGIN_KWH] = user_input.get(CONF_PREDICTIVE_SAFETY_MARGIN_KWH, DEFAULT_PREDICTIVE_SAFETY_MARGIN_KWH)
                         self.config_data[CONF_PREDICTIVE_GRID_CHARGE_MARGIN_PCT] = user_input.get(CONF_PREDICTIVE_GRID_CHARGE_MARGIN_PCT, DEFAULT_PREDICTIVE_GRID_CHARGE_MARGIN_PCT)
+                        self.config_data[CONF_NEGATIVE_PRICE_CHARGING_ENABLED] = user_input.get(
+                            CONF_NEGATIVE_PRICE_CHARGING_ENABLED,
+                            existing_config.get(CONF_NEGATIVE_PRICE_CHARGING_ENABLED, DEFAULT_NEGATIVE_PRICE_CHARGING_ENABLED),
+                        )
+                        self.config_data[CONF_NEGATIVE_PRICE_CHARGING_THRESHOLD] = user_input.get(
+                            CONF_NEGATIVE_PRICE_CHARGING_THRESHOLD,
+                            existing_config.get(CONF_NEGATIVE_PRICE_CHARGING_THRESHOLD, DEFAULT_NEGATIVE_PRICE_CHARGING_THRESHOLD),
+                        )
+                        self.config_data[CONF_NEGATIVE_PRICE_CHARGING_TARGET_SOC] = user_input.get(
+                            CONF_NEGATIVE_PRICE_CHARGING_TARGET_SOC,
+                            existing_config.get(CONF_NEGATIVE_PRICE_CHARGING_TARGET_SOC, DEFAULT_NEGATIVE_PRICE_CHARGING_TARGET_SOC),
+                        )
                         self.config_data[CONF_SMART_PREDISCHARGE_ENABLED] = user_input.get(
                             CONF_SMART_PREDISCHARGE_ENABLED,
                             existing_config.get(CONF_SMART_PREDISCHARGE_ENABLED, DEFAULT_SMART_PREDISCHARGE_ENABLED),
@@ -3521,6 +3558,18 @@ class OptionsFlowHandler(OptionsFlow):
         default_dp_discharge_control = existing_config.get(CONF_DP_PRICE_DISCHARGE_CONTROL, False)
         default_margin = existing_config.get(CONF_PREDICTIVE_SAFETY_MARGIN_KWH, DEFAULT_PREDICTIVE_SAFETY_MARGIN_KWH)
         default_grid_margin = existing_config.get(CONF_PREDICTIVE_GRID_CHARGE_MARGIN_PCT, DEFAULT_PREDICTIVE_GRID_CHARGE_MARGIN_PCT)
+        default_negative_price_enabled = existing_config.get(
+            CONF_NEGATIVE_PRICE_CHARGING_ENABLED,
+            DEFAULT_NEGATIVE_PRICE_CHARGING_ENABLED,
+        )
+        default_negative_price_threshold = existing_config.get(
+            CONF_NEGATIVE_PRICE_CHARGING_THRESHOLD,
+            DEFAULT_NEGATIVE_PRICE_CHARGING_THRESHOLD,
+        )
+        default_negative_price_target_soc = existing_config.get(
+            CONF_NEGATIVE_PRICE_CHARGING_TARGET_SOC,
+            DEFAULT_NEGATIVE_PRICE_CHARGING_TARGET_SOC,
+        )
         default_smart_predischarge = existing_config.get(
             CONF_SMART_PREDISCHARGE_ENABLED, DEFAULT_SMART_PREDISCHARGE_ENABLED
         )
@@ -3578,6 +3627,13 @@ class OptionsFlowHandler(OptionsFlow):
         )
         schema_dict[vol.Optional(CONF_PREDICTIVE_GRID_CHARGE_MARGIN_PCT, default=default_grid_margin)] = NumberSelector(
             NumberSelectorConfig(min=0, max=100, step=5, unit_of_measurement="%", mode=NumberSelectorMode.BOX)
+        )
+        schema_dict[vol.Optional(CONF_NEGATIVE_PRICE_CHARGING_ENABLED, default=default_negative_price_enabled)] = bool
+        schema_dict[vol.Optional(CONF_NEGATIVE_PRICE_CHARGING_THRESHOLD, default=default_negative_price_threshold)] = NumberSelector(
+            NumberSelectorConfig(min=-2, max=2, step=0.001, unit_of_measurement="€/kWh", mode=NumberSelectorMode.BOX)
+        )
+        schema_dict[vol.Optional(CONF_NEGATIVE_PRICE_CHARGING_TARGET_SOC, default=default_negative_price_target_soc)] = NumberSelector(
+            NumberSelectorConfig(min=0, max=100, step=1, unit_of_measurement="%", mode=NumberSelectorMode.BOX)
         )
         schema_dict[vol.Optional(CONF_SMART_PREDISCHARGE_ENABLED, default=default_smart_predischarge)] = bool
         schema_dict[vol.Optional(CONF_NEGATIVE_INJECTION_THRESHOLD, default=default_negative_threshold)] = NumberSelector(

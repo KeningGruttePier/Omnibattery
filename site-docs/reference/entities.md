@@ -74,6 +74,8 @@ Only present when the [cell balance monitor](../features/cell-balance-monitor.md
 | `number.marstek_venus_system_system_max_charge_power` | Optional combined charge cap for the whole system (`0 W` = disabled). Only created when system power limits are enabled. | 0–15000 W |
 | `number.marstek_venus_system_system_max_discharge_power` | Optional combined discharge cap for the whole system (`0 W` = disabled). Only created when system power limits are enabled. | 0–15000 W |
 | `number.omnibattery_negative_injection_threshold` | Inclusive price threshold for forecast negative-injection risk slots | -2–2 currency/kWh |
+| `number.omnibattery_negative_price_charging_threshold` | Inclusive normalized import-price threshold for opportunistic charging | -2–2 currency/kWh |
+| `number.omnibattery_negative_price_charging_target_soc` | Opportunistic SOC target, capped by each battery's maximum SOC | 0–100 % |
 | `number.omnibattery_predischarge_reserve_soc` | Additional SOC floor for smart pre-discharge | 0–100 % |
 | `number.omnibattery_predischarge_max_export_power_w` | Maximum grid export during smart pre-discharge (`0 W` = self-consumption only) | 0–10000 W |
 | `number.omnibattery_curtailment_headroom_margin_pct` | Additional headroom margin | 0–100 % |
@@ -99,6 +101,7 @@ Only present when the [cell balance monitor](../features/cell-balance-monitor.md
 | `switch.*_backup_function` | Backup function — when enabled **and** AC offgrid power ≠ 0 W, the battery is excluded from PD control (no write commands sent) |
 | `switch.marstek_venus_system_override_predictive_charging` | Override predictive charging |
 | `switch.omnibattery_smart_predischarge` | Opt-in smart pre-discharge / anti-curtailment (Dynamic Pricing only) |
+| `switch.omnibattery_negative_price_charging` | Opt-in opportunistic charging at negative import prices (Dynamic Pricing only) |
 
 ## Buttons
 

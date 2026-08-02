@@ -294,6 +294,9 @@
           "max_price_threshold": "Maximaler Preisschwellenwert (€/kWh, optional)",
           "discharge_price_threshold": "Entlade-Preisuntergrenze (optional)",
           "dp_price_discharge_control": "Nur entladen wenn Preis über Schwellenwert",
+          "negative_price_charging_enabled": "Opportunistisches Laden bei negativen Preisen aktivieren",
+          "negative_price_charging_threshold": "Schwellenwert für negativen Importpreis (Währung/kWh)",
+          "negative_price_charging_target_soc": "Ziel-SOC bei negativem Preis (%)",
           "smart_predischarge_enabled": "Intelligente Vorentladung / Anti-Abregelung",
           "negative_injection_threshold": "Schwellenwert für negative Einspeisung",
           "predischarge_reserve_soc": "SOC-Reserve für Vorentladung (%)",
@@ -309,6 +312,9 @@
           "max_price_threshold": "Stunden über diesem Preis werden nicht ausgewählt. Wenn die preisbasierte Entladesteuerung aktiviert ist, wird dieser Wert auch als Entladeschwellenwert verwendet. Hauptwährung/kWh verwenden: €/kWh für Nordpool/PVPC, CHF/kWh für CKW. In Cent konfigurierte HACS-Nordpool-Preise werden automatisch umgerechnet. Leer lassen, um alle Stunden zu verwenden und den Tagesdurchschnitt als Entladeschwellenwert zu nutzen. Sofern unten keine separate Entlade-Preisuntergrenze festgelegt ist.",
           "discharge_price_threshold": "Optionale separate Untergrenze für die preisgesteuerte Entladung. Die Entladung wird blockiert, solange der Preis kleiner oder gleich diesem Wert ist, wodurch ein neutrales Band zwischen der oberen Ladegrenze und dieser Untergrenze entsteht: In diesem Band lädt die Batterie weder aus dem Netz noch entlädt sie (Laden aus Solarüberschuss funktioniert weiterhin). Leer lassen, um die maximale Preisgrenze für beides zu verwenden (bisheriges Verhalten mit einem Schwellenwert).",
           "dp_price_discharge_control": "Wenn aktiviert, entlädt die Batterie nur, wenn der aktuelle Strompreis den konfigurierten maximalen Preisschwellenwert übersteigt. Wenn kein Schwellenwert konfiguriert ist, wird der automatisch aus dem Preissensor berechnete Tagesdurchschnitt verwendet. Falls Zeitfenster die Entladung einschränken, müssen beide Bedingungen erfüllt sein.",
+          "negative_price_charging_enabled": "Optionale Funktion für dynamische Preise, die in den negativsten Importpreisfenstern lädt, auch wenn die normale Prognose keine Netzladung erfordert. Ein Solarprognosesensor ist nicht erforderlich.",
+          "negative_price_charging_threshold": "Ein Zeitfenster ist geeignet, wenn sein normalisierter Importpreis kleiner oder gleich diesem inklusiven Schwellenwert ist. Dieser ist unabhängig vom Einspeisepreis-Schwellenwert der Anti-Abregelung.",
+          "negative_price_charging_target_soc": "Ziel-SOC für opportunistisches Laden. Jede Batterie stoppt beim niedrigeren Wert aus diesem Ziel und ihrem konfigurierten maximalen SOC.",
           "smart_predischarge_enabled": "Aktiviert die optionale Vorentladung nur im dynamischen Preismodus, um vor negativen Einspeisepreisen Platz zu schaffen.",
           "negative_injection_threshold": "Preise gleich oder unter diesem Wert gelten bei erwarteter Solarüberschussenergie als Risikofenster.",
           "predischarge_reserve_soc": "SOC, der zusätzlich zu den vorhandenen Mindestgrenzen reserviert wird.",
@@ -899,6 +905,9 @@
           "max_price_threshold": "Maximaler Preisschwellenwert (€/kWh, optional)",
           "discharge_price_threshold": "Entlade-Preisuntergrenze (optional)",
           "dp_price_discharge_control": "Nur entladen wenn Preis über Schwellenwert",
+          "negative_price_charging_enabled": "Opportunistisches Laden bei negativen Preisen aktivieren",
+          "negative_price_charging_threshold": "Schwellenwert für negativen Importpreis (Währung/kWh)",
+          "negative_price_charging_target_soc": "Ziel-SOC bei negativem Preis (%)",
           "smart_predischarge_enabled": "Intelligente Vorentladung / Anti-Abregelung",
           "negative_injection_threshold": "Schwellenwert für negative Einspeisung",
           "predischarge_reserve_soc": "SOC-Reserve für Vorentladung (%)",
@@ -914,6 +923,9 @@
           "max_price_threshold": "Stunden über diesem Preis werden nicht ausgewählt. Wenn die preisbasierte Entladesteuerung aktiviert ist, wird dieser Wert auch als Entladeschwellenwert verwendet. Hauptwährung/kWh verwenden: €/kWh für Nordpool/PVPC, CHF/kWh für CKW. In Cent konfigurierte HACS-Nordpool-Preise werden automatisch umgerechnet. Leer lassen, um alle Stunden zu verwenden und den Tagesdurchschnitt als Entladeschwellenwert zu nutzen. Sofern unten keine separate Entlade-Preisuntergrenze festgelegt ist.",
           "discharge_price_threshold": "Optionale separate Untergrenze für die preisgesteuerte Entladung. Die Entladung wird blockiert, solange der Preis kleiner oder gleich diesem Wert ist, wodurch ein neutrales Band zwischen der oberen Ladegrenze und dieser Untergrenze entsteht: In diesem Band lädt die Batterie weder aus dem Netz noch entlädt sie (Laden aus Solarüberschuss funktioniert weiterhin). Leer lassen, um die maximale Preisgrenze für beides zu verwenden (bisheriges Verhalten mit einem Schwellenwert).",
           "dp_price_discharge_control": "Wenn aktiviert, entlädt die Batterie nur, wenn der aktuelle Strompreis den konfigurierten maximalen Preisschwellenwert übersteigt. Wenn kein Schwellenwert konfiguriert ist, wird der automatisch aus dem Preissensor berechnete Tagesdurchschnitt verwendet. Falls Zeitfenster die Entladung einschränken, müssen beide Bedingungen erfüllt sein.",
+          "negative_price_charging_enabled": "Optionale Funktion für dynamische Preise, die in den negativsten Importpreisfenstern lädt, auch wenn die normale Prognose keine Netzladung erfordert. Ein Solarprognosesensor ist nicht erforderlich.",
+          "negative_price_charging_threshold": "Ein Zeitfenster ist geeignet, wenn sein normalisierter Importpreis kleiner oder gleich diesem inklusiven Schwellenwert ist. Dieser ist unabhängig vom Einspeisepreis-Schwellenwert der Anti-Abregelung.",
+          "negative_price_charging_target_soc": "Ziel-SOC für opportunistisches Laden. Jede Batterie stoppt beim niedrigeren Wert aus diesem Ziel und ihrem konfigurierten maximalen SOC.",
           "smart_predischarge_enabled": "Aktiviert die optionale Vorentladung nur im dynamischen Preismodus, um vor negativen Einspeisepreisen Platz zu schaffen.",
           "negative_injection_threshold": "Preise gleich oder unter diesem Wert gelten bei erwarteter Solarüberschussenergie als Risikofenster.",
           "predischarge_reserve_soc": "SOC, der zusätzlich zu den vorhandenen Mindestgrenzen reserviert wird.",
@@ -1255,6 +1267,9 @@
       },
       "smart_predischarge": {
         "name": "Intelligente Vorentladung / Anti-Abregelung"
+      },
+      "negative_price_charging": {
+        "name": "Opportunistisches Laden bei negativen Preisen"
       },
       "rt_price_discharge_control": {
         "name": "Preisbasierte Entladung"
@@ -1748,6 +1763,12 @@
       },
       "negative_injection_threshold": {
         "name": "Schwellenwert für negative Einspeisung"
+      },
+      "negative_price_charging_threshold": {
+        "name": "Schwellenwert für negativen Importpreis"
+      },
+      "negative_price_charging_target_soc": {
+        "name": "Ziel-SOC bei negativem Preis"
       },
       "predischarge_reserve_soc": {
         "name": "SOC-Reserve für Vorentladung"
