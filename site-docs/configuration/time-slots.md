@@ -2,6 +2,8 @@
 
 Time slots define windows that control how each battery is allowed to operate. Each slot exposes independent ticks for charge and discharge, optional SOC and power overrides, a manual-power mode, and a per-battery scope. Up to 8 slots can be defined.
 
+![Time slot configuration](../assets/screenshots/configuration/time-slot-form.png){ width="600"  style="display: block; margin: 0 auto;"}
+
 ## Model: per-direction whitelist
 
 Each direction (charge, discharge) is evaluated independently:
@@ -33,17 +35,6 @@ This preserves the legacy behavior: the existing "no-discharge time slots" remai
 
 When more than one battery is configured each slot picks a target via `battery_scope`. Multiple slots with different scopes can overlap in time without conflict — they only conflict when both target the same physical battery (`battery_N` vs `battery_N`, or either set to `all`).
 
-## Migration of legacy slots
-
-Slots using the legacy format (`{start_time, end_time, days, apply_to_charge}`), including configurations migrated from Marstek Venus Energy Manager, are converted automatically on first start:
-
-| Legacy field | Migrated to |
-|---|---|
-| `apply_to_charge = False` | `allow_discharge = True`, `allow_charge = False`, scope `all`, mode `pd`, no overrides |
-| `apply_to_charge = True` | `allow_discharge = True`, `allow_charge = True`, scope `all`, mode `pd`, no overrides |
-
-Existing installations keep the exact previous behavior with no manual action required.
-
 ## Diagnostics
 
 The `binary_sensor.predictive_charging_active` entity exposes two attributes that reflect the current cycle:
@@ -56,5 +47,3 @@ The `binary_sensor.predictive_charging_active` entity exposes two attributes tha
 - Maximum 8 slots per integration.
 - SOC override is enforced by software; expect 1–3 control cycles of latency (a few seconds, at the grid sensor's cadence) before charge or discharge stops at the new limit.
 - Slots that target a `battery_N` that no longer exists (e.g. the user reduced the battery count) become inert; remove or edit them from the options flow.
-
-![Time slot configuration](../assets/screenshots/configuration/time-slot-form.png){ width="600"  style="display: block; margin: 0 auto;"}

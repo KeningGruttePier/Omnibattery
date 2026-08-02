@@ -2,6 +2,8 @@
 
 Las franjas horarias definen ventanas que controlan cómo se permite operar a cada batería. Cada franja expone ticks independientes para carga y descarga, overrides opcionales de SOC y de potencia, un modo manual y un alcance por batería. Se admiten hasta 8 franjas.
 
+![Time slot configuration](../assets/screenshots/configuration/time-slot-form.png){ width="600"  style="display: block; margin: 0 auto;"}
+
 ## Modelo: whitelist por dirección
 
 Cada dirección (carga, descarga) se evalúa de forma independiente:
@@ -32,17 +34,6 @@ Esto preserva el comportamiento anterior: las "franjas de no-descarga" existente
 ## Alcance por batería
 
 Con varias baterías cada franja elige su destinatario con `battery_scope`. Franjas con alcances distintos pueden solaparse en tiempo sin conflicto — sólo entran en conflicto si ambas apuntan a la misma batería física (`battery_N` vs `battery_N`, o cualquiera de las dos a `all`).
-
-## Migración de franjas heredadas
-
-Las franjas con el formato legado (`{start_time, end_time, days, apply_to_charge}`), incluidas las configuraciones migradas desde Marstek Venus Energy Manager, se convierten automáticamente al arrancar:
-
-| Campo legado | Migrado a |
-|---|---|
-| `apply_to_charge = False` | `allow_discharge = True`, `allow_charge = False`, scope `all`, modo `pd`, sin overrides |
-| `apply_to_charge = True` | `allow_discharge = True`, `allow_charge = True`, scope `all`, modo `pd`, sin overrides |
-
-Las instalaciones existentes conservan exactamente el comportamiento anterior sin acción manual.
 
 ## Diagnóstico
 
