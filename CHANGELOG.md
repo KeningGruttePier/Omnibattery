@@ -7,6 +7,7 @@
 - **Smart Pre-discharge / Anti-curtailment for Dynamic Pricing**: an opt-in planner detects forecast PV surplus during configurable negative-injection price windows, creates headroom using the existing PD controller, blocks discharge while the protected window is active, and exposes live controls and diagnostics. Existing installations remain disabled by default.
 
 ### Fixed
+- **Solar production sensor unit errors were misleading**: invalid external production sensors are now flagged on the Solar production sensor field with `W`/`kW` guidance, instead of displaying the solar forecast sensor's `kWh`/`Wh` message.
 - **Dynamic Pricing reevaluation could crash without a solar forecast sensor** (#224): the grid-charging check now skips the Home Assistant state lookup when `solar_forecast_sensor` is unset, so installations without solar panels can reevaluate Dynamic Pricing without returning an error. Added regression coverage for the unset-sensor path. Thanks to @brunosccosta.
 
 ## [1.2.0] - 2026-07-31
