@@ -27,7 +27,7 @@ flowchart TD
 | Sección | Descripción | Obligatorio |
 |------|-------------|:-----------:|
 | [Sensores](main-sensor.md) | Sensor de consumo de red y sensor solar (el consumo del hogar se deriva) | ✅ |
-| [Baterías](batteries.md) | Configuración por batería: nombre, IP, puerto, versión, límites de potencia y SOC | ✅ |
+| [Baterías](batteries/index.md) | Configuración por batería, con los detalles de conexión de cada marca compatible | ✅ |
 | [Franjas horarias](time-slots.md) | Ventanas de descarga/carga con parámetros por franja | ❌ |
 | [Dispositivos excluidos](excluded-devices.md) | Cargas pesadas a ignorar | ❌ |
 | [Carga predictiva](predictive-charging/index.md) | Carga desde la red cuando la previsión solar es insuficiente | ❌ |

@@ -1,0 +1,47 @@
+# Zendure SolarFlow
+
+Omnibattery connects to Zendure SolarFlow devices through their local HTTP API.
+The wizard probes the device and detects the model automatically; you do not
+need to select a model manually.
+
+!!! warning "Disable HEMS"
+    Keep **HEMS disabled** in the Zendure app while Omnibattery is controlling the device. HEMS overrides manual power setpoints after a few seconds.
+
+## Connection
+
+Enter a descriptive name, the device's local IP address and its HTTP port. The
+default port is `80`. The device must be reachable from Home Assistant on the
+local network or through routing.
+
+| Field | Description | Default |
+|---|---|---|
+| **Name** | Name used for the battery device | — |
+| **Host IP** | Local IP address of the SolarFlow | — |
+| **HTTP port** | Local API port | `80` |
+
+The connection test reads `/properties/report`, verifies the device and seeds
+the model-specific power limits.
+
+## Supported models and power envelopes
+
+| Model | Maximum AC charge | Maximum AC discharge |
+|---|---:|---:|
+| SolarFlow 800 / 800 Plus / 800 Pro | `1000 W` | `800 W` |
+| SolarFlow 1600 AC+ | `1600 W` | `1600 W` |
+| SolarFlow 2400 AC Pro / 2400 AC+ | `2400 W` | `2400 W` |
+
+The device report remains authoritative if it announces a lower limit. The
+AC-coupled 1600 AC+ and 2400 AC+ models do not expose DC MPPT telemetry through
+this connection.
+
+## Zendure-specific settings
+
+The common limits page includes charge/discharge power, maximum SOC, minimum
+SOC, charge hysteresis and the backup offgrid threshold. Zendure uses a minimum
+SOC range of 5–50% and does not use Marstek's cell-voltage taper.
+
+Nominal capacity is optional. Enter it when you want Omnibattery to calculate
+stored energy and efficiency from SOC; Zendure does not provide a nominal
+capacity counter in its report.
+
+For the common runtime controls and system limits, see [Battery configuration](index.md).

@@ -1,0 +1,39 @@
+# Anker SOLIX
+
+Omnibattery supports the Anker SOLIX Solarbank Max AC and Solarbank 4 E5000 Pro
+over Modbus TCP. The connection test reads the device's live hardware limits
+and the model identifier.
+
+!!! warning "Enable Third-Party Control"
+    Enable **Third-Party Control** and Modbus TCP in the Anker app before adding the battery. Only one Modbus client can connect to the Solarbank at a time.
+
+## Connection
+
+Enter the battery name, local IP address, Modbus port and slave ID.
+
+| Field | Description | Default |
+|---|---|---|
+| **Name** | Name used for the battery device | — |
+| **Host IP** | Local IP address of the Solarbank | — |
+| **Modbus port** | TCP port | `502` |
+| **Modbus slave ID** | Unit ID used by the device | `1` |
+
+The connection test probes the Modbus map before continuing. Keep the Anker app
+closed or disconnected if it is already using the only available Modbus client
+session.
+
+## Power and SOC limits
+
+Anker reports its charge and discharge ceilings, so the wizard does not ask for
+manual power sliders during setup. Omnibattery uses those live hardware limits
+and clamps them to a 3500 W software envelope.
+
+The common limits page also includes:
+
+- maximum SOC: 80–100% (default `100%`);
+- minimum SOC: 0–20% (default `10%`);
+- mandatory charge hysteresis (minimum 2%);
+- backup offgrid threshold.
+
+Anker does not expose Marstek's cell-voltage taper. For runtime SOC controls,
+system caps and backup thresholds, see [Battery configuration](index.md).

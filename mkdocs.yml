@@ -139,7 +139,13 @@ nav:
   - Configuration:
       - Overview: configuration/index.md
       - Main sensor: configuration/main-sensor.md
-      - Batteries: configuration/batteries.md
+      - Batteries:
+          - Overview: configuration/batteries/index.md
+          - Marstek: configuration/batteries/marstek.md
+          - Zendure: configuration/batteries/zendure.md
+          - Anker SOLIX: configuration/batteries/anker.md
+          - Sessy: configuration/batteries/sessy.md
+          - Hoymiles MS-A2: configuration/batteries/hoymiles.md
       - Time slots: configuration/time-slots.md
       - Excluded devices: configuration/excluded-devices.md
       - Predictive charging:
