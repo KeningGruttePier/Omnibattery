@@ -87,7 +87,13 @@ The live controls are available only when Predictive Grid Charging uses Dynamic 
 
 During a risk window, discharge is blocked so the battery can absorb PV. The feature never bypasses minimum or guaranteed-minimum SOC, user time-slot ownership, manual control, active balance, backup mode, unavailable/non-responsive batteries, or capacity protection. Missing prices, forecast, SOC, capacity or a valid grid meter are fail-safe conditions: any smart override and blocker are cleared. The plan is rebuilt after restart, at the normal daily evaluations, when the feature is enabled, and by the existing **Re-evaluate Dynamic Pricing** button. Parameter changes invalidate the old plan; use that button to apply them immediately instead of waiting for the next evaluation. Plans are not persisted.
 
-The `curtailment_status` binary sensor reports the current state, reason, next risk window, risk slots, required/current headroom, planned discharge, shortfall, per-battery targets, selected discharge slots and active export target.
+The single binary sensor for this feature, `curtailment_status`, reports the current state, reason, next risk window, risk slots, required/current headroom, planned discharge, shortfall, per-battery targets, selected discharge slots and active export target. It also exposes automation-oriented attributes:
+
+- `protected_window_active`: the negative-injection window is active.
+- `headroom_deficit_kwh`: headroom still missing to absorb the forecast.
+- `inverter_curtailment_required`: `true` only when the protected window is active and headroom is missing; `false` when a valid plan needs no inverter limit; `null` while the plan is fail-safe or unavailable.
+
+`active_export_target_w` is the battery's pre-discharge export target, not a universal PV-inverter command. An automation should apply an inverter-specific limit and restore normal operation only after the status no longer requires curtailment.
 
 ---
 

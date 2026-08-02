@@ -1199,10 +1199,15 @@ class PricingManager:
         self._controller.remove_setpoint_override("curtailment_predischarge")
         self._controller._curtailment_active = False
 
+        snapshots = self._curtailment_battery_snapshots()
+        plan.current_headroom_kwh = sum(
+            max(0.0, (snapshot.max_soc_pct - snapshot.soc_pct) / 100.0 * snapshot.capacity_kwh)
+            for snapshot in snapshots
+            if snapshot.eligible
+        )
+
         if risk_slot is not None:
-            self._refresh_curtailment_floor_blocks(
-                self._curtailment_battery_snapshots()
-            )
+            self._refresh_curtailment_floor_blocks(snapshots)
             details = {
                 "current_price": current_price,
                 "threshold": getattr(self._controller, "negative_injection_threshold", 0.0),
@@ -1220,13 +1225,7 @@ class PricingManager:
             self._set_curtailment_runtime("protected_window", "negative_injection_window")
             return
 
-        snapshots = self._curtailment_battery_snapshots()
-        current_headroom = sum(
-            max(0.0, (snapshot.max_soc_pct - snapshot.soc_pct) / 100.0 * snapshot.capacity_kwh)
-            for snapshot in snapshots
-            if snapshot.eligible
-        )
-        plan.current_headroom_kwh = current_headroom
+        current_headroom = plan.current_headroom_kwh
         required = max(0.0, float(plan.required_headroom_kwh))
         if current_headroom + 1e-6 >= required:
             self._set_curtailment_runtime("target_reached", "headroom_sufficient")

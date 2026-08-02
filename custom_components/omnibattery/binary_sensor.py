@@ -265,16 +265,24 @@ class CurtailmentStatusSensor(BinarySensorEntity):
     @property
     def extra_state_attributes(self) -> dict:
         plan = getattr(self.controller, "_curtailment_plan", None)
+        runtime_status = getattr(
+            self.controller, "_curtailment_runtime_status", "disabled"
+        )
         attrs = {
             "enabled": bool(getattr(self.controller, "smart_predischarge_enabled", False)),
-            "status": getattr(self.controller, "_curtailment_runtime_status", "disabled"),
+            "status": runtime_status,
             "reason": getattr(self.controller, "_curtailment_runtime_reason", "disabled"),
+            "protected_window_active": runtime_status == "protected_window",
             "active_export_target_w": getattr(
                 self.controller, "_curtailment_active_export_target_w", 0.0
             ),
             "negative_injection_threshold": getattr(
                 self.controller, "negative_injection_threshold", 0.0
             ),
+            # ``None`` means that no safe external inverter decision is
+            # available.  This is intentional: an automation must not treat a
+            # missing plan or fail-safe state as permission to restore PV power.
+            "inverter_curtailment_required": None,
         }
         if plan is None:
             return attrs
@@ -283,6 +291,10 @@ class CurtailmentStatusSensor(BinarySensorEntity):
             (slot.start.isoformat() for slot in plan.risk_slots if slot.end > now),
             None,
         )
+        required_headroom = max(0.0, float(plan.required_headroom_kwh))
+        current_headroom = max(0.0, float(plan.current_headroom_kwh))
+        headroom_deficit = max(0.0, required_headroom - current_headroom)
+        plan_is_fail_safe = getattr(plan, "status", "") == "fail_safe"
         attrs.update({
             "next_window": next_window,
             "risk_slots": [
@@ -291,6 +303,7 @@ class CurtailmentStatusSensor(BinarySensorEntity):
             ],
             "required_headroom_kwh": round(plan.required_headroom_kwh, 3),
             "current_headroom_kwh": round(plan.current_headroom_kwh, 3),
+            "headroom_deficit_kwh": round(headroom_deficit, 3),
             "planned_discharge_kwh": round(plan.planned_discharge_kwh, 3),
             "shortfall_kwh": round(plan.shortfall_kwh, 3),
             "target_soc_by_battery": {
@@ -313,6 +326,10 @@ class CurtailmentStatusSensor(BinarySensorEntity):
                 plan.evaluation_time.isoformat() if plan.evaluation_time else None
             ),
         })
+        if not plan_is_fail_safe and runtime_status != "fail_safe":
+            attrs["inverter_curtailment_required"] = (
+                runtime_status == "protected_window" and headroom_deficit > 1e-6
+            )
         return attrs
 
     @property

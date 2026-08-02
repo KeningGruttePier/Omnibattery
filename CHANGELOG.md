@@ -8,6 +8,7 @@
 
 ### Changed
 - **Smart Pre-discharge margin**: reuses the existing solar forecast safety margin in kWh for anti-curtailment headroom, removing the separate percentage-based headroom setting.
+- **Anti-curtailment diagnostics**: keeps the existing `curtailment_status` binary sensor as the single entity and adds automation-oriented attributes for the protected window, missing headroom and external inverter curtailment guidance.
 
 ## [1.2.0] - 2026-07-31
 

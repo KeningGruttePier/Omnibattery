@@ -87,7 +87,13 @@ Los controles solo aparecen cuando la Carga Predictiva usa Precio Dinámico:
 
 Durante la ventana de riesgo se bloquea la descarga para conservar capacidad de absorción solar. La función nunca ignora SOC mínimo o garantizado, franjas y ownership manual del usuario, balance activo, backup, baterías no disponibles/no responsivas ni protección de capacidad. Sin precios, previsión, SOC, capacidad o contador de red válido actúa de forma segura: elimina cualquier override o bloqueo inteligente. El plan se reconstruye tras reinicio, en las evaluaciones diarias normales, al activar la función y con el botón existente **Reevaluar Precios Dinámicos**. Los cambios de parámetros invalidan el plan anterior; usa ese botón para aplicarlos inmediatamente en vez de esperar a la siguiente evaluación. El plan no se persiste.
 
-El sensor binario `curtailment_status` muestra estado, motivo, próxima ventana de riesgo, franjas de riesgo, espacio requerido/actual, descarga planificada, shortfall, objetivos por batería, franjas seleccionadas y objetivo de exportación activo.
+El único sensor binario de esta función, `curtailment_status`, muestra el estado, el motivo, la próxima ventana de riesgo, las franjas de riesgo, el espacio requerido/actual, la descarga planificada, el *shortfall*, los objetivos por batería, las franjas seleccionadas y el objetivo de exportación activo. También expone atributos para automatizaciones:
+
+- `protected_window_active`: indica que la ventana de inyección negativa está activa.
+- `headroom_deficit_kwh`: hueco que todavía falta para absorber la previsión.
+- `inverter_curtailment_required`: `true` solo si la ventana está activa y falta hueco; `false` cuando el plan es válido y no hace falta limitar el inversor; `null` si el plan está en modo seguro o aún no existe.
+
+`active_export_target_w` es el objetivo de exportación de la batería durante la predescarga, no una consigna universal para el inversor FV. La automatización debe aplicar su propio límite según el inversor y restaurar la operación normal solo cuando el estado deje de requerir limitación.
 
 ## Control de descarga por precio
 
