@@ -687,11 +687,11 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
             if solar_sensor:
                 solar_state = self.hass.states.get(solar_sensor)
                 if solar_state is None:
-                    errors[CONF_SOLAR_PRODUCTION_SENSOR] = "sensor_not_found"
+                    errors[CONF_SOLAR_PRODUCTION_SENSOR] = "solar_production_sensor_not_found"
                 else:
                     unit = solar_state.attributes.get("unit_of_measurement", "")
                     if unit not in ["W", "kW"]:
-                        errors[CONF_SOLAR_PRODUCTION_SENSOR] = "invalid_unit"
+                        errors[CONF_SOLAR_PRODUCTION_SENSOR] = "solar_production_invalid_unit"
 
             if not errors:
                 self.config_data["consumption_sensor"] = user_input["consumption_sensor"]
@@ -2371,11 +2371,11 @@ class OptionsFlowHandler(OptionsFlow):
                 if solar_sensor:
                     solar_state = self.hass.states.get(solar_sensor)
                     if solar_state is None:
-                        errors[CONF_SOLAR_PRODUCTION_SENSOR] = "sensor_not_found"
+                        errors[CONF_SOLAR_PRODUCTION_SENSOR] = "solar_production_sensor_not_found"
                     else:
                         unit = solar_state.attributes.get("unit_of_measurement", "")
                         if unit not in ["W", "kW"]:
-                            errors[CONF_SOLAR_PRODUCTION_SENSOR] = "invalid_unit"
+                            errors[CONF_SOLAR_PRODUCTION_SENSOR] = "solar_production_invalid_unit"
 
                 if not errors:
                     self.config_data["consumption_sensor"] = user_input["consumption_sensor"]
