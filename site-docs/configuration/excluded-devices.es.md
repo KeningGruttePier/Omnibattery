@@ -57,28 +57,19 @@ de Potencia**. Está pensado para cargas flexibles, como wallboxes, que se regul
 mediante el mismo contador de red que Omnibattery. Debe activarse junto con
 **Excedente Solar**.
 
-El **sensor de producción solar no es necesario** para este control. Si está
-configurado, Omnibattery detecta aumentos de producción de al menos 200 W y
-cede de nuevo la carga de batería durante 20 segundos. Sin ese sensor, realiza
-una comprobación de 20 segundos cada 5 minutos.
+!!! note "Sensor de producción solar"
+  Se recomienda configurar el **sensor de producción solar** para este control. Si está configurado, Omnibattery detecta aumentos de producción de al menos 200 W y cede de nuevo la carga de batería durante 20 segundos. Sin ese sensor, realiza una comprobación de 20 segundos cada 5 minutos.
 
-El **Sensor de dispositivo activo / carga del VE** permite que Omnibattery ceda
-mientras la wallbox solicita potencia pero todavía marca 0 W, evitando el bloqueo
-de arranque en el que la batería absorbe toda la exportación. Automáticamente:
+El **Sensor de dispositivo activo / carga del VE** permite que Omnibattery ceda mientras la wallbox solicita potencia pero todavía marca 0 W, evitando el bloqueo de arranque en el que la batería absorbe toda la exportación. Automáticamente:
 
-- bloquea la carga de batería mientras el sensor de actividad solicita potencia
-  y la wallbox todavía marca 0 W;
-- cede la carga de batería durante 30 segundos cuando el dispositivo supera 100 W;
-- deja que el regulador externo aumente potencia antes de usar el excedente restante;
-- vuelve a ceder durante 20 segundos si la producción solar aumenta al menos 200 W;
-- bloquea la carga durante 5 minutos cuando desaparece el consumo, para permitir
-  que una wallbox reinicie tras una nube o un cambio de fase;
-- realiza una comprobación cada 5 minutos si no hay sensor de producción solar.
+- Bloquea la carga de batería mientras el sensor de actividad solicita potencia   y la wallbox todavía marca 0 W.
+- Cede la carga de batería durante 30 segundos cuando el dispositivo supera 100 W.
+- Deja que el regulador externo aumente potencia antes de usar el excedente restante.
+- Vuelve a ceder durante 20 segundos si la producción solar aumenta al menos 200 W.
+- Bloquea la carga durante 5 minutos cuando desaparece el consumo, para permitir que una wallbox reinicie tras una nube o un cambio de fase.
+- Realiza una comprobación cada 5 minutos si no hay sensor de producción solar.
 
-Las entradas antiguas de Control Dinámico de Potencia sin sensor de actividad
-siguen usando como fallback la primera lectura superior a 100 W. Este control no
-está disponible para el modo **Cargador VE sin telemetría de potencia**, porque
-ese modo ya gestiona la batería directamente con el mismo sensor de actividad.
+Las entradas antiguas de Control Dinámico de Potencia sin sensor de actividad siguen usando como fallback la primera lectura superior a 100 W. Este control no está disponible para el modo **Cargador VE sin telemetría de potencia**, porque ese modo ya gestiona la batería directamente con el mismo sensor de actividad.
 
 ---
 
@@ -98,12 +89,7 @@ Esto permite que la batería cubra *parte* de una carga grande en vez de todo o 
 
 Algunas integraciones de cargadores de vehículo eléctrico no exponen un sensor de potencia en tiempo real — solo informan del **estado de carga** (p. ej. `Charging`, `Idle`, `Disconnected`). Esta opción está diseñada para esos cargadores.
 
-En configuraciones nuevas, selecciona la entidad de estado en **Sensor de
-dispositivo activo / carga del VE**; el sensor numérico de potencia puede quedar
-vacío. Las configuraciones existentes que guardaron la entidad de estado en
-**Sensor de potencia del dispositivo** siguen siendo totalmente compatibles y
-se precargan automáticamente al editarlas. Se reconoce el estado binario `on` y
-palabras de carga sin distinguir mayúsculas, lo que cubre:
+En configuraciones nuevas, selecciona la entidad de estado en **Sensor de dispositivo activo / carga del VE**; el sensor numérico de potencia puede quedar vacío. Las configuraciones existentes que guardaron la entidad de estado en **Sensor de potencia del dispositivo** siguen siendo totalmente compatibles y se precargan automáticamente al editarlas. Se reconoce el estado binario `on` y palabras de carga sin distinguir mayúsculas, lo que cubre:
 
 - `Charging` (la mayoría de integraciones en inglés)
 - `Cargando`, `Cargando VE`, `Cargando Vehículo` (español)
