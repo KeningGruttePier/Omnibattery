@@ -81,8 +81,8 @@ class SessyLocalDriver(BatteryDriver):
             # independent from that startup/safety transition, but do not let the
             # controller judge the still-zero output as a failed battery.
             actuator_latency_s=1.5,
-            readback_latency_s=60.0,
-            engage_grace_s=60.0)
+            readback_latency_s=65.0,
+            engage_grace_s=65.0)
         self._read_groups = [
             ReadGroup("high", tuple(key for key in _POWER_KEYS)),
             ReadGroup("low", tuple(key for key in _ENERGY_KEYS)),
