@@ -7,10 +7,11 @@
 - **Smart Pre-discharge / Anti-curtailment for Dynamic Pricing**: an opt-in planner detects forecast PV surplus during configurable negative-injection price windows, creates headroom using the existing PD controller, blocks discharge while the protected window is active, and exposes live controls and diagnostics. Existing installations remain disabled by default.
 
 ### Changed
-- **Configuration Summary sensor removed**: the hidden support entity was redundant with Home Assistant's Download diagnostics action. Support documentation now requests the redacted diagnostics JSON, and the dashboard reads excluded-device telemetry from the corresponding device switches.
+- **Configuration Summary sensor removed**: the hidden support entity was redundant with Home Assistant's Download diagnostics action. Support documentation now requests the redacted diagnostics JSON.
 - **Peak shaving limit extended to 20 kW**: the runtime slider now accepts values from `500 W` to `20000 W` in `100 W` steps.
 
 ### Fixed
+- **Disabled excluded-device controls could corrupt the power-flow diagram**: excluded-load configuration now travels in the panel payload, while a loaded runtime switch can still override its enabled state. Hiding or disabling the control entity no longer removes its power from the diagram.
 - **Sessy could be marked non-responsive during startup**: Sessy can take up to 60 seconds to transition from standby to safe running after its first API setpoint. The driver now allows 65 seconds, adding a small polling and network-latency margin so a healthy battery is not excluded while it is starting.
 - **Slow-sensor Repairs could report a fast P1 meter as updating every 65 seconds**: cadence is now measured from Home Assistant state publications, including unchanged reports, instead of from delayed control-loop observations while battery I/O is busy.
 - **Solar production sensor unit errors were misleading**: invalid external production sensors are now flagged on the Solar production sensor field with `W`/`kW` guidance, instead of displaying the solar forecast sensor's `kWh`/`Wh` message.

@@ -1371,27 +1371,38 @@ class MarstekVenusPanel extends HTMLElement {
     const u = (stateObj.attributes.unit_of_measurement || "").toLowerCase();
     return u === "kw" ? n * 1000 : n;
   }
-  /** Sum live power (W) of every enabled excluded device. The per-device power
-   *  sensors and consumption-inclusion flags come from each device's Enabled
-   *  switch attributes. Returns null when no excluded device exposes a power
-   *  sensor (e.g. none configured, or only EV-no-telemetry entries). */
+  /** Sum live power (W) of every enabled excluded device. Configuration comes
+   *  from the panel payload so disabling a control entity cannot remove a load
+   *  from the diagram. A loaded Enabled switch overrides the persisted value,
+   *  preserving live toggles. */
   _excludedPowerW() {
     const hass = this._hass;
-    const domain = this._domain();
-    // Read these entries directly instead of through _index(): a user may hide
-    // the control switch, but the flow diagram still needs the live power
-    // sensor.
-    const devices = Object.values(hass.entities || {})
-      .filter((e) => e.platform === domain && e.translation_key === "excluded_device_enabled")
-      .map((e) => hass.states[e.entity_id])
-      .filter(Boolean);
+    let devices = this._panelConfig.excluded_devices;
+    // Compatibility fallback for a cached/older panel registration payload.
+    if (!Array.isArray(devices)) {
+      const domain = this._domain();
+      devices = Object.values(hass.entities || {})
+        .filter((e) => e.platform === domain && e.translation_key === "excluded_device_enabled")
+        .map((e) => hass.states[e.entity_id])
+        .filter(Boolean)
+        .map((state) => ({
+          enabled: state.state === "on",
+          power_sensor: (state.attributes || {}).power_sensor,
+          included_in_consumption: (state.attributes || {}).included_in_consumption,
+        }));
+    }
     if (!devices.length) return null;
     let total = null;
     let included = 0; // portion the home sensor already counts (subtract from Home)
     for (const device of devices) {
-      if (device.state !== "on") continue;
-      const a = device.attributes || {};
-      const sid = a.power_sensor;
+      let enabled = device.enabled !== false;
+      const enabledState = device.enabled_entity
+        ? hass.states[device.enabled_entity]
+        : null;
+      if (enabledState && enabledState.state === "on") enabled = true;
+      else if (enabledState && enabledState.state === "off") enabled = false;
+      if (!enabled) continue;
+      const sid = device.power_sensor;
       if (!sid) continue; // EV-no-telemetry has no power sensor
       const w = this._watts(hass.states[sid]);
       if (w == null) continue;
@@ -1403,7 +1414,7 @@ class MarstekVenusPanel extends HTMLElement {
       // the device's full demand, so Home must be total − D for the flow to
       // balance. The exclusion % only changes the supply mix (battery covers
       // more, shown as a larger Battery flow) — not the demand-node magnitudes.
-      if (a.included_in_consumption !== false) included += w;
+      if (device.included_in_consumption !== false) included += w;
     }
     return total == null ? null : { total, included };
   }

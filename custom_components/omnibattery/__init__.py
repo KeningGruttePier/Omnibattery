@@ -228,6 +228,36 @@ _PANEL_REGISTERED_KEY = "_panel_registered"
 _STATIC_REGISTERED_KEY = "_panel_static_registered"
 
 
+def _excluded_devices_panel_config(data: dict, ent_reg) -> list[dict]:
+    """Return the excluded-load data the flow diagram needs.
+
+    The entity registry lookup preserves live enable/disable toggles when their
+    switch is loaded. The persisted value remains the fallback when a user has
+    disabled that switch, in which case Home Assistant deliberately creates no
+    state for it.
+    """
+    from .infra.entity_naming import SYSTEM_UNIQUE_ID_PREFIX
+
+    devices = []
+    for index, device in enumerate(data.get("excluded_devices", [])):
+        enabled_entity = ent_reg.async_get_entity_id(
+            "switch",
+            DOMAIN,
+            f"{SYSTEM_UNIQUE_ID_PREFIX}excluded_device_enabled_{index}",
+        )
+        devices.append(
+            {
+                "power_sensor": device.get("power_sensor"),
+                "included_in_consumption": device.get(
+                    "included_in_consumption", True
+                ),
+                "enabled": device.get("enabled", True),
+                "enabled_entity": enabled_entity,
+            }
+        )
+    return devices
+
+
 async def _async_register_frontend_panel(hass: HomeAssistant, entry: ConfigEntry | None = None) -> None:
     """Register (or refresh) the custom sidebar panel.
 
@@ -299,6 +329,9 @@ async def _async_register_frontend_panel(hass: HomeAssistant, entry: ConfigEntry
             from homeassistant.helpers import entity_registry as er
 
             ent_reg = er.async_get(hass)
+            panel_config["excluded_devices"] = _excluded_devices_panel_config(
+                data, ent_reg
+            )
             home_eid = ent_reg.async_get_entity_id(
                 "sensor", DOMAIN, "marstek_venus_system_home_consumption"
             )
@@ -6538,6 +6571,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    # Refresh once the platforms have populated the entity registry. On a fresh
+    # install the early registration above cannot yet resolve the per-device
+    # Enabled switches; this second pass supplies their final (rename-safe) IDs
+    # so runtime toggles immediately override the persisted panel fallback.
+    await _async_register_frontend_panel(hass, entry)
 
     # Replace default consumption data with real recorder data
     # On reload HA is already running, so backfill immediately;
