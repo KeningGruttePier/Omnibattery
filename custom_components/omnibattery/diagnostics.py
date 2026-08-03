@@ -4,7 +4,7 @@ Home Assistant calls :func:`async_get_config_entry_diagnostics` when the user
 presses *Download diagnostics* on the integration. It returns a JSON-serialisable
 dump of connection health, driver traits and non-responsive-tracker state
 (everything that otherwise lives only in transient logs), with host/serial and
-non-grid sensor entity ids redacted.
+connection credentials redacted.
 """
 from __future__ import annotations
 
@@ -20,8 +20,8 @@ from .const import DOMAIN
 # Identifiers and user sensor references that could deanonymise the dump.
 # async_redact_data recurses into nested dicts/lists, so per-battery "host"
 # entries inside a batteries list are covered too.
-# The grid sensor is intentionally kept: its entity id is often enough to
-# diagnose an issue and does not expose connection or authentication details.
+# Configured sensor entity ids are intentionally kept: they are often enough
+# to diagnose an issue and do not expose connection or authentication details.
 TO_REDACT = {
     "host",
     "username",
@@ -30,11 +30,6 @@ TO_REDACT = {
     "serial_port",
     "ip_address",
     "mac",
-    "solar_forecast_sensor",
-    "average_price_sensor",
-    "phase_1_power_sensor",
-    "phase_2_power_sensor",
-    "phase_3_power_sensor",
 }
 
 
