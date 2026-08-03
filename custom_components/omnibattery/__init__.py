@@ -539,9 +539,9 @@ class ChargeDischargeController:
         self._non_responsive_batteries = self._non_responsive.batteries
         # Direction engage grace: sign of the last commanded net power per battery
         # (+1 charge / -1 discharge / 0 idle) and the time a move started.
-        # Non-delivery is suppressed for DISCHARGE_ENGAGE_GRACE_S after either
-        # direction flip so a slow inverter is not excluded while it is engaging.
-        # See _set_battery_power.
+        # Non-delivery is suppressed for the controller default (or the driver's
+        # declared engage grace) after either direction flip so a slow inverter is
+        # not excluded while it is engaging. See _set_battery_power.
         self._last_commanded_net_sign: dict[MarstekVenusDataUpdateCoordinator, int] = {}
         self._charge_engage_started: dict[MarstekVenusDataUpdateCoordinator, datetime] = {}
         self._discharge_engage_started: dict[MarstekVenusDataUpdateCoordinator, datetime] = {}
@@ -3931,10 +3931,13 @@ class ChargeDischargeController:
             else self._discharge_engage_started
         )
         engage_started = engage_times.get(coordinator)
+        engage_grace_s = getattr(coordinator.capabilities, "engage_grace_s", None)
+        if engage_grace_s is None:
+            engage_grace_s = DISCHARGE_ENGAGE_GRACE_S
         within_engage_grace = (
             engage_started is not None
             and (dt_util.utcnow() - engage_started).total_seconds()
-            < DISCHARGE_ENGAGE_GRACE_S
+            < engage_grace_s
         )
         if within_engage_grace:
             # A slow inverter (Zendure HTTP) takes seconds to reverse into
@@ -3945,7 +3948,7 @@ class ChargeDischargeController:
             _LOGGER.debug(
                 "[%s] No %s delivered yet but within %ds engage "
                 "grace — inverter still engaging, not a fault",
-                coordinator.name, direction, DISCHARGE_ENGAGE_GRACE_S,
+                coordinator.name, direction, engage_grace_s,
             )
             return
         if is_charge:

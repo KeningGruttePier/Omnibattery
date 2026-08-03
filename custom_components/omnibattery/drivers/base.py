@@ -114,6 +114,13 @@ class DriverCapabilities:
     # without changing the physical-response model.
     readback_latency_s: Optional[float] = None
 
+    # Time (seconds) after a direction change during which zero delivered power is
+    # expected while the device engages. ``None`` uses the controller default.
+    # This is separate from actuator_latency_s because a device may switch
+    # direction quickly once running but still need a long standby-to-running
+    # safety transition (Sessy takes up to 60 seconds for that transition).
+    engage_grace_s: Optional[float] = None
+
     # Minimum reliable operating power (watts, per unit) below which the hardware
     # will not sustain a non-zero charge/discharge. Marstek v2/v3 report 800 W (the
     # max_charge/discharge_power register floor); vA/vD/Zendure have no such floor

@@ -168,6 +168,8 @@ def test_sessy_reports_counters_but_not_nominal_capacity():
     assert capabilities.has_energy_counters is True
     assert capabilities.has_nominal_capacity is False
     assert capabilities.cycles_from_discharge_only is True
+    assert capabilities.readback_latency_s == 60.0
+    assert capabilities.engage_grace_s == 60.0
 
 
 def test_coordinator_clamps_legacy_sessy_power_limits_before_allocation(monkeypatch):

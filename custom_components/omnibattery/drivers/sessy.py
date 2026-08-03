@@ -76,7 +76,13 @@ class SessyLocalDriver(BatteryDriver):
             max_discharge_power_w, False, False, False, has_daily_energy_counters=False,
             has_nominal_capacity=False,
             cycles_from_discharge_only=True,
-            actuator_latency_s=1.5)
+            # Sessy can take up to a minute to leave standby after receiving its
+            # first non-zero setpoint. Keep the physical direction-change timing
+            # independent from that startup/safety transition, but do not let the
+            # controller judge the still-zero output as a failed battery.
+            actuator_latency_s=1.5,
+            readback_latency_s=60.0,
+            engage_grace_s=60.0)
         self._read_groups = [
             ReadGroup("high", tuple(key for key in _POWER_KEYS)),
             ReadGroup("low", tuple(key for key in _ENERGY_KEYS)),
