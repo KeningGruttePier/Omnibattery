@@ -9,6 +9,7 @@
 
 ### Changed
 - **Configuration Summary sensor removed**: the hidden support entity was redundant with Home Assistant's Download diagnostics action. Support documentation now requests the redacted diagnostics JSON.
+- **Configured sensor IDs retained in diagnostics**: downloaded diagnostics now include the grid, solar-forecast, average-price and three-phase power sensor entity IDs to make support issues easier to diagnose, while connection hosts, IPs, credentials, serial ports and MACs remain redacted.
 - **Peak shaving limit extended to 20 kW**: the runtime slider now accepts values from `500 W` to `20000 W` in `100 W` steps.
 
 ### Fixed
