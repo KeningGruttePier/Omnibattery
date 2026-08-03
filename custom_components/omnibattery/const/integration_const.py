@@ -831,7 +831,7 @@ CONFIG_NUMBER_DEFINITIONS = [
         "key": CONF_CAPACITY_PROTECTION_LIMIT,
         "name": "Capacity Protection Peak Limit",
         "min": 500,
-        "max": 10000,
+        "max": 20000,
         "step": 100,
         "unit": "W",
         "default": DEFAULT_CAPACITY_PROTECTION_LIMIT,

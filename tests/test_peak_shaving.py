@@ -6,6 +6,20 @@ from types import SimpleNamespace
 import pytest
 
 from custom_components.omnibattery import ChargeDischargeController
+from custom_components.omnibattery.const import (
+    CONFIG_NUMBER_DEFINITIONS,
+    CONF_CAPACITY_PROTECTION_LIMIT,
+)
+
+
+def test_peak_shaving_limit_supports_20_kw():
+    definition = next(
+        item for item in CONFIG_NUMBER_DEFINITIONS
+        if item["key"] == CONF_CAPACITY_PROTECTION_LIMIT
+    )
+
+    assert definition["max"] == 20000
+    assert definition["step"] == 100
 
 
 def _controller(*, previous_power: float):
