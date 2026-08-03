@@ -11,9 +11,16 @@ from custom_components.omnibattery.const import (
     CONF_PHASE_2_POWER_SENSOR,
     CONF_PHASE_3_MAX_POWER,
     CONF_PHASE_3_POWER_SENSOR,
+    CONF_SLOT_ENABLED,
+    CONF_SLOT_MODE,
+    CONF_TIME_SLOTS,
     CONF_THREE_PHASE_ENABLED,
     PHASE_L1,
     PHASE_L2,
+    SLOT_MODE_MANUAL,
+)
+from custom_components.omnibattery.control import (
+    phase_power_limit as phase_power_limit_module,
 )
 from custom_components.omnibattery.control.phase_power_limit import (
     PhasePowerLimiter,
@@ -92,6 +99,76 @@ def _limiter(states, coordinators, *, now=None):
         controller,
         max_age_s=65,
     )
+
+
+def _warning_limiter(*, phase_enabled=True, slots=None):
+    entry = SimpleNamespace(
+        data={
+            CONF_THREE_PHASE_ENABLED: phase_enabled,
+            CONF_TIME_SLOTS: slots or [],
+        }
+    )
+    return PhasePowerLimiter(SimpleNamespace(), entry)
+
+
+def _capture_warning_repairs(monkeypatch):
+    created = []
+    deleted = []
+    monkeypatch.setattr(
+        phase_power_limit_module.ir,
+        "async_create_issue",
+        lambda *args, **kwargs: created.append((args, kwargs)),
+    )
+    monkeypatch.setattr(
+        phase_power_limit_module.ir,
+        "async_delete_issue",
+        lambda *args, **kwargs: deleted.append((args, kwargs)),
+    )
+    return created, deleted
+
+
+def test_manual_warning_is_cleared_without_a_manual_bypass(monkeypatch):
+    created, deleted = _capture_warning_repairs(monkeypatch)
+    limiter = _warning_limiter()
+
+    limiter.update_manual_mode_warning("entry", False)
+
+    assert created == []
+    assert deleted[0][0][2] == "three_phase_manual_mode_entry"
+    assert limiter._manual_warning_created is False
+
+
+def test_manual_warning_covers_manual_mode_and_manual_slots(monkeypatch):
+    created, deleted = _capture_warning_repairs(monkeypatch)
+    limiter = _warning_limiter()
+
+    limiter.update_manual_mode_warning("entry", True)
+    assert len(created) == 1
+
+    limiter.update_manual_mode_warning("entry", False)
+    assert len(deleted) == 1
+
+    limiter.config_entry.data[CONF_TIME_SLOTS] = [
+        {CONF_SLOT_ENABLED: True, CONF_SLOT_MODE: SLOT_MODE_MANUAL}
+    ]
+    limiter.update_manual_mode_warning("entry", False)
+    assert len(created) == 2
+
+    limiter.config_entry.data[CONF_TIME_SLOTS][0][CONF_SLOT_ENABLED] = False
+    limiter.update_manual_mode_warning("entry", False)
+    assert len(deleted) == 2
+
+
+def test_manual_warning_stays_cleared_when_three_phase_protection_is_disabled(
+    monkeypatch,
+):
+    created, deleted = _capture_warning_repairs(monkeypatch)
+    limiter = _warning_limiter(phase_enabled=False)
+
+    limiter.update_manual_mode_warning("entry", True)
+
+    assert created == []
+    assert deleted[0][0][2] == "three_phase_manual_mode_entry"
 
 
 def test_phase_budget_uses_controller_battery_sign():

@@ -25,6 +25,9 @@ from ..const import (
     CONF_PHASE_2_POWER_SENSOR,
     CONF_PHASE_3_MAX_POWER,
     CONF_PHASE_3_POWER_SENSOR,
+    CONF_SLOT_ENABLED,
+    CONF_SLOT_MODE,
+    CONF_TIME_SLOTS,
     CONF_THREE_PHASE_ENABLED,
     DEFAULT_THREE_PHASE_ENABLED,
     MAX_SENSOR_STALE_S,
@@ -33,6 +36,7 @@ from ..const import (
     PHASE_L2,
     PHASE_L3,
     PHASE_VALUES,
+    SLOT_MODE_MANUAL,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -640,10 +644,25 @@ class PhasePowerLimiter:
             "manual_mode_warning": self._manual_warning_created,
         }
 
+    def _has_manual_time_slot(self) -> bool:
+        """Return whether an enabled manual operation slot is configured."""
+        data = getattr(self.config_entry, "data", {}) or {}
+        slots = data.get(CONF_TIME_SLOTS, [])
+        if isinstance(slots, dict):
+            slots = [slots]
+        if not isinstance(slots, list):
+            return False
+        return any(
+            isinstance(slot, dict)
+            and slot.get(CONF_SLOT_ENABLED, True)
+            and slot.get(CONF_SLOT_MODE) == SLOT_MODE_MANUAL
+            for slot in slots
+        )
+
     def update_manual_mode_warning(self, entry_id: str, enabled: bool) -> None:
-        """Expose the documented manual-register escape as a Repairs warning."""
+        """Expose active manual-register or manual-slot bypasses in Repairs."""
         issue_id = f"three_phase_manual_mode_{entry_id}"
-        if self.enabled:
+        if self.enabled and (enabled or self._has_manual_time_slot()):
             ir.async_create_issue(
                 self.hass,
                 "omnibattery",
@@ -653,9 +672,6 @@ class PhasePowerLimiter:
                 issue_domain="omnibattery",
                 severity=ir.IssueSeverity.WARNING,
                 translation_key="three_phase_manual_mode",
-                translation_placeholders={
-                    "manual_enabled": "enabled" if enabled else "available",
-                },
             )
             self._manual_warning_created = True
         else:
