@@ -80,6 +80,30 @@ CONF_SOLAR_PRODUCTION_SENSOR = "solar_production_sensor"
 CONF_HOUSEHOLD_CONSUMPTION_SENSOR = "household_consumption_sensor"  # legacy; migrated out in v6
 CONF_MAX_CONTRACTED_POWER = "max_contracted_power"
 
+# Optional three-phase power protection.  The main consumption sensor remains
+# the only control input; these sensors are safety limits for the phase where a
+# battery is physically installed.
+CONF_THREE_PHASE_ENABLED = "three_phase_enabled"
+CONF_PHASE_1_POWER_SENSOR = "phase_1_power_sensor"
+CONF_PHASE_2_POWER_SENSOR = "phase_2_power_sensor"
+CONF_PHASE_3_POWER_SENSOR = "phase_3_power_sensor"
+CONF_PHASE_1_MAX_POWER = "phase_1_max_power"
+CONF_PHASE_2_MAX_POWER = "phase_2_max_power"
+CONF_PHASE_3_MAX_POWER = "phase_3_max_power"
+CONF_BATTERY_PHASE = "battery_phase"
+
+PHASE_L1 = "l1"
+PHASE_L2 = "l2"
+PHASE_L3 = "l3"
+PHASE_VALUES = (PHASE_L1, PHASE_L2, PHASE_L3)
+PHASE_CONFIG = {
+    PHASE_L1: (CONF_PHASE_1_POWER_SENSOR, CONF_PHASE_1_MAX_POWER),
+    PHASE_L2: (CONF_PHASE_2_POWER_SENSOR, CONF_PHASE_2_MAX_POWER),
+    PHASE_L3: (CONF_PHASE_3_POWER_SENSOR, CONF_PHASE_3_MAX_POWER),
+}
+DEFAULT_THREE_PHASE_ENABLED = False
+DEFAULT_PHASE_MAX_POWER = 5750
+
 # Time slots (operation slots) — v3 schema keys
 CONF_TIME_SLOTS = "no_discharge_time_slots"  # legacy key, kept for compat
 CONF_SLOT_START_TIME = "start_time"

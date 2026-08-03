@@ -65,6 +65,7 @@ plugins:
             Configuration: Configuración
             Overview: Resumen
             Main sensor: Sensor principal
+            Three-phase power protection: Protección de potencia trifásica
             Batteries: Baterías
             Hoymiles MS-A2 setup: Instalación de Hoymiles MS-A2
             Time slots: Franjas horarias
@@ -139,6 +140,7 @@ nav:
   - Configuration:
       - Overview: configuration/index.md
       - Main sensor: configuration/main-sensor.md
+      - Three-phase power protection: configuration/three-phase.md
       - Batteries:
           - Overview: configuration/batteries/index.md
           - Marstek: configuration/batteries/marstek.md

@@ -67,6 +67,25 @@ class PowerDistribution:
         if not available_batteries:
             return {}
 
+        # Three-phase protection is an aggregate envelope, not another
+        # per-battery cap.  Give it the whole healthy pool so a phase selected by
+        # SOC can hand its unaccepted remainder to batteries on another phase.
+        phase_limiter = getattr(self._controller, "_phase_power_limiter", None)
+        if phase_limiter is not None and phase_limiter.enabled:
+            all_available = list(available_batteries)
+            get_available = getattr(self._controller, "_get_available_batteries", None)
+            if get_available is not None:
+                try:
+                    all_available = list(get_available(is_charging))
+                except TypeError:
+                    all_available = list(get_available(is_charging, True))
+            return phase_limiter.allocate(
+                total_power,
+                list(available_batteries),
+                all_available,
+                is_charging,
+            )
+
         # Get each battery's individual limit
         limits = {}
         for c in available_batteries:
@@ -367,32 +386,45 @@ class PowerDistribution:
         if set(selected_batteries) == set(active_batteries):
             return False
 
+        requested_power = self._controller.previous_power
         power_allocation = self._distribute_power_by_limits(
-            abs(self._controller.previous_power),
+            abs(requested_power),
             selected_batteries,
             is_charging,
         )
+        assigned_power = sum(power_allocation.values())
+        phase_limiter = getattr(self._controller, "_phase_power_limiter", None)
+        if phase_limiter is not None and phase_limiter.enabled:
+            self._controller.previous_power = (
+                assigned_power if is_charging else -assigned_power
+            )
         self._controller._log_power_command_plan(
             phase="hold_expired_deadband",
             grid_w=grid_w,
             target_w=target_w,
-            previous_power_w=self._controller.previous_power,
-            requested_power_w=self._controller.previous_power,
+            previous_power_w=requested_power,
+            requested_power_w=requested_power,
             is_charging=is_charging,
             available_batteries=available_batteries,
             selected_batteries=selected_batteries,
             power_allocation=power_allocation,
         )
 
-        for coordinator in selected_batteries:
-            power = power_allocation.get(coordinator, 0)
+        allocated_batteries = {
+            coordinator
+            for coordinator, power in power_allocation.items()
+            if power > 0
+        }
+        for coordinator, power in power_allocation.items():
+            if power <= 0:
+                continue
             if is_charging:
                 await self._controller._set_battery_power(coordinator, power, 0)
             else:
                 await self._controller._set_battery_power(coordinator, 0, power)
 
         for coordinator in self._controller.coordinators:
-            if coordinator not in selected_batteries:
+            if coordinator not in allocated_batteries:
                 if self._controller._is_active_balance_mode_running(coordinator):
                     continue
                 await self._controller._set_battery_power(coordinator, 0, 0)

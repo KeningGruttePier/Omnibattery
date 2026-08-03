@@ -7,7 +7,7 @@ import math
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Any, Optional
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
@@ -42,6 +42,12 @@ from .const import (
     CONF_HOUSEHOLD_CONSUMPTION_SENSOR,
     CONF_SOLAR_PRODUCTION_SENSOR,
     CONF_MAX_CONTRACTED_POWER,
+    CONF_THREE_PHASE_ENABLED,
+    CONF_PHASE_1_POWER_SENSOR,
+    CONF_PHASE_2_POWER_SENSOR,
+    CONF_PHASE_3_POWER_SENSOR,
+    CONF_BATTERY_PHASE,
+    DEFAULT_THREE_PHASE_ENABLED,
     DEFAULT_BASE_CONSUMPTION_KWH,
     SOC_REEVALUATION_THRESHOLD,
     FLOOR_HYSTERESIS_PCT,
@@ -192,6 +198,7 @@ from .control.weekly_full_charge import WeeklyFullChargeManager
 from .control.active_balance_mode import ActiveBalanceModeManager
 from .control.max_soc_charge import MaxSocChargeManager
 from .control.temperature_limit import TemperatureChargeLimitManager
+from .control.phase_power_limit import PhasePowerLimiter
 from .pricing import (
     DynamicPricingSchedule,
     SLOT_PURPOSE_COMBINED,
@@ -410,9 +417,13 @@ class ChargeDischargeController:
         self.previous_sensor = None
         self.previous_power = 0
         self.first_execution = True
+        self._phase_safety_pending = False
 
         # Grid meter options
         self.meter_inverted = config_entry.data.get(CONF_METER_INVERTED, False)
+        # Phase protection is deliberately isolated from the global target
+        # calculation.  It only constrains automatic battery assignments.
+        self._phase_power_limiter = PhasePowerLimiter(hass, config_entry, self)
 
         # Load PD controller parameters from config (with backward-compatible defaults)
         self.deadband = config_entry.data.get(CONF_PD_DEADBAND, DEFAULT_PD_DEADBAND)
@@ -1181,6 +1192,13 @@ class ChargeDischargeController:
 
     def update_pd_parameters(self):
         """Re-read PD controller parameters from config_entry.data (hot-reload)."""
+        self.meter_inverted = self.config_entry.data.get(CONF_METER_INVERTED, False)
+        if self._phase_power_limiter is not None:
+            self._phase_power_limiter.refresh_config()
+            self._phase_power_limiter.update_manual_mode_warning(
+                self.config_entry.entry_id,
+                bool(self.config_entry.data.get(CONF_MANUAL_MODE_ENABLED, False)),
+            )
         old_pricing_mode = self.predictive_charging_mode
         old_smart_predischarge = self.smart_predischarge_enabled
         old_curtailment_config = (
@@ -3353,22 +3371,36 @@ class ChargeDischargeController:
 
         total_allocated = sum(power_allocation.values())
         _LOGGER.info("Predictive: Setting charge to %dW total across %d batteries: %s",
-                    total_allocated, len(selected_batteries),
+                    total_allocated, len([c for c, p in power_allocation.items() if p > 0]),
                     {c.name: p for c, p in power_allocation.items()})
 
-        # Write to selected batteries
-        for coordinator in selected_batteries:
-            await self._set_battery_power(coordinator, power_allocation.get(coordinator, 0), 0)
+        # Write every allocated battery.  The phase safety allocator may add a
+        # healthy fallback battery that was not in the normal load-sharing
+        # selection, so iterating only selected_batteries would silently drop
+        # the safe allocation.
+        allocated_batteries = {
+            coordinator
+            for coordinator, power in power_allocation.items()
+            if power > 0
+        }
+        for coordinator, power in power_allocation.items():
+            if power <= 0:
+                continue
+            await self._set_battery_power(coordinator, power, 0)
 
         # Set all other batteries to 0 (non-available + available-but-not-selected)
         for coordinator in self.coordinators:
-            if coordinator not in selected_batteries:
+            if coordinator not in allocated_batteries:
                 if self._is_active_balance_mode_running(coordinator):
                     continue
                 await self._set_battery_power(coordinator, 0, 0)
         
         # Update state
-        self.previous_power = new_power
+        self.previous_power = (
+            -total_allocated
+            if self._phase_power_limiter.enabled
+            else new_power
+        )
         self.previous_error = error
         self.previous_sensor = sensor_filtered
 
@@ -3573,6 +3605,19 @@ class ChargeDischargeController:
         if not bypass_blockers and coordinator.balance_hold and discharge_power > 0:
             _LOGGER.debug("[%s] Legacy balance hold active - discharge suppressed", coordinator.name)
             discharge_power = 0
+
+        # Last automatic guard: active-balance, predictive stop/restart and
+        # other specialized routes all converge here.  The normal distributor
+        # registers its full allocation as a plan, so this check cannot consume
+        # the phase budget twice; direct automatic commands are capped against
+        # the other batteries' current orders.
+        phase_limiter = getattr(self, "_phase_power_limiter", None)
+        if phase_limiter is not None and phase_limiter.enabled:
+            charge_power, discharge_power = phase_limiter.limit_single_command(
+                coordinator,
+                charge_power,
+                discharge_power,
+            )
 
         # Determine expected force mode (used in log messages below)
         if charge_power > 0:
@@ -4231,6 +4276,50 @@ class ChargeDischargeController:
         and re-anchoring would starve the command before the device finishes
         ramping.
         """
+        phase_limiter = getattr(self, "_phase_power_limiter", None)
+        if phase_limiter is not None and getattr(phase_limiter, "enabled", False):
+            # A phase envelope is a real actuator limit just like a battery's
+            # own rail.  Treat an invalid phase as saturated too: that phase is
+            # intentionally held at 0 W until telemetry recovers, otherwise the
+            # incremental PD base would wind up behind the safety stop.
+            try:
+                snapshots = phase_limiter.all_snapshots()
+            except (AttributeError, TypeError, ValueError):
+                snapshots = {}
+            for phase, snapshot in snapshots.items():
+                phase_batteries = [
+                    coordinator
+                    for coordinator in self.coordinators
+                    if (
+                        getattr(coordinator, "phase", None) == phase
+                        or getattr(coordinator, CONF_BATTERY_PHASE, None) == phase
+                    )
+                ]
+                if not phase_batteries:
+                    continue
+                if snapshot.get("degraded"):
+                    return True
+                budget_key = "charge_budget_w" if is_charging else "discharge_budget_w"
+                budget = float(snapshot.get(budget_key) or 0)
+                commanded = sum(
+                    max(
+                        0.0,
+                        float(
+                            getattr(
+                                coordinator,
+                                "commanded_charge_power"
+                                if is_charging
+                                else "commanded_discharge_power",
+                                0,
+                            )
+                            or 0
+                        ),
+                    )
+                    for coordinator in phase_batteries
+                )
+                if commanded >= budget - self.saturation_backcalc_threshold:
+                    return True
+
         for coordinator in self.coordinators:
             if not coordinator.data:
                 continue
@@ -4391,6 +4480,51 @@ class ChargeDischargeController:
         if self._no_pd_debounce_unsub is not None:
             self._no_pd_debounce_unsub()
             self._no_pd_debounce_unsub = None
+
+    async def _apply_phase_safety_review(self) -> None:
+        """Re-limit already-running automatic commands after a phase event.
+
+        This is used when the main grid sensor is unavailable or stale enough to
+        take the normal control path out early.  It never computes a new Grid 0
+        target; it only replays the currently commanded direction through the
+        phase-aware distributor.
+        """
+        limiter = self._phase_power_limiter
+        if limiter is None or not limiter.enabled or not hasattr(self, "_power_distribution"):
+            return
+
+        for is_charging in (True, False):
+            requested: dict[Any, float] = {}
+            for coordinator in self.coordinators:
+                charge = getattr(coordinator, "commanded_charge_power", 0) or 0
+                discharge = getattr(coordinator, "commanded_discharge_power", 0) or 0
+                value = charge if is_charging else discharge
+                if value <= 0:
+                    delivered = self._coordinator_delivered_power(coordinator)
+                    if delivered is not None and (
+                        delivered > 0 if is_charging else delivered < 0
+                    ):
+                        value = abs(delivered)
+                if value > 0:
+                    requested[coordinator] = float(value)
+            if not requested:
+                continue
+
+            allocation = self._power_distribution._distribute_power_by_limits(
+                sum(requested.values()),
+                list(requested),
+                is_charging,
+            )
+            for coordinator in self.coordinators:
+                value = allocation.get(coordinator, 0)
+                if is_charging:
+                    await self._set_battery_power(coordinator, value, 0)
+                else:
+                    await self._set_battery_power(coordinator, 0, value)
+
+            assigned = sum(allocation.values())
+            self.previous_power = assigned if is_charging else -assigned
+        self._phase_safety_pending = False
 
     def _compute_no_pd_new_power(self, error):
         """No-PD direct-tracking control law: deadbeat 1:1 load tracking.
@@ -5093,6 +5227,7 @@ class ChargeDischargeController:
         # Skip all operations if any coordinator is shutting down (integration unloading)
         if any(c._is_shutting_down for c in self.coordinators):
             return
+        self._phase_power_limiter.begin_cycle()
 
         # === HOUSEHOLD CONSUMPTION ACCUMULATION ===
         # Run before manual mode check so samples are never lost
@@ -5133,6 +5268,7 @@ class ChargeDischargeController:
             await self._apply_software_manual_setpoints()
             # Do not set batteries to 0 - preserve user's manual settings
             # Do not update PD state - freeze controller state
+            self._phase_safety_pending = False
             return
 
         # === WEEKLY FULL CHARGE REGISTER MANAGEMENT ===
@@ -5215,6 +5351,8 @@ class ChargeDischargeController:
                 _LOGGER.warning(f"Consumption sensor {self.consumption_sensor} not found.")
             else:
                 _LOGGER.warning(f"Could not parse consumption sensor state: {consumption_state.state}")
+            if self._phase_safety_pending:
+                await self._apply_phase_safety_review()
             return
 
         # Detect real sensor publications, even when the numeric value is unchanged.
@@ -5244,6 +5382,7 @@ class ChargeDischargeController:
                 self._sensor_is_within_stale_tolerance(sensor_report_time, now)
                 and not capacity_protection_must_recheck
                 and not blocked_active_changed
+                and not self._phase_safety_pending
             ):
                 if DEBUG_CONTROL_LOOP_DETAIL:
                     _LOGGER.debug(
@@ -5326,7 +5465,12 @@ class ChargeDischargeController:
         # Deadband is centered around the active target grid power
         # Skip on first_execution: controller hasn't initialized yet; returning here keeps
         # first_execution=True forever when the grid happens to be balanced at startup.
-        if not self.first_execution and not blocked_active_changed and abs(sensor_filtered - active_target) < self.deadband:
+        if (
+            not self.first_execution
+            and not blocked_active_changed
+            and not self._phase_safety_pending
+            and abs(sensor_filtered - active_target) < self.deadband
+        ):
             if DEBUG_CONTROL_LOOP_DETAIL:
                 _LOGGER.debug(
                     "ChargeDischargeController: Filtered sensor %.1fW within deadband of target %dW (+/-%dW), no action.",
@@ -5447,21 +5591,33 @@ class ChargeDischargeController:
             # Select batteries via load sharing, then distribute power
             selected_batteries = self._power_distribution._select_batteries_for_operation(abs(self.previous_power), available_batteries, is_charging)
             power_allocation = self._power_distribution._distribute_power_by_limits(abs(self.previous_power), selected_batteries, is_charging)
+            requested_initial_power = self.previous_power
+            assigned_initial_power = sum(power_allocation.values())
+            if self._phase_power_limiter.enabled:
+                self.previous_power = (
+                    assigned_initial_power if is_charging else -assigned_initial_power
+                )
 
             self._log_power_command_plan(
                 phase="initial",
                 grid_w=sensor_actual,
                 target_w=active_target,
                 previous_power_w=0,
-                requested_power_w=self.previous_power,
+                requested_power_w=requested_initial_power,
                 is_charging=is_charging,
                 available_batteries=available_batteries,
                 selected_batteries=selected_batteries,
                 power_allocation=power_allocation,
             )
 
-            for coordinator in selected_batteries:
-                power = power_allocation.get(coordinator, 0)
+            allocated_batteries = {
+                coordinator
+                for coordinator, power in power_allocation.items()
+                if power > 0
+            }
+            for coordinator, power in power_allocation.items():
+                if power <= 0:
+                    continue
                 if is_charging:
                     await self._set_battery_power(coordinator, power, 0)
                 else:
@@ -5469,7 +5625,7 @@ class ChargeDischargeController:
 
             # Set all other batteries to 0 (non-available + available-but-not-selected)
             for coordinator in self.coordinators:
-                if coordinator not in selected_batteries:
+                if coordinator not in allocated_batteries:
                     if self._is_active_balance_mode_running(coordinator):
                         continue
                     await self._set_battery_power(coordinator, 0, 0)
@@ -5479,6 +5635,7 @@ class ChargeDischargeController:
             self.previous_error = -(sensor_actual - active_target)
             self.last_output_sign = 1 if self.previous_power > 0 else (-1 if self.previous_power < 0 else 0)
             self.sign_changes = 0
+            self._phase_safety_pending = False
             _LOGGER.info("PD state initialized: previous_error=%.1fW, last_output_sign=%d, integral=0 (cleared)",
                         self.previous_error, self.last_output_sign)
 
@@ -5725,7 +5882,14 @@ class ChargeDischargeController:
         
         # Select batteries via load sharing, then distribute power
         selected_batteries = self._power_distribution._select_batteries_for_operation(abs(new_power), available_batteries, is_charging)
+        requested_distributed_power = new_power
         power_allocation = self._power_distribution._distribute_power_by_limits(abs(new_power), selected_batteries, is_charging)
+        assigned_power = sum(power_allocation.values())
+        phase_limited = self._phase_power_limiter.enabled and (
+            assigned_power + 1 < abs(requested_distributed_power)
+        )
+        if self._phase_power_limiter.enabled:
+            new_power = assigned_power if is_charging else -assigned_power
 
         self._log_power_command_plan(
             phase=(
@@ -5736,7 +5900,7 @@ class ChargeDischargeController:
             grid_w=sensor_actual,
             target_w=active_target,
             previous_power_w=self.previous_power,
-            requested_power_w=new_power,
+            requested_power_w=requested_distributed_power,
             is_charging=is_charging,
             available_batteries=available_batteries,
             selected_batteries=selected_batteries,
@@ -5745,8 +5909,14 @@ class ChargeDischargeController:
         )
 
         # Write to selected batteries
-        for coordinator in selected_batteries:
-            power = power_allocation.get(coordinator, 0)
+        allocated_batteries = {
+            coordinator
+            for coordinator, power in power_allocation.items()
+            if power > 0
+        }
+        for coordinator, power in power_allocation.items():
+            if power <= 0:
+                continue
             if is_charging:
                 await self._set_battery_power(coordinator, power, 0)
             else:
@@ -5754,7 +5924,7 @@ class ChargeDischargeController:
 
         # Set all other batteries to 0 (non-available + available-but-not-selected)
         for coordinator in self.coordinators:
-            if coordinator not in selected_batteries:
+            if coordinator not in allocated_batteries:
                 if self._is_active_balance_mode_running(coordinator):
                     continue
                 await self._set_battery_power(coordinator, 0, 0)
@@ -5762,6 +5932,8 @@ class ChargeDischargeController:
         # Update state for next cycle
         self.previous_power = new_power
         self.previous_sensor = sensor_actual
+        self._phase_safety_pending = False
+        current_output_sign = 1 if new_power > 0 else (-1 if new_power < 0 else 0)
         
         # CRITICAL: Only update PD controller state if NOT restricted by time slots
         # This prevents false oscillation warnings when controller is paused
@@ -5820,6 +5992,7 @@ class ChargeDischargeController:
                 (error < 0 and new_power >= max_total_charge - 1)
                 or (error > 0 and new_power <= -max_total_discharge + 1)
             )
+            pd_limited = pd_limited or phase_limited
             self._pd_limited = pd_limited
             self._update_pd_quality_metrics(error, sign_changed, active_target, pd_limited)
             self.previous_error = error
@@ -5943,8 +6116,10 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
               onto a stable "marstek_venus_system_" prefix, and heal the duplicate
               entities the Omnibattery domain migration created (orphan + `_2`).
     v9 -> v10: rename config entry title to "Omnibattery".
+    v10 -> v11: add the disabled-by-default three-phase protection schema and
+                normalize an empty battery phase on existing batteries.
     """
-    if entry.version >= 10:
+    if entry.version >= 11:
         return True
 
     new_data = dict(entry.data)
@@ -6165,8 +6340,32 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             healed,
         )
 
-    hass.config_entries.async_update_entry(entry, title="Omnibattery", data=new_data, version=10)
-    _LOGGER.info("Omnibattery: migrated config entry to version 10 (renamed title to Omnibattery)")
+    if entry.version < 10:
+        _LOGGER.info("Omnibattery: migrated config entry to version 10 (renamed title to Omnibattery)")
+
+    if entry.version < 11:
+        # Never infer or enable a physical phase layout during migration.  Empty
+        # assignments are normalized so a later activation can collect them in
+        # one atomic options-flow step.
+        new_data[CONF_THREE_PHASE_ENABLED] = DEFAULT_THREE_PHASE_ENABLED
+        new_data["batteries"] = [
+            {
+                **dict(battery),
+                CONF_BATTERY_PHASE: battery.get(CONF_BATTERY_PHASE, ""),
+            }
+            for battery in new_data.get("batteries", [])
+        ]
+        _LOGGER.info(
+            "Omnibattery: migrated config entry to version 11 "
+            "(three-phase protection disabled; battery phases normalized)",
+        )
+
+    hass.config_entries.async_update_entry(
+        entry,
+        title="Omnibattery",
+        data=new_data,
+        version=11,
+    )
     return True
 
 
@@ -6261,6 +6460,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             username=battery_config.get(CONF_USERNAME, ""),
             password=battery_config.get(CONF_PASSWORD, ""),
         )
+        # Physical phase is metadata for the safety limiter only.  It is never
+        # used as an input to the global Grid 0 controller.
+        coordinator.phase = battery_config.get(CONF_BATTERY_PHASE, "")
 
         # Restore persisted RS485 user preference and store entry reference for future persistence
         coordinator._config_entry = entry
@@ -6406,6 +6608,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     from .control.power_distribution import PowerDistribution
     controller._power_distribution = PowerDistribution(hass, entry, controller)
+    controller._phase_power_limiter.update_manual_mode_warning(
+        entry.entry_id,
+        controller.manual_mode_enabled,
+    )
 
     # Restore daily consumption history: try Store first (survives reloads), then binary sensor fallback
     loaded = await consumption_tracker.load_consumption_history()
@@ -6513,6 +6719,57 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         ))
         entry.async_on_unload(unsub_consumption_reported)
 
+    # Phase meters are safety inputs only.  Their events trigger an immediate
+    # review but deliberately do not enter the main-sensor cadence detector or
+    # alter sensor_actual / active_target / Grid 0.
+    phase_sensors = list(
+        dict.fromkeys(
+            entry.data.get(key)
+            for key in (
+                CONF_PHASE_1_POWER_SENSOR,
+                CONF_PHASE_2_POWER_SENSOR,
+                CONF_PHASE_3_POWER_SENSOR,
+            )
+            if entry.data.get(CONF_THREE_PHASE_ENABLED, DEFAULT_THREE_PHASE_ENABLED)
+            and entry.data.get(key)
+        )
+    )
+    unsub_phase = None
+    unsub_phase_reported = None
+    if phase_sensors:
+        @callback
+        def _on_phase_sensor_changed(event):
+            controller._phase_safety_pending = True
+            _LOGGER.debug(
+                "Phase safety sensor changed (%s); scheduling immediate review",
+                event.data.get("entity_id"),
+            )
+            controller.schedule_control_cycle(dt_util.utcnow())
+
+        unsub_phase = _call_once(
+            async_track_state_change_event(
+                hass,
+                phase_sensors,
+                _on_phase_sensor_changed,
+            )
+        )
+        entry.async_on_unload(unsub_phase)
+
+        if track_state_report_event is not None:
+            @callback
+            def _on_phase_sensor_reported(event):
+                controller._phase_safety_pending = True
+                controller.schedule_control_cycle(dt_util.utcnow())
+
+            unsub_phase_reported = _call_once(
+                track_state_report_event(
+                    hass,
+                    phase_sensors,
+                    _on_phase_sensor_reported,
+                )
+            )
+            entry.async_on_unload(unsub_phase_reported)
+
     # Set up hourly balance manager if enabled
     if controller._hourly_balance_mgr is not None:
         await controller._hourly_balance_mgr.async_setup()
@@ -6533,6 +6790,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "unsub_refresh": unsub_refresh,
         "unsub_consumption": unsub_consumption,
         "unsub_consumption_reported": unsub_consumption_reported,
+        "unsub_phase": unsub_phase,
+        "unsub_phase_reported": unsub_phase_reported,
         "balance_monitor": balance_monitor,
     }
 
@@ -6637,6 +6896,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if unsub := data.get("unsub_consumption"):
             unsub()
         if unsub := data.get("unsub_consumption_reported"):
+            unsub()
+        if unsub := data.get("unsub_phase"):
+            unsub()
+        if unsub := data.get("unsub_phase_reported"):
             unsub()
 
         # 2. Set shutdown flag on all coordinators to suppress expected errors

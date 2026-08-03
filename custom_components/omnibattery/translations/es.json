@@ -1,5 +1,9 @@
 {
   "issues": {
+    "three_phase_manual_mode": {
+      "title": "La protección trifásica puede saltarse con órdenes manuales",
+      "description": "La protección trifásica está activa, pero las órdenes manuales de registros o de franjas pueden escribir directamente en una batería sin la envolvente automática. Mantén esas órdenes dentro de los límites configurados."
+    },
     "slow_main_sensor": {
       "title": "El sensor de potencia de red actualiza demasiado despacio",
       "description": "El sensor de red configurado {sensor} actualiza aproximadamente cada {observed_interval} segundos. Los intervalos de {warning_interval} segundos o más son más lentos de lo recomendado y pueden reducir la calidad de la regulación. Omnibattery sigue la última lectura hasta que supera los {stale_limit} segundos de antigüedad. Usa un sensor más rápido si necesitas un control más preciso en tiempo real."
@@ -27,15 +31,39 @@
           "solar_forecast_sensor": "Sensor de predicción solar (opcional)",
           "solar_production_sensor": "Sensor de producción solar (opcional)",
           "meter_inverted": "Signo del medidor invertido",
-          "max_contracted_power": "Potencia máxima contratada (W)"
+          "max_contracted_power": "Potencia máxima contratada (W)",
+          "three_phase_enabled": "Activar protección de potencia trifásica"
         },
         "data_description": {
           "consumption_sensor": "Sensor en tiempo real de potencia importada (+) o exportada (-) a la red. Se recomiendan actualizaciones cada 1-2 segundos. Se aceptan sensores más lentos, pero las lecturas retrasadas reducen la calidad de la regulación; la última lectura se sigue durante un máximo de 65 segundos.",
           "solar_forecast_sensor": "Sensor que proporciona la predicción de producción solar en kWh (ej: Solcast). Si se configura aquí, se usará automáticamente en carga predictiva y retraso de carga solar.",
           "solar_production_sensor": "Sensor de potencia de producción fotovoltaica en tiempo real (W/kW) de un inversor externo que no pasa por las entradas MPPT de la batería. Se usa para mostrar el nodo Solar en el diagrama de flujo del panel. Déjalo vacío si tus paneles alimentan directamente el MPPT de la batería.",
           "meter_inverted": "Activa esta opción si tu medidor usa el convenio opuesto: positivo = exportación, negativo = importación. La unidad (W/kW) se detecta automáticamente.",
-          "max_contracted_power": "Potencia total contratada en vatios. El sistema no superará este límite al cargar para evitar que salte el diferencial"
+          "max_contracted_power": "Potencia total contratada en vatios. El sistema no superará este límite al cargar para evitar que salte el diferencial",
+          "three_phase_enabled": "Envolvente de seguridad opcional para instalaciones trifásicas; configura los sensores y la fase física de cada batería en el paso siguiente."
         }
+      },
+      "three_phase": {
+        "title": "Protección de potencia trifásica",
+        "description": "Configura un sensor de red y un límite simétrico positivo para cada fase. Los sensores deben ser entidades sensor W/kW distintas y usar importación (+) / exportación (-).",
+        "data": {
+          "phase_1_power_sensor": "Sensor de potencia de red L1",
+          "phase_2_power_sensor": "Sensor de potencia de red L2",
+          "phase_3_power_sensor": "Sensor de potencia de red L3",
+          "phase_1_max_power": "Potencia máxima L1 (W)",
+          "phase_2_max_power": "Potencia máxima L2 (W)",
+          "phase_3_max_power": "Potencia máxima L3 (W)"
+        },
+        "data_description": {
+          "phase_1_power_sensor": "Potencia activa en tiempo real de la fase física L1.",
+          "phase_2_power_sensor": "Potencia activa en tiempo real de la fase física L2.",
+          "phase_3_power_sensor": "Potencia activa en tiempo real de la fase física L3."
+        }
+      },
+      "phase_assignments": {
+        "title": "Asignación de fase de la batería {battery_num}",
+        "description": "Selecciona la fase física donde está conectada {battery_name}.",
+        "data": {"battery_phase": "Fase física de la batería"}
       },
       "batteries": {
         "title": "Número de baterías",
@@ -117,7 +145,8 @@
           "charge_hysteresis_percent": "Histéresis de carga (%)",
           "backup_offgrid_threshold": "Umbral de carga offgrid de backup (W)",
           "full_charge_voltage_taper_enabled": "Activar reduccion por voltaje al cargar al 100%",
-          "battery_capacity_kwh": "Capacidad nominal de la batería (kWh)"
+          "battery_capacity_kwh": "Capacidad nominal de la batería (kWh)",
+          "battery_phase": "Fase física de la batería"
         },
         "data_description": {
           "max_charge_power": "Potencia máxima permitida para cargar la batería",
@@ -127,7 +156,8 @@
           "charge_hysteresis_percent": "Siempre activa (mínimo 2%). Tras llegar al tope, la batería no volverá a cargar hasta que el SOC baje a (SOC máx − histéresis). Ej: SOC máx 100% con 2% = no carga hasta 98%.",
           "backup_offgrid_threshold": "Una carga offgrid superior a este valor se considera un evento de backup activo, excluyendo la batería del control PD. Auméntalo si tienes cargas permanentes (router, cámaras) en el puerto offgrid.",
           "full_charge_voltage_taper_enabled": "Cuando el objetivo es 100%, limita la carga a 200 W desde 3.48 V de celda maxima y para en 3.60 V para medir el desbalanceo tras 60 segundos.",
-          "battery_capacity_kwh": "Capacidad utilizable nominal del pack de baterías. Se usa para calcular la energía almacenada y la eficiencia a partir del SOC. Para Sessy, introduce la capacidad real; en otras baterías puedes dejar 0 si no la conoces."
+          "battery_capacity_kwh": "Capacidad utilizable nominal del pack de baterías. Se usa para calcular la energía almacenada y la eficiencia a partir del SOC. Para Sessy, introduce la capacidad real; en otras baterías puedes dejar 0 si no la conoces.",
+          "battery_phase": "Fase AC física (L1/L2/L3) donde está cableada esta batería; obligatoria con la protección trifásica."
         }
       },
       "time_slots": {
@@ -593,6 +623,12 @@
       "invalid_unit": "El sensor de predicción solar debe tener como unidad 'kWh' o 'Wh'.",
       "solar_production_sensor_not_found": "El sensor de producción solar no existe. Verifica que el sensor esté disponible.",
       "solar_production_invalid_unit": "El sensor de producción solar debe tener como unidad 'W' o 'kW'.",
+      "phase_sensors_must_differ": "Cada fase debe usar un sensor de potencia diferente.",
+      "phase_sensor_not_found": "El sensor de potencia de fase no existe o no está disponible.",
+      "phase_sensor_invalid_domain": "La fuente de potencia de fase debe ser una entidad sensor.",
+      "phase_sensor_invalid_unit": "El sensor de potencia de fase debe tener como unidad 'W' o 'kW'.",
+      "phase_limit_must_be_positive": "La potencia máxima de fase debe ser un valor finito y positivo en vatios.",
+      "battery_phase_required": "Selecciona la fase física de esta batería.",
       "incomplete_window": "Cada franja de carga adicional necesita hora de inicio y de fin. Rellena ambas o deja ambas vacías para omitirla.",
       "overlapping_slots": "Esta franja se solapa con otra ya configurada para la misma batería. Ajusta horarios, días o batería.",
       "midnight_crossing": "La hora de inicio debe ser anterior a la hora de fin. Para períodos nocturnos, cree dos franjas separadas (ej: 22:00-23:59 y 00:00-06:00).",
@@ -615,6 +651,23 @@
   },
   "options": {
     "step": {
+      "three_phase": {
+        "title": "Protección de potencia trifásica",
+        "description": "Configura sensores, límites y asignaciones físicas de las fases.",
+        "data": {
+          "phase_1_power_sensor": "Sensor de potencia de red L1",
+          "phase_2_power_sensor": "Sensor de potencia de red L2",
+          "phase_3_power_sensor": "Sensor de potencia de red L3",
+          "phase_1_max_power": "Potencia máxima L1 (W)",
+          "phase_2_max_power": "Potencia máxima L2 (W)",
+          "phase_3_max_power": "Potencia máxima L3 (W)"
+        }
+      },
+      "phase_assignments": {
+        "title": "Asignación de fase de la batería {battery_num}",
+        "description": "Selecciona la fase física donde está conectada {battery_name}.",
+        "data": {"battery_phase": "Fase física de la batería"}
+      },
       "init": {
         "title": "Reconfigurar Omnibattery",
         "description": "Selecciona la sección que deseas configurar.",
@@ -640,14 +693,16 @@
           "solar_forecast_sensor": "Sensor de predicción solar (opcional)",
           "solar_production_sensor": "Sensor de producción solar (opcional)",
           "meter_inverted": "Signo del medidor invertido",
-          "max_contracted_power": "Potencia máxima contratada (W)"
+          "max_contracted_power": "Potencia máxima contratada (W)",
+          "three_phase_enabled": "Activar protección de potencia trifásica"
         },
         "data_description": {
           "consumption_sensor": "Sensor en tiempo real de potencia importada (+) o exportada (-) a la red. Se recomiendan actualizaciones cada 1-2 segundos. Se aceptan sensores más lentos, pero las lecturas retrasadas reducen la calidad de la regulación; la última lectura se sigue durante un máximo de 65 segundos.",
           "solar_forecast_sensor": "Sensor que proporciona la predicción de producción solar en kWh (ej: Solcast). Si se configura aquí, se usará automáticamente en carga predictiva y retraso de carga solar.",
           "solar_production_sensor": "Sensor de potencia de producción fotovoltaica en tiempo real (W/kW) de un inversor externo que no pasa por las entradas MPPT de la batería. Se usa para mostrar el nodo Solar en el diagrama de flujo del panel. Déjalo vacío si tus paneles alimentan directamente el MPPT de la batería.",
           "meter_inverted": "Activa esta opción si tu medidor usa el convenio opuesto: positivo = exportación, negativo = importación. La unidad (W/kW) se detecta automáticamente.",
-          "max_contracted_power": "Potencia total contratada en vatios. El sistema no superará este límite al cargar para evitar que salte el diferencial"
+          "max_contracted_power": "Potencia total contratada en vatios. El sistema no superará este límite al cargar para evitar que salte el diferencial",
+          "three_phase_enabled": "Envolvente de seguridad opcional para instalaciones trifásicas; configura los sensores y la fase física de cada batería en el paso siguiente."
         }
       },
       "batteries": {
@@ -724,7 +779,8 @@
           "charge_hysteresis_percent": "Histéresis de carga (%)",
           "backup_offgrid_threshold": "Umbral de carga offgrid de backup (W)",
           "full_charge_voltage_taper_enabled": "Activar reduccion por voltaje al cargar al 100%",
-          "battery_capacity_kwh": "Capacidad nominal de la batería (kWh)"
+          "battery_capacity_kwh": "Capacidad nominal de la batería (kWh)",
+          "battery_phase": "Fase física de la batería"
         },
         "data_description": {
           "max_charge_power": "Potencia máxima permitida para cargar la batería",
@@ -734,7 +790,8 @@
           "charge_hysteresis_percent": "Siempre activa (mínimo 2%). Tras llegar al tope, la batería no volverá a cargar hasta que el SOC baje a (SOC máx − histéresis). Ej: SOC máx 100% con 2% = no carga hasta 98%.",
           "backup_offgrid_threshold": "Una carga offgrid superior a este valor se considera un evento de backup activo, excluyendo la batería del control PD. Auméntalo si tienes cargas permanentes (router, cámaras) en el puerto offgrid.",
           "full_charge_voltage_taper_enabled": "Cuando el objetivo es 100%, limita la carga a 200 W desde 3.48 V de celda maxima y para en 3.60 V para medir el desbalanceo tras 60 segundos.",
-          "battery_capacity_kwh": "Capacidad utilizable nominal del pack de baterías. Se usa para calcular la energía almacenada y la eficiencia a partir del SOC. Para Sessy, introduce la capacidad real; en otras baterías puedes dejar 0 si no la conoces."
+          "battery_capacity_kwh": "Capacidad utilizable nominal del pack de baterías. Se usa para calcular la energía almacenada y la eficiencia a partir del SOC. Para Sessy, introduce la capacidad real; en otras baterías puedes dejar 0 si no la conoces.",
+          "battery_phase": "Fase AC física (L1/L2/L3) donde está cableada esta batería; obligatoria con la protección trifásica."
         }
       },
       "time_slots": {
@@ -1120,6 +1177,12 @@
       "invalid_unit": "El sensor de predicción solar debe tener como unidad 'kWh' o 'Wh'.",
       "solar_production_sensor_not_found": "El sensor de producción solar no existe. Verifica que el sensor esté disponible.",
       "solar_production_invalid_unit": "El sensor de producción solar debe tener como unidad 'W' o 'kW'.",
+      "phase_sensors_must_differ": "Cada fase debe usar un sensor de potencia diferente.",
+      "phase_sensor_not_found": "El sensor de potencia de fase no existe o no está disponible.",
+      "phase_sensor_invalid_domain": "La fuente de potencia de fase debe ser una entidad sensor.",
+      "phase_sensor_invalid_unit": "El sensor de potencia de fase debe tener como unidad 'W' o 'kW'.",
+      "phase_limit_must_be_positive": "La potencia máxima de fase debe ser un valor finito y positivo en vatios.",
+      "battery_phase_required": "Selecciona la fase física de esta batería.",
       "incomplete_window": "Cada franja de carga adicional necesita hora de inicio y de fin. Rellena ambas o deja ambas vacías para omitirla.",
       "overlapping_slots": "Esta franja se solapa con otra ya configurada para la misma batería. Ajusta horarios, días o batería.",
       "midnight_crossing": "La hora de inicio debe ser anterior a la hora de fin. Para períodos nocturnos, cree dos franjas separadas (ej: 22:00-23:59 y 00:00-06:00).",
@@ -1134,6 +1197,9 @@
     }
   },
   "selector": {
+    "battery_phase": {
+      "options": {"l1": "L1", "l2": "L2", "l3": "L3"}
+    },
     "weekday": {
       "options": {
         "mon": "Lunes",

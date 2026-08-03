@@ -32,6 +32,9 @@ TO_REDACT = {
     "grid_sensor",
     "solar_forecast_sensor",
     "average_price_sensor",
+    "phase_1_power_sensor",
+    "phase_2_power_sensor",
+    "phase_3_power_sensor",
 }
 
 
@@ -136,4 +139,10 @@ async def async_get_config_entry_diagnostics(
         },
         "batteries": batteries,
         "dynamic_pricing": _dynamic_pricing_info(controller),
+        "phase_protection": async_redact_data(
+            controller._phase_power_limiter.diagnostics(), TO_REDACT
+        )
+        if controller is not None
+        and getattr(controller, "_phase_power_limiter", None) is not None
+        else {},
     }

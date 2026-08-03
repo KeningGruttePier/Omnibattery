@@ -126,6 +126,8 @@ class MarstekVenusDataUpdateCoordinator(DataUpdateCoordinator):
         self.host = host
         self.port = port
         self.slave_id = slave_id
+        # Physical phase metadata used only by the optional safety limiter.
+        self.phase = ""
         # Serial device path when the battery is reached over Modbus RTU instead
         # of TCP (discussion #350); None = TCP. host/port still identify the
         # battery (device_key, naming); the link uses this path. Marstek only.

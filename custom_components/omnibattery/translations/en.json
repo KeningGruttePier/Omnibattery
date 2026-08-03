@@ -11,6 +11,10 @@
     "solar_forecast_unusable": {
       "title": "Solar forecast unusable",
       "description": "The configured solar forecast sensor {sensor} has been unavailable or unreadable for over {minutes} minutes. Omnibattery keeps running, but every feature that depends on the forecast is now blind: the charge delay unlocks for the rest of the day, grid-charge decisions assume no sun at all and may book grid slots you do not need, and remaining-solar estimates read as 0 kWh. Check the sensor or the integration that provides it."
+    },
+    "three_phase_manual_mode": {
+      "title": "Three-phase protection can be bypassed by manual commands",
+      "description": "Three-phase protection is enabled, but manual register or manual time-slot commands can write directly to a battery without the automatic phase envelope. Keep those commands within the configured phase limits."
     }
   },
   "config": {
@@ -27,14 +31,43 @@
           "solar_forecast_sensor": "Solar forecast sensor (optional)",
           "solar_production_sensor": "Solar production sensor (optional)",
           "meter_inverted": "Inverted meter sign",
-          "max_contracted_power": "Maximum contracted power (W)"
+          "max_contracted_power": "Maximum contracted power (W)",
+          "three_phase_enabled": "Enable three-phase power protection"
         },
         "data_description": {
           "consumption_sensor": "Real-time sensor for imported (+) or exported (-) grid power. Updates every 1-2 seconds are recommended. Slower sensors are accepted, but delayed readings reduce regulation quality; the latest reading is followed for up to 65 seconds.",
           "solar_forecast_sensor": "Sensor providing solar production forecast in kWh (e.g., Solcast). If configured here, it will be used automatically for predictive charging and solar charge delay.",
           "solar_production_sensor": "Real-time PV production power sensor (W/kW) from an external inverter not wired through the battery MPPT inputs. Used to show the Solar node in the dashboard energy-flow diagram. Leave empty if your panels feed the battery MPPT directly.",
           "meter_inverted": "Enable this option if your meter uses the opposite convention: positive = export, negative = import. The unit (W/kW) is detected automatically.",
-          "max_contracted_power": "Total contracted power in watts. System won't exceed this limit when charging to avoid tripping the breaker"
+          "max_contracted_power": "Total contracted power in watts. System won't exceed this limit when charging to avoid tripping the breaker",
+          "three_phase_enabled": "Optional safety envelope for three-phase installations. Configure one W/kW grid sensor, positive symmetric limit and physical battery phase for each circuit in the next step."
+        }
+      },
+      "three_phase": {
+        "title": "Three-phase power protection",
+        "description": "Configure one grid power sensor and one positive symmetric limit for each phase. The sensors use the global import (+) / export (-) convention and must be distinct W/kW sensor entities.",
+        "data": {
+          "phase_1_power_sensor": "L1 grid power sensor",
+          "phase_2_power_sensor": "L2 grid power sensor",
+          "phase_3_power_sensor": "L3 grid power sensor",
+          "phase_1_max_power": "L1 maximum power (W)",
+          "phase_2_max_power": "L2 maximum power (W)",
+          "phase_3_max_power": "L3 maximum power (W)"
+        },
+        "data_description": {
+          "phase_1_power_sensor": "Real-time active power on physical phase L1. Positive import, negative export; W and kW are accepted.",
+          "phase_2_power_sensor": "Real-time active power on physical phase L2. Positive import, negative export; W and kW are accepted.",
+          "phase_3_power_sensor": "Real-time active power on physical phase L3. Positive import, negative export; W and kW are accepted.",
+          "phase_1_max_power": "Positive symmetric active-power limit for L1. Leave margin for latency and transient peaks.",
+          "phase_2_max_power": "Positive symmetric active-power limit for L2. Leave margin for latency and transient peaks.",
+          "phase_3_max_power": "Positive symmetric active-power limit for L3. Leave margin for latency and transient peaks."
+        }
+      },
+      "phase_assignments": {
+        "title": "Battery {battery_num} phase assignment",
+        "description": "Select the physical AC phase where {battery_name} is connected. Omnibattery cannot discover this wiring automatically.",
+        "data": {
+          "battery_phase": "Physical battery phase"
         }
       },
       "batteries": {
@@ -117,7 +150,8 @@
           "charge_hysteresis_percent": "Charge hysteresis (%)",
           "backup_offgrid_threshold": "Backup offgrid load threshold (W)",
           "full_charge_voltage_taper_enabled": "Enable 100% charge voltage taper",
-          "battery_capacity_kwh": "Battery nominal capacity (kWh)"
+          "battery_capacity_kwh": "Battery nominal capacity (kWh)",
+          "battery_phase": "Physical battery phase"
         },
         "data_description": {
           "max_charge_power": "Maximum power allowed to charge the battery",
@@ -127,7 +161,8 @@
           "charge_hysteresis_percent": "Always on (minimum 2%). After reaching the top, the battery won't charge again until SOC drops to (Max SOC − hysteresis). Ex: Max SOC 100% with 2% = no charge until 98%.",
           "backup_offgrid_threshold": "Offgrid load above this value is treated as an active backup event, excluding the battery from PD control. Set higher if you have permanent loads (router, cameras) on the offgrid port.",
           "full_charge_voltage_taper_enabled": "When the target is 100%, limit charge to 200 W from 3.48 V max cell voltage and stop at 3.60 V to measure imbalance after 60 seconds.",
-          "battery_capacity_kwh": "Nominal usable capacity of the battery pack. Used to calculate stored energy and efficiency from SOC. Sessy requires its actual capacity; for other batteries, leave at 0 if unknown."
+          "battery_capacity_kwh": "Nominal usable capacity of the battery pack. Used to calculate stored energy and efficiency from SOC. Sessy requires its actual capacity; for other batteries, leave at 0 if unknown.",
+          "battery_phase": "Physical AC phase (L1/L2/L3) where this battery is wired. Required when three-phase protection is enabled."
         }
       },
       "time_slots": {
@@ -587,6 +622,12 @@
       "invalid_unit": "Solar forecast sensor must have 'kWh' or 'Wh' as unit.",
       "solar_production_sensor_not_found": "Solar production sensor does not exist. Verify the sensor is available.",
       "solar_production_invalid_unit": "Solar production sensor must have 'W' or 'kW' as unit.",
+      "phase_sensors_must_differ": "Each phase must use a different power sensor.",
+      "phase_sensor_not_found": "The phase power sensor does not exist or is unavailable.",
+      "phase_sensor_invalid_domain": "The phase power source must be a sensor entity.",
+      "phase_sensor_invalid_unit": "The phase power sensor must have 'W' or 'kW' as unit.",
+      "phase_limit_must_be_positive": "The phase maximum power must be a positive finite value in watts.",
+      "battery_phase_required": "Select the physical phase for this battery.",
       "incomplete_window": "Each extra charging window needs both a start and an end time. Fill both, or leave both empty to skip it.",
       "overlapping_slots": "This time slot overlaps with an existing one for the same battery. Adjust the times, days, or battery scope.",
       "midnight_crossing": "Start time must be before end time. For overnight periods, create two separate slots (e.g., 22:00-23:59 and 00:00-06:00).",
@@ -634,14 +675,43 @@
           "solar_forecast_sensor": "Solar forecast sensor (optional)",
           "solar_production_sensor": "Solar production sensor (optional)",
           "meter_inverted": "Inverted meter sign",
-          "max_contracted_power": "Maximum contracted power (W)"
+          "max_contracted_power": "Maximum contracted power (W)",
+          "three_phase_enabled": "Enable three-phase power protection"
         },
         "data_description": {
           "consumption_sensor": "Real-time sensor for imported (+) or exported (-) grid power. Updates every 1-2 seconds are recommended. Slower sensors are accepted, but delayed readings reduce regulation quality; the latest reading is followed for up to 65 seconds.",
           "solar_forecast_sensor": "Sensor providing solar production forecast in kWh (e.g., Solcast). If configured here, it will be used automatically for predictive charging and solar charge delay.",
           "solar_production_sensor": "Real-time PV production power sensor (W/kW) from an external inverter not wired through the battery MPPT inputs. Used to show the Solar node in the dashboard energy-flow diagram. Leave empty if your panels feed the battery MPPT directly.",
           "meter_inverted": "Enable this option if your meter uses the opposite convention: positive = export, negative = import. The unit (W/kW) is detected automatically.",
-          "max_contracted_power": "Total contracted power in watts. System won't exceed this limit when charging to avoid tripping the breaker"
+          "max_contracted_power": "Total contracted power in watts. System won't exceed this limit when charging to avoid tripping the breaker",
+          "three_phase_enabled": "Optional safety envelope for three-phase installations. Configure one W/kW grid sensor, positive symmetric limit and physical battery phase for each circuit in the next step."
+        }
+      },
+      "three_phase": {
+        "title": "Three-phase power protection",
+        "description": "Configure one grid power sensor and one positive symmetric limit for each phase. The sensors use the global import (+) / export (-) convention and must be distinct W/kW sensor entities.",
+        "data": {
+          "phase_1_power_sensor": "L1 grid power sensor",
+          "phase_2_power_sensor": "L2 grid power sensor",
+          "phase_3_power_sensor": "L3 grid power sensor",
+          "phase_1_max_power": "L1 maximum power (W)",
+          "phase_2_max_power": "L2 maximum power (W)",
+          "phase_3_max_power": "L3 maximum power (W)"
+        },
+        "data_description": {
+          "phase_1_power_sensor": "Real-time active power on physical phase L1. Positive import, negative export; W and kW are accepted.",
+          "phase_2_power_sensor": "Real-time active power on physical phase L2. Positive import, negative export; W and kW are accepted.",
+          "phase_3_power_sensor": "Real-time active power on physical phase L3. Positive import, negative export; W and kW are accepted.",
+          "phase_1_max_power": "Positive symmetric active-power limit for L1. Leave margin for latency and transient peaks.",
+          "phase_2_max_power": "Positive symmetric active-power limit for L2. Leave margin for latency and transient peaks.",
+          "phase_3_max_power": "Positive symmetric active-power limit for L3. Leave margin for latency and transient peaks."
+        }
+      },
+      "phase_assignments": {
+        "title": "Battery {battery_num} phase assignment",
+        "description": "Select the physical AC phase where {battery_name} is connected. Omnibattery cannot discover this wiring automatically.",
+        "data": {
+          "battery_phase": "Physical battery phase"
         }
       },
       "batteries": {
@@ -718,7 +788,8 @@
           "charge_hysteresis_percent": "Charge hysteresis (%)",
           "backup_offgrid_threshold": "Backup offgrid load threshold (W)",
           "full_charge_voltage_taper_enabled": "Enable 100% charge voltage taper",
-          "battery_capacity_kwh": "Battery nominal capacity (kWh)"
+          "battery_capacity_kwh": "Battery nominal capacity (kWh)",
+          "battery_phase": "Physical battery phase"
         },
         "data_description": {
           "max_charge_power": "Maximum power allowed to charge the battery",
@@ -728,7 +799,8 @@
           "charge_hysteresis_percent": "Always on (minimum 2%). After reaching the top, the battery won't charge again until SOC drops to (Max SOC − hysteresis). Ex: Max SOC 100% with 2% = no charge until 98%.",
           "backup_offgrid_threshold": "Offgrid load above this value is treated as an active backup event, excluding the battery from PD control. Set higher if you have permanent loads (router, cameras) on the offgrid port.",
           "full_charge_voltage_taper_enabled": "When the target is 100%, limit charge to 200 W from 3.48 V max cell voltage and stop at 3.60 V to measure imbalance after 60 seconds.",
-          "battery_capacity_kwh": "Nominal usable capacity of the battery pack. Used to calculate stored energy and efficiency from SOC. Sessy requires its actual capacity; for other batteries, leave at 0 if unknown."
+          "battery_capacity_kwh": "Nominal usable capacity of the battery pack. Used to calculate stored energy and efficiency from SOC. Sessy requires its actual capacity; for other batteries, leave at 0 if unknown.",
+          "battery_phase": "Physical AC phase (L1/L2/L3) where this battery is wired. Required when three-phase protection is enabled."
         }
       },
       "time_slots": {
@@ -1108,6 +1180,12 @@
       "invalid_unit": "Solar forecast sensor must have 'kWh' or 'Wh' as unit.",
       "solar_production_sensor_not_found": "Solar production sensor does not exist. Verify the sensor is available.",
       "solar_production_invalid_unit": "Solar production sensor must have 'W' or 'kW' as unit.",
+      "phase_sensors_must_differ": "Each phase must use a different power sensor.",
+      "phase_sensor_not_found": "The phase power sensor does not exist or is unavailable.",
+      "phase_sensor_invalid_domain": "The phase power source must be a sensor entity.",
+      "phase_sensor_invalid_unit": "The phase power sensor must have 'W' or 'kW' as unit.",
+      "phase_limit_must_be_positive": "The phase maximum power must be a positive finite value in watts.",
+      "battery_phase_required": "Select the physical phase for this battery.",
       "incomplete_window": "Each extra charging window needs both a start and an end time. Fill both, or leave both empty to skip it.",
       "overlapping_slots": "This time slot overlaps with an existing one for the same battery. Adjust the times, days, or battery scope.",
       "midnight_crossing": "Start time must be before end time. For overnight periods, create two separate slots (e.g., 22:00-23:59 and 00:00-06:00).",
@@ -1142,6 +1220,13 @@
     "slot_battery_scope": {
       "options": {
         "all": "All batteries"
+      }
+    },
+    "battery_phase": {
+      "options": {
+        "l1": "L1",
+        "l2": "L2",
+        "l3": "L3"
       }
     },
     "predictive_charging_mode": {

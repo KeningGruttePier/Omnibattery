@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 from typing import Any
 
 import voluptuous as vol
@@ -52,6 +53,20 @@ from .const import (
     CONF_SOLAR_FORECAST_SENSOR,
     CONF_SOLAR_PRODUCTION_SENSOR,
     CONF_MAX_CONTRACTED_POWER,
+    CONF_THREE_PHASE_ENABLED,
+    CONF_PHASE_1_POWER_SENSOR,
+    CONF_PHASE_2_POWER_SENSOR,
+    CONF_PHASE_3_POWER_SENSOR,
+    CONF_PHASE_1_MAX_POWER,
+    CONF_PHASE_2_MAX_POWER,
+    CONF_PHASE_3_MAX_POWER,
+    CONF_BATTERY_PHASE,
+    PHASE_L1,
+    PHASE_L2,
+    PHASE_L3,
+    PHASE_VALUES,
+    DEFAULT_THREE_PHASE_ENABLED,
+    DEFAULT_PHASE_MAX_POWER,
     CONF_ENABLE_WEEKLY_FULL_CHARGE,
     CONF_WEEKLY_FULL_CHARGE_DAY,
     CONF_ENABLE_BALANCE_MONITOR,
@@ -141,6 +156,106 @@ def _parse_optional_float(value: Any) -> float | None:
     if value is None or value == "":
         return None
     return float(str(value).replace(",", "."))
+
+
+def _phase_sensor_schema_field(key: str, default: str | None = None):
+    """Return a required phase sensor field, with an optional current value."""
+    field = vol.Required(key, default=default) if default else vol.Required(key)
+    return field, EntitySelector(EntitySelectorConfig(domain="sensor"))
+
+
+def _phase_protection_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
+    """Build the three-phase protection form schema."""
+    defaults = defaults or {}
+    schema: dict = {}
+    for key in (
+        CONF_PHASE_1_POWER_SENSOR,
+        CONF_PHASE_2_POWER_SENSOR,
+        CONF_PHASE_3_POWER_SENSOR,
+    ):
+        field, selector = _phase_sensor_schema_field(key, defaults.get(key))
+        schema[field] = selector
+    for key in (
+        CONF_PHASE_1_MAX_POWER,
+        CONF_PHASE_2_MAX_POWER,
+        CONF_PHASE_3_MAX_POWER,
+    ):
+        schema[vol.Required(key, default=defaults.get(key, DEFAULT_PHASE_MAX_POWER))] = NumberSelector(
+            NumberSelectorConfig(
+                min=1,
+                max=30000,
+                step=50,
+                unit_of_measurement="W",
+                mode=NumberSelectorMode.BOX,
+            )
+        )
+    return vol.Schema(schema)
+
+
+def _battery_phase_schema(default: str | None = None):
+    """Return the required L1/L2/L3 selector used by battery limit forms."""
+    return vol.Required(
+        CONF_BATTERY_PHASE,
+        default=default or PHASE_L1,
+    ), SelectSelector(
+        SelectSelectorConfig(
+            options=[
+                {"value": PHASE_L1, "label": "L1"},
+                {"value": PHASE_L2, "label": "L2"},
+                {"value": PHASE_L3, "label": "L3"},
+            ],
+            translation_key="battery_phase",
+            mode=SelectSelectorMode.DROPDOWN,
+        )
+    )
+
+
+def _validate_phase_protection(hass, user_input: dict[str, Any]) -> dict[str, str]:
+    """Validate phase sensors and positive per-phase safety limits."""
+    errors: dict[str, str] = {}
+    sensor_keys = (
+        CONF_PHASE_1_POWER_SENSOR,
+        CONF_PHASE_2_POWER_SENSOR,
+        CONF_PHASE_3_POWER_SENSOR,
+    )
+    sensor_ids = [user_input.get(key) for key in sensor_keys]
+
+    present_sensor_ids = [entity_id for entity_id in sensor_ids if entity_id]
+    if len(set(present_sensor_ids)) != len(present_sensor_ids):
+        for key, entity_id in zip(sensor_keys, sensor_ids):
+            if entity_id and present_sensor_ids.count(entity_id) > 1:
+                errors[key] = "phase_sensors_must_differ"
+
+    for key, entity_id in zip(sensor_keys, sensor_ids):
+        state = hass.states.get(entity_id) if entity_id else None
+        if state is None:
+            errors.setdefault(key, "phase_sensor_not_found")
+            continue
+        if not str(entity_id).startswith("sensor."):
+            errors[key] = "phase_sensor_invalid_domain"
+            continue
+        unit = state.attributes.get("unit_of_measurement")
+        if unit not in ("W", "kW"):
+            errors[key] = "phase_sensor_invalid_unit"
+
+    for key in (
+        CONF_PHASE_1_MAX_POWER,
+        CONF_PHASE_2_MAX_POWER,
+        CONF_PHASE_3_MAX_POWER,
+    ):
+        try:
+            value = float(user_input.get(key))
+        except (TypeError, ValueError):
+            value = 0.0
+        if not math.isfinite(value) or value <= 0:
+            errors[key] = "phase_limit_must_be_positive"
+
+    return errors
+
+
+def _phase_assignment_is_valid(value: Any) -> bool:
+    """Return whether a stored battery phase is normalized and usable."""
+    return value in PHASE_VALUES
 
 
 def _soc_selector_limits(brand: str) -> tuple[int, int, int, int, int, int]:
@@ -604,7 +719,7 @@ def _finalize_slot(step_a: dict, step_b: dict | None) -> dict:
 class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Omnibattery."""
 
-    VERSION = 10
+    VERSION = 11
 
     def __init__(self):
         """Initialize the config flow."""
@@ -699,6 +814,11 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
                 self.config_data[CONF_SOLAR_PRODUCTION_SENSOR] = solar_sensor
                 self.config_data[CONF_METER_INVERTED] = user_input.get(CONF_METER_INVERTED, False)
                 self.config_data["max_contracted_power"] = user_input["max_contracted_power"]
+                self.config_data[CONF_THREE_PHASE_ENABLED] = bool(
+                    user_input.get(CONF_THREE_PHASE_ENABLED, DEFAULT_THREE_PHASE_ENABLED)
+                )
+                if self.config_data[CONF_THREE_PHASE_ENABLED]:
+                    return await self.async_step_three_phase()
                 return await self.async_step_batteries()
 
         return self.async_show_form(
@@ -719,9 +839,42 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
                         EntitySelector(EntitySelectorConfig(domain="sensor")),
                     vol.Optional(CONF_SOLAR_PRODUCTION_SENSOR):
                         EntitySelector(EntitySelectorConfig(domain="sensor")),
+                    vol.Optional(
+                        CONF_THREE_PHASE_ENABLED,
+                        default=DEFAULT_THREE_PHASE_ENABLED,
+                    ): BooleanSelector(),
                 }
             ),
             errors=errors if errors else None,
+        )
+
+    async def async_step_three_phase(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Configure the optional per-phase safety sensors and limits."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            errors = _validate_phase_protection(self.hass, user_input)
+            if not errors:
+                self.config_data.update(
+                    {
+                        key: user_input[key]
+                        for key in (
+                            CONF_PHASE_1_POWER_SENSOR,
+                            CONF_PHASE_2_POWER_SENSOR,
+                            CONF_PHASE_3_POWER_SENSOR,
+                            CONF_PHASE_1_MAX_POWER,
+                            CONF_PHASE_2_MAX_POWER,
+                            CONF_PHASE_3_MAX_POWER,
+                        )
+                    }
+                )
+                return await self.async_step_batteries()
+
+        return self.async_show_form(
+            step_id="three_phase",
+            data_schema=_phase_protection_schema(),
+            errors=errors or None,
         )
 
     async def async_step_restore_backup(
@@ -1061,6 +1214,7 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Step 3c: Power and SOC limits for the current battery."""
+        errors: dict[str, str] = {}
         battery_num = self.battery_index + 1
         brand = self._current_battery_data.get("brand", "marstek")
         if brand == "zendure":
@@ -1089,38 +1243,46 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
         ) = _soc_selector_limits(brand)
 
         if user_input is not None:
-            merged = dict(self._current_battery_data)
-            if brand == "anker":
-                # Power caps are device sensors (10036/10038), not setup inputs.
-                charge_w, discharge_w = _anker_power_ceilings(self._current_battery_data)
-                merged["max_charge_power"] = charge_w
-                merged["max_discharge_power"] = discharge_w
+            phase = user_input.get(CONF_BATTERY_PHASE, "")
+            if self.config_data.get(CONF_THREE_PHASE_ENABLED) and not _phase_assignment_is_valid(phase):
+                errors[CONF_BATTERY_PHASE] = "battery_phase_required"
+            if errors:
+                user_input = None
             else:
-                merged["max_charge_power"] = int(user_input["max_charge_power"])
-                merged["max_discharge_power"] = int(user_input["max_discharge_power"])
-            merged["max_soc"] = int(user_input["max_soc"])
-            merged["min_soc"] = int(user_input["min_soc"])
-            _seed_software_power_limits(merged, brand)
-            # Hysteresis is mandatory; floor the percent against SOC drift.
-            merged["enable_charge_hysteresis"] = True
-            merged["charge_hysteresis_percent"] = max(
-                MIN_CHARGE_HYSTERESIS_PERCENT,
-                int(user_input.get("charge_hysteresis_percent", DEFAULT_CHARGE_HYSTERESIS_PERCENT)),
-            )
-            merged["backup_offgrid_threshold"] = int(user_input.get("backup_offgrid_threshold", 50))
-            merged[CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED] = (
-                False if brand in ("zendure", "anker", "sessy", "hoymiles")
-                else user_input.get(CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED, DEFAULT_FULL_CHARGE_VOLTAGE_TAPER_ENABLED)
-            )
-            if brand in ("zendure", "sessy", "hoymiles"):
-                merged["battery_capacity_kwh"] = round(float(user_input.get("battery_capacity_kwh", 2.24 if brand == "hoymiles" else 0.0)), 2)
-            self.battery_configs.append(merged)
-            self.battery_index += 1
+                merged = dict(self._current_battery_data)
+                if brand == "anker":
+                    # Power caps are device sensors (10036/10038), not setup inputs.
+                    charge_w, discharge_w = _anker_power_ceilings(self._current_battery_data)
+                    merged["max_charge_power"] = charge_w
+                    merged["max_discharge_power"] = discharge_w
+                else:
+                    merged["max_charge_power"] = int(user_input["max_charge_power"])
+                    merged["max_discharge_power"] = int(user_input["max_discharge_power"])
+                merged["max_soc"] = int(user_input["max_soc"])
+                merged["min_soc"] = int(user_input["min_soc"])
+                if self.config_data.get(CONF_THREE_PHASE_ENABLED):
+                    merged[CONF_BATTERY_PHASE] = phase
+                _seed_software_power_limits(merged, brand)
+                # Hysteresis is mandatory; floor the percent against SOC drift.
+                merged["enable_charge_hysteresis"] = True
+                merged["charge_hysteresis_percent"] = max(
+                    MIN_CHARGE_HYSTERESIS_PERCENT,
+                    int(user_input.get("charge_hysteresis_percent", DEFAULT_CHARGE_HYSTERESIS_PERCENT)),
+                )
+                merged["backup_offgrid_threshold"] = int(user_input.get("backup_offgrid_threshold", 50))
+                merged[CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED] = (
+                    False if brand in ("zendure", "anker", "sessy", "hoymiles")
+                    else user_input.get(CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED, DEFAULT_FULL_CHARGE_VOLTAGE_TAPER_ENABLED)
+                )
+                if brand in ("zendure", "sessy", "hoymiles"):
+                    merged["battery_capacity_kwh"] = round(float(user_input.get("battery_capacity_kwh", 2.24 if brand == "hoymiles" else 0.0)), 2)
+                self.battery_configs.append(merged)
+                self.battery_index += 1
 
-            if self.battery_index >= self.config_data["num_batteries"]:
-                self.config_data["batteries"] = self.battery_configs
-                return await self.async_step_time_slots()
-            return await self.async_step_battery_brand()
+                if self.battery_index >= self.config_data["num_batteries"]:
+                    self.config_data["batteries"] = self.battery_configs
+                    return await self.async_step_time_slots()
+                return await self.async_step_battery_brand()
 
         _schema: dict = {}
         if brand != "anker":
@@ -1158,9 +1320,13 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
             _schema[vol.Optional("battery_capacity_kwh", default=2.24 if brand == "hoymiles" else 0.0)] = NumberSelector(
                 NumberSelectorConfig(min=0.01 if brand == "hoymiles" else 0, max=100, step=0.01, unit_of_measurement="kWh", mode=NumberSelectorMode.BOX)
             )
+        if self.config_data.get(CONF_THREE_PHASE_ENABLED):
+            phase_field, phase_selector = _battery_phase_schema()
+            _schema[phase_field] = phase_selector
         return self.async_show_form(
             step_id="battery_limits",
             data_schema=vol.Schema(_schema),
+            errors=errors or None,
             description_placeholders={"battery_num": str(battery_num)},
         )
 
@@ -1776,6 +1942,7 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
         self.config_data.setdefault(CONF_CAPACITY_PROTECTION_EXCLUDED_DEVICES, False)
         self.config_data.setdefault(CONF_ENABLE_HOURLY_BALANCE, False)
         self.config_data.setdefault(CONF_ENABLE_SYSTEM_POWER_LIMITS, False)
+        self.config_data.setdefault(CONF_THREE_PHASE_ENABLED, DEFAULT_THREE_PHASE_ENABLED)
         self.config_data[CONF_ENABLE_BALANCE_MONITOR] = True
         return self.async_create_entry(title="Omnibattery", data=self.config_data)
 
@@ -2353,6 +2520,10 @@ class OptionsFlowHandler(OptionsFlow):
     async def async_step_sensors(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """Configure consumption sensor and optional solar forecast sensor."""
         errors = {}
+        current_three_phase_enabled = self.config_entry.data.get(
+            CONF_THREE_PHASE_ENABLED,
+            DEFAULT_THREE_PHASE_ENABLED,
+        )
         try:
             if user_input is not None:
                 # Validate solar forecast sensor if provided
@@ -2383,6 +2554,15 @@ class OptionsFlowHandler(OptionsFlow):
                     self.config_data[CONF_SOLAR_PRODUCTION_SENSOR] = solar_sensor
                     self.config_data[CONF_METER_INVERTED] = user_input.get(CONF_METER_INVERTED, False)
                     self.config_data["max_contracted_power"] = user_input["max_contracted_power"]
+                    enabled = bool(
+                        user_input.get(
+                            CONF_THREE_PHASE_ENABLED,
+                            current_three_phase_enabled,
+                        )
+                    )
+                    self.config_data[CONF_THREE_PHASE_ENABLED] = enabled
+                    if enabled:
+                        return await self.async_step_three_phase()
                     return await self._save_and_finish()
 
             # Load current configuration with defensive defaults
@@ -2413,9 +2593,110 @@ class OptionsFlowHandler(OptionsFlow):
                         EntitySelector(EntitySelectorConfig(domain="sensor")),
                     vol.Optional(CONF_SOLAR_PRODUCTION_SENSOR, description={"suggested_value": current_solar} if current_solar else {}):
                         EntitySelector(EntitySelectorConfig(domain="sensor")),
+                    vol.Required(
+                        CONF_THREE_PHASE_ENABLED,
+                        default=current_three_phase_enabled,
+                    ): BooleanSelector(),
                 }
             ),
             errors=errors if errors else None,
+        )
+
+    async def async_step_three_phase(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Configure or edit the optional per-phase safety protection."""
+        errors: dict[str, str] = {}
+        current = self.config_entry.data
+        defaults = {
+            key: current.get(key)
+            for key in (
+                CONF_PHASE_1_POWER_SENSOR,
+                CONF_PHASE_2_POWER_SENSOR,
+                CONF_PHASE_3_POWER_SENSOR,
+                CONF_PHASE_1_MAX_POWER,
+                CONF_PHASE_2_MAX_POWER,
+                CONF_PHASE_3_MAX_POWER,
+            )
+        }
+        if user_input is not None:
+            errors = _validate_phase_protection(self.hass, user_input)
+            if not errors:
+                self.config_data.update(
+                    {
+                        key: user_input[key]
+                        for key in (
+                            CONF_PHASE_1_POWER_SENSOR,
+                            CONF_PHASE_2_POWER_SENSOR,
+                            CONF_PHASE_3_POWER_SENSOR,
+                            CONF_PHASE_1_MAX_POWER,
+                            CONF_PHASE_2_MAX_POWER,
+                            CONF_PHASE_3_MAX_POWER,
+                        )
+                    }
+                )
+                was_enabled = bool(
+                    current.get(
+                        CONF_THREE_PHASE_ENABLED,
+                        DEFAULT_THREE_PHASE_ENABLED,
+                    )
+                )
+                self.config_data[CONF_THREE_PHASE_ENABLED] = True
+                batteries = [dict(b) for b in current.get("batteries", [])]
+                if not was_enabled and batteries:
+                    # Enabling protection is deliberately a two-step operation:
+                    # all physical assignments are confirmed before the entry is
+                    # reloaded, so runtime never sees a partial configuration.
+                    self._phase_assignment_batteries = batteries
+                    self._phase_assignment_index = 0
+                    return await self.async_step_phase_assignments()
+                if batteries and any(
+                    not _phase_assignment_is_valid(b.get(CONF_BATTERY_PHASE))
+                    for b in batteries
+                ):
+                    self._phase_assignment_batteries = batteries
+                    self._phase_assignment_index = 0
+                    return await self.async_step_phase_assignments()
+                return await self._save_and_finish()
+
+        return self.async_show_form(
+            step_id="three_phase",
+            data_schema=_phase_protection_schema(defaults),
+            errors=errors or None,
+        )
+
+    async def async_step_phase_assignments(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Collect every battery's physical L1/L2/L3 assignment atomically."""
+        batteries = getattr(self, "_phase_assignment_batteries", [])
+        index = getattr(self, "_phase_assignment_index", 0)
+        if index >= len(batteries):
+            self.config_data["batteries"] = batteries
+            return await self._save_and_finish()
+
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            phase = user_input.get(CONF_BATTERY_PHASE)
+            if not _phase_assignment_is_valid(phase):
+                errors[CONF_BATTERY_PHASE] = "battery_phase_required"
+            else:
+                batteries[index][CONF_BATTERY_PHASE] = phase
+                self._phase_assignment_index = index + 1
+                return await self.async_step_phase_assignments()
+
+        current = batteries[index]
+        phase_field, phase_selector = _battery_phase_schema(
+            current.get(CONF_BATTERY_PHASE) if _phase_assignment_is_valid(current.get(CONF_BATTERY_PHASE)) else PHASE_L1
+        )
+        return self.async_show_form(
+            step_id="phase_assignments",
+            data_schema=vol.Schema({phase_field: phase_selector}),
+            errors=errors or None,
+            description_placeholders={
+                "battery_num": str(index + 1),
+                "battery_name": str(current.get(CONF_NAME, f"Battery {index + 1}")),
+            },
         )
 
     async def async_step_batteries(self, user_input: dict[str, Any] | None = None) -> FlowResult:
@@ -2836,6 +3117,7 @@ class OptionsFlowHandler(OptionsFlow):
 
     async def async_step_battery_limits(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """Configure power and SOC limits for the current battery."""
+        errors: dict[str, str] = {}
         try:
             battery_num = self.battery_index + 1
             brand = self._current_battery_data.get("brand", "marstek")
@@ -2866,6 +3148,15 @@ class OptionsFlowHandler(OptionsFlow):
             current_batteries = self.config_entry.data.get("batteries", [])
 
             if user_input is not None:
+                phase = user_input.get(CONF_BATTERY_PHASE, "")
+                if self.config_entry.data.get(
+                    CONF_THREE_PHASE_ENABLED,
+                    self.config_data.get(CONF_THREE_PHASE_ENABLED, DEFAULT_THREE_PHASE_ENABLED),
+                ) and not _phase_assignment_is_valid(phase):
+                    errors[CONF_BATTERY_PHASE] = "battery_phase_required"
+                    user_input = None
+
+            if user_input is not None:
                 # Start from existing battery config to preserve persisted keys not in this form.
                 if self.battery_index < len(current_batteries):
                     merged = dict(current_batteries[self.battery_index])
@@ -2881,6 +3172,11 @@ class OptionsFlowHandler(OptionsFlow):
                     merged["max_discharge_power"] = int(user_input["max_discharge_power"])
                 merged["max_soc"] = int(user_input["max_soc"])
                 merged["min_soc"] = int(user_input["min_soc"])
+                if self.config_entry.data.get(
+                    CONF_THREE_PHASE_ENABLED,
+                    self.config_data.get(CONF_THREE_PHASE_ENABLED, DEFAULT_THREE_PHASE_ENABLED),
+                ):
+                    merged[CONF_BATTERY_PHASE] = phase
                 _seed_software_power_limits(merged, brand)
                 # Hysteresis is mandatory; floor the percent against SOC drift.
                 merged["enable_charge_hysteresis"] = True
@@ -2921,6 +3217,7 @@ class OptionsFlowHandler(OptionsFlow):
                         DEFAULT_FULL_CHARGE_VOLTAGE_TAPER_ENABLED,
                     ),
                     "battery_capacity_kwh": current_battery.get("battery_capacity_kwh", 2.24 if brand == "hoymiles" else 0.0),
+                    CONF_BATTERY_PHASE: current_battery.get(CONF_BATTERY_PHASE, PHASE_L1),
                 }
             else:
                 defaults = {
@@ -2944,6 +3241,7 @@ class OptionsFlowHandler(OptionsFlow):
                     "backup_offgrid_threshold": 50,
                     CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED: DEFAULT_FULL_CHARGE_VOLTAGE_TAPER_ENABLED,
                     "battery_capacity_kwh": 2.24 if brand == "hoymiles" else 0.0,
+                    CONF_BATTERY_PHASE: PHASE_L1,
                 }
         except Exception as e:
             _LOGGER.error("Error in options flow battery_limits step: %s", e, exc_info=True)
@@ -2983,9 +3281,18 @@ class OptionsFlowHandler(OptionsFlow):
             _schema[vol.Optional("battery_capacity_kwh", default=defaults["battery_capacity_kwh"])] = NumberSelector(
                 NumberSelectorConfig(min=0.01 if brand == "hoymiles" else 0, max=100, step=0.01, unit_of_measurement="kWh", mode=NumberSelectorMode.BOX)
             )
+        if self.config_entry.data.get(
+            CONF_THREE_PHASE_ENABLED,
+            self.config_data.get(CONF_THREE_PHASE_ENABLED, DEFAULT_THREE_PHASE_ENABLED),
+        ):
+            phase_field, phase_selector = _battery_phase_schema(
+                defaults.get(CONF_BATTERY_PHASE, PHASE_L1)
+            )
+            _schema[phase_field] = phase_selector
         return self.async_show_form(
             step_id="battery_limits",
             data_schema=vol.Schema(_schema),
+            errors=errors or None,
             description_placeholders={"battery_num": str(battery_num)},
         )
 
