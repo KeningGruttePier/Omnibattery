@@ -3,16 +3,7 @@
 ## [Unreleased]
 
 ### Added
-- **Optional three-phase power protection**: configure L1/L2/L3 grid sensors,
-  positive symmetric per-phase limits and each battery's physical phase. Automatic
-  PD, direct tracking, predictive charging, time-slot PD and rebalances now share a
-  conservative 5 W-rounded safety envelope that preserves the normal initial
-  selection and moves only phase-capped overflow to healthy phases with spare
-  capacity; invalid or stale phase telemetry holds only that phase at 0 W, and
-  healthy phases continue. Grid 0 remains the global
-  consumption sensor. Manual register/time-slot commands can bypass the envelope
-  and are surfaced through Repairs; leave margin for latency, external loads,
-  voltage, power factor and transient peaks.
+- **Optional three-phase power protection**: configure L1/L2/L3 grid sensors, positive symmetric per-phase limits and each battery's physical phase. Automatic PD, direct tracking, predictive charging, time-slot PD and rebalances now share a conservative 5 W-rounded safety envelope that preserves the normal initial selection and moves only phase-capped overflow to healthy phases with spare capacity; invalid or stale phase telemetry holds only that phase at 0 W, and healthy phases continue. Grid 0 remains the global consumption sensor. Manual register/time-slot commands can bypass the envelope and are surfaced through Repairs; leave margin for latency, external loads, voltage, power factor and transient peaks.
 - **Negative-price opportunistic charging for Dynamic Pricing**: a new opt-in import-price calendar charges each battery toward its configured maximum SOC when the predictive balance has no deficit and the normalized import price is negative. Hourly and 15-minute prices select the most-negative intervals first; typed `deficit`, `negative_price`, and `combined` slots keep normal deficit targets isolated from opportunity-only energy. Runtime switch, diagnostics, panel controls, translations, and English/Spanish documentation are included. Smart Pre-discharge retains solar headroom priority, and all existing charge limits, ownership and safety blockers remain authoritative.
 - **Smart Pre-discharge / Anti-curtailment for Dynamic Pricing**: an opt-in planner detects forecast PV surplus during configurable negative-injection price windows, creates headroom using the existing PD controller, blocks discharge while the protected window is active, and exposes live controls and diagnostics. Existing installations remain disabled by default.
 
