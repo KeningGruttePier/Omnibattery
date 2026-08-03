@@ -127,7 +127,7 @@ def test_sensor_normalization_handles_kw_inversion_and_staleness():
     assert stale.reason == "sensor_stale"
 
 
-def test_allocation_rounds_down_to_phase_budget_and_uses_healthy_phase():
+def test_allocation_caps_phase_and_moves_overflow_to_healthy_phase():
     now = datetime.now(timezone.utc)
     b1 = FakeCoordinator("L1 battery", PHASE_L1)
     b2 = FakeCoordinator("L2 battery", PHASE_L2)
@@ -140,19 +140,99 @@ def test_allocation_rounds_down_to_phase_budget_and_uses_healthy_phase():
         [b1, b2],
     )
 
-    allocation = limiter.allocate(4000, [b1, b2], [b1, b2], True)
+    allocation = limiter.limit_allocation({b1: 2000, b2: 2000}, True, [b1, b2])
 
     assert allocation[b1] == 750
     assert allocation[b2] == 3250
     assert sum(allocation.values()) == 4000
 
     # If L1 telemetry is unavailable, its battery is held at zero while L2
-    # continues up to its own safe phase budget.
+    # accepts the rejected portion up to its own safe capacity.
     limiter.hass.states._states["sensor.l1"] = _state("unavailable", now=now)
     limiter.begin_cycle()
-    allocation = limiter.allocate(4000, [b1, b2], [b1, b2], True)
+    allocation = limiter.limit_allocation({b1: 2000, b2: 2000}, True, [b1, b2])
     assert allocation[b1] == 0
     assert allocation[b2] == 4000
+
+
+def test_allocation_never_adds_an_unselected_battery():
+    now = datetime.now(timezone.utc)
+    selected = FakeCoordinator("Selected", PHASE_L1)
+    unselected = FakeCoordinator("Unselected", PHASE_L1)
+    limiter = _limiter(
+        {
+            "sensor.l1": _state(0, now=now),
+            "sensor.l2": _state(0, now=now),
+            "sensor.l3": _state(0, now=now),
+        },
+        [selected, unselected],
+    )
+
+    allocation = limiter.limit_allocation(
+        {selected: 100},
+        True,
+        [selected, unselected],
+    )
+
+    assert allocation[selected] == 100
+    assert allocation[unselected] == 0
+
+
+def test_overflow_activates_fallback_only_after_selected_phase_is_capped():
+    now = datetime.now(timezone.utc)
+    selected = FakeCoordinator("Selected L1", PHASE_L1)
+    fallback = FakeCoordinator("Fallback L2", PHASE_L2)
+    limiter = _limiter(
+        {
+            "sensor.l1": _state(5000, now=now),
+            "sensor.l2": _state(0, now=now),
+            "sensor.l3": _state(0, now=now),
+        },
+        [selected, fallback],
+    )
+
+    allocation = limiter.limit_allocation(
+        {selected: 2000},
+        True,
+        [selected, fallback],
+    )
+
+    assert allocation == {selected: 750, fallback: 1250}
+
+
+def test_allocation_preserves_normal_proportional_split_below_phase_cap():
+    now = datetime.now(timezone.utc)
+    b1 = FakeCoordinator("First", PHASE_L1)
+    b2 = FakeCoordinator("Second", PHASE_L1)
+    limiter = _limiter(
+        {
+            "sensor.l1": _state(0, now=now),
+            "sensor.l2": _state(0, now=now),
+            "sensor.l3": _state(0, now=now),
+        },
+        [b1, b2],
+    )
+
+    assert limiter.limit_allocation({b1: 750, b2: 250}, True, [b1, b2]) == {
+        b1: 750,
+        b2: 250,
+    }
+
+
+def test_degraded_phase_is_detected_without_a_new_sensor_event():
+    now = datetime.now(timezone.utc)
+    battery = FakeCoordinator("L1 battery", PHASE_L1)
+    limiter = _limiter(
+        {
+            "sensor.l1": _state(0, now=now, age_s=66),
+            "sensor.l2": _state(0, now=now),
+            "sensor.l3": _state(0, now=now),
+        },
+        [battery],
+    )
+
+    assert limiter.has_degraded_phase() is True
+    assert limiter.limit_allocation({battery: 500}, True) == {battery: 0}
 
 
 def test_direct_command_guard_blocks_unassigned_and_caps_valid_phase():

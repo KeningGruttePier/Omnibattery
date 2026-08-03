@@ -3374,10 +3374,7 @@ class ChargeDischargeController:
                     total_allocated, len([c for c, p in power_allocation.items() if p > 0]),
                     {c.name: p for c, p in power_allocation.items()})
 
-        # Write every allocated battery.  The phase safety allocator may add a
-        # healthy fallback battery that was not in the normal load-sharing
-        # selection, so iterating only selected_batteries would silently drop
-        # the safe allocation.
+        # Write every battery retained by the phase-capped distribution plan.
         allocated_batteries = {
             coordinator
             for coordinator, power in power_allocation.items()
@@ -4493,8 +4490,14 @@ class ChargeDischargeController:
         if limiter is None or not limiter.enabled or not hasattr(self, "_power_distribution"):
             return
 
+        requested_by_direction: dict[bool, dict[Any, float]] = {
+            True: {},
+            False: {},
+        }
+        # Capture both directions before issuing any writes. Active Balance can
+        # own one battery while the main controller uses another; writing the
+        # first direction must not erase the second direction's live intent.
         for is_charging in (True, False):
-            requested: dict[Any, float] = {}
             for coordinator in self.coordinators:
                 charge = getattr(coordinator, "commanded_charge_power", 0) or 0
                 discharge = getattr(coordinator, "commanded_discharge_power", 0) or 0
@@ -4506,24 +4509,33 @@ class ChargeDischargeController:
                     ):
                         value = abs(delivered)
                 if value > 0:
-                    requested[coordinator] = float(value)
+                    requested_by_direction[is_charging][coordinator] = float(value)
+
+        if not any(requested_by_direction.values()):
+            self._phase_safety_pending = False
+            return
+
+        allocations: dict[bool, dict[Any, float]] = {True: {}, False: {}}
+        for is_charging, requested in requested_by_direction.items():
             if not requested:
                 continue
-
-            allocation = self._power_distribution._distribute_power_by_limits(
+            allocations[is_charging] = self._power_distribution._distribute_power_by_limits(
                 sum(requested.values()),
                 list(requested),
                 is_charging,
             )
-            for coordinator in self.coordinators:
-                value = allocation.get(coordinator, 0)
-                if is_charging:
-                    await self._set_battery_power(coordinator, value, 0)
-                else:
-                    await self._set_battery_power(coordinator, 0, value)
 
-            assigned = sum(allocation.values())
-            self.previous_power = assigned if is_charging else -assigned
+        for coordinator in self.coordinators:
+            await self._set_battery_power(
+                coordinator,
+                allocations[True].get(coordinator, 0),
+                allocations[False].get(coordinator, 0),
+            )
+
+        self.previous_power = (
+            sum(allocations[True].values())
+            - sum(allocations[False].values())
+        )
         self._phase_safety_pending = False
 
     def _compute_no_pd_new_power(self, error):
@@ -5291,6 +5303,19 @@ class ChargeDischargeController:
         # Per-battery scheduled active balance mode has priority over global
         # modes. It owns only the selected battery; PD can still use the rest.
         await self._handle_active_balance_mode()
+
+        # Phase staleness is caused by the passage of time, so it cannot depend
+        # on receiving another phase event. Check it on every safety cycle and
+        # enforce the current envelope before predictive/max-SOC early returns
+        # can preserve an old command while Grid 0 is unavailable.
+        if (
+            self._phase_power_limiter.enabled
+            and (
+                self._phase_safety_pending
+                or self._phase_power_limiter.has_degraded_phase()
+            )
+        ):
+            await self._apply_phase_safety_review()
 
         if await self._max_soc_mgr.handle_measurement():
             self.previous_power = 0

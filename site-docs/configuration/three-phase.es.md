@@ -35,9 +35,11 @@ presupuesto_descarga = max(0, límite + lectura_red - potencia_baterías_de_la_f
 ```
 
 La potencia de batería usa la convención del controlador (`+` carga, `−`
-descarga). El reparto se redondea hacia abajo en pasos de 5 W, respeta el límite
-individual de cada batería y puede utilizar una batería sana de otra fase si la
-fase seleccionada está llena.
+descarga). Primero se ejecutan la selección y el reparto proporcional normales.
+El resultado se redondea después hacia abajo en pasos de 5 W y se limita de forma
+independiente por fase. Solo la potencia rechazada por ese límite se mueve a
+baterías de fases sanas con capacidad disponible, siguiendo la prioridad normal
+por SOC y energía.
 
 La envolvente se aplica al PD normal y al seguimiento directo, a la carga
 predictiva desde red, al PD de franjas automáticas, a los reequilibrios y al último

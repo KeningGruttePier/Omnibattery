@@ -51,7 +51,7 @@ def _coord(name, limit, *, soc=50, charge_energy=0.0, discharge_energy=0.0):
 
 def _build(coords, *, active_charge=None, active_discharge=None,
            charge_holds=None, discharge_holds=None, previous_power=0,
-           available=None, set_calls=None):
+           available=None, set_calls=None, phase_limiter=None):
     """Build a PowerDistribution with a stub controller exposing only the
     collaborators/attrs the cluster reads.
 
@@ -80,6 +80,7 @@ def _build(coords, *, active_charge=None, active_discharge=None,
         ),
         _log_power_command_plan=lambda **k: None,
         _is_active_balance_mode_running=lambda coordinator: False,
+        _phase_power_limiter=phase_limiter,
     )
     if set_calls is not None:
         async def _set(coordinator, charge, discharge):
@@ -150,6 +151,24 @@ def test_distribute_charge_path_is_identity_on_limit():
     a, b = _coord("a", 1000), _coord("b", 1000)
     c = _build([a, b])
     assert c._distribute_power_by_limits(1000, [a, b], is_charging=True) == {a: 500, b: 500}
+
+
+def test_phase_limit_receives_only_the_normal_selected_allocation():
+    a, b = _coord("selected", 1000), _coord("unselected", 1000)
+    seen = []
+
+    class _Limiter:
+        enabled = True
+
+        @staticmethod
+        def limit_allocation(allocation, is_charging, available_batteries):
+            seen.append((dict(allocation), is_charging, list(available_batteries)))
+            return allocation
+
+    c = _build([a, b], phase_limiter=_Limiter())
+
+    assert c._distribute_power_by_limits(100, [a], is_charging=True) == {a: 100}
+    assert seen == [({a: 100}, True, [a, b])]
 
 
 # ----------------------------------------------------------------------

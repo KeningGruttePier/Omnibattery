@@ -11,7 +11,7 @@ import logging
 import math
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Iterable
+from typing import Any
 
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.util import dt as dt_util
@@ -307,6 +307,15 @@ class PhasePowerLimiter:
         """Refresh and return all phase diagnostics."""
         return {phase: self.phase_snapshot(phase) for phase in PHASE_VALUES}
 
+    def has_degraded_phase(self) -> bool:
+        """Return whether any configured phase currently fails safe."""
+        if not self.enabled:
+            return False
+        return any(
+            snapshot["degraded"]
+            for snapshot in self.all_snapshots().values()
+        )
+
     def _individual_limit(self, coordinator: Any, is_charging: bool) -> float:
         if self.controller is not None:
             getter = getattr(self.controller, "_battery_power_limit", None)
@@ -321,68 +330,34 @@ class PhasePowerLimiter:
         except (TypeError, ValueError):
             return 0.0
 
-    def _phase_capacity(
-        self,
-        phase: str,
-        batteries: Iterable[Any],
-        is_charging: bool,
-    ) -> int:
-        snapshot = self.phase_snapshot(phase)
-        if snapshot["degraded"]:
-            return 0
-        individual = sum(
-            _round_down(self._individual_limit(coordinator, is_charging), self.rounding_w)
-            for coordinator in batteries
-        )
-        budget = (
-            snapshot["charge_budget_w"]
-            if is_charging
-            else snapshot["discharge_budget_w"]
-        )
-        return min(_round_down(individual, self.rounding_w), int(budget))
-
-    def _ordered_unique(
-        self,
-        selected_batteries: Iterable[Any],
-        available_batteries: Iterable[Any],
-    ) -> list[Any]:
-        result: list[Any] = []
-        for coordinator in [*selected_batteries, *available_batteries]:
-            if coordinator not in result:
-                result.append(coordinator)
-        return result
-
-    def _allocate_group(
+    def _cap_group_allocation(
         self,
         total: int,
-        batteries: list[Any],
-        is_charging: bool,
+        requested: dict[Any, int],
     ) -> dict[Any, int]:
-        """Allocate in proportion to individual caps, using only round-down."""
+        """Scale an existing plan down without changing its participating set."""
         limits = {
-            coordinator: _round_down(
-                self._individual_limit(coordinator, is_charging), self.rounding_w
-            )
-            for coordinator in batteries
+            coordinator: _round_down(value, self.rounding_w)
+            for coordinator, value in requested.items()
         }
         capacity = sum(limits.values())
         total = min(max(0, int(total)), capacity)
         if total <= 0 or capacity <= 0:
-            return {coordinator: 0 for coordinator in batteries}
+            return {coordinator: 0 for coordinator in requested}
 
         allocation = {
             coordinator: _round_down(
                 total * limits[coordinator] / capacity,
                 self.rounding_w,
             )
-            for coordinator in batteries
+            for coordinator in requested
         }
         remaining = total - sum(allocation.values())
-        # Fill whole 5 W increments in selection order.  This preserves the
-        # normal SOC ordering while keeping the aggregate below the budget.
+        # Fill whole increments in the original plan order without allowing any
+        # battery to exceed the power chosen by the normal distributor.
         while remaining >= self.rounding_w:
             changed = False
-            for coordinator in batteries:
+            for coordinator in requested:
                 room = limits[coordinator] - allocation[coordinator]
                 if room >= self.rounding_w and remaining >= self.rounding_w:
                     allocation[coordinator] += self.rounding_w
@@ -392,86 +367,117 @@ class PhasePowerLimiter:
                 break
         return allocation
 
-    def allocate(
+    def limit_allocation(
         self,
-        total_power: float,
-        selected_batteries: list[Any],
-        available_batteries: list[Any],
+        requested_allocation: dict[Any, float],
         is_charging: bool,
+        available_batteries: list[Any] | None = None,
     ) -> dict[Any, int]:
-        """Allocate a request across safe phase and individual capacities."""
-        ordered = self._ordered_unique(selected_batteries, available_batteries)
-        allocation = {coordinator: 0 for coordinator in ordered}
+        """Cap the normal plan, then place rejected power on phases with room."""
+        allocation = {coordinator: 0 for coordinator in requested_allocation}
         if not self.enabled:
-            return allocation
+            return {
+                coordinator: max(0, int(power))
+                for coordinator, power in requested_allocation.items()
+            }
 
-        valid = [
-            coordinator
-            for coordinator in ordered
-            if self._battery_phase(coordinator) in PHASE_VALUES
-        ]
-        phase_order: list[str] = []
-        for coordinator in valid:
-            phase = self._battery_phase(coordinator)
-            if phase not in phase_order:
-                phase_order.append(phase)
+        for coordinator in requested_allocation:
+            if self._battery_phase(coordinator) not in PHASE_VALUES:
+                self._set_degraded_reason(coordinator, "battery_phase_missing")
 
-        phase_batteries = {
-            phase: [
-                coordinator for coordinator in valid if self._battery_phase(coordinator) == phase
-            ]
-            for phase in phase_order
-        }
-        phase_capacities = {
-            phase: self._phase_capacity(
-                phase, phase_batteries[phase], is_charging
+        for phase in PHASE_VALUES:
+            phase_request = {
+                coordinator: max(0, int(power))
+                for coordinator, power in requested_allocation.items()
+                if self._battery_phase(coordinator) == phase
+            }
+            if not phase_request:
+                continue
+
+            snapshot = self.phase_snapshot(phase)
+            requested_total = sum(phase_request.values())
+            budget = 0 if snapshot["degraded"] else int(
+                snapshot[
+                    "charge_budget_w" if is_charging else "discharge_budget_w"
+                ]
             )
-            for phase in phase_order
-        }
-        requested = max(0.0, float(total_power))
-        if self.controller is not None:
-            clamp = getattr(self.controller, "_clamp_to_system_capacity", None)
-            if clamp is not None:
-                try:
-                    requested = float(
-                        clamp(requested, ordered, is_charging)
-                    )
-                except (TypeError, ValueError):
-                    pass
-        remaining = min(_round_down(requested, self.rounding_w), sum(phase_capacities.values()))
-
-        # The selector's first phase has priority.  If its safety budget is
-        # exhausted, the remaining request naturally falls through to other
-        # healthy phases; same-phase batteries are added before another phase.
-        for phase in phase_order:
-            if remaining <= 0:
-                break
-            phase_remaining_before = remaining
-            phase_request = min(remaining, phase_capacities[phase])
-            group_alloc = self._allocate_group(
+            group_alloc = self._cap_group_allocation(
+                min(requested_total, budget),
                 phase_request,
-                phase_batteries[phase],
-                is_charging,
             )
             for coordinator, value in group_alloc.items():
                 allocation[coordinator] = value
             assigned = sum(group_alloc.values())
-            snapshot = self._snapshots[phase]
-            snapshot["requested_power_w"] = phase_request
+            snapshot["requested_power_w"] = requested_total
             snapshot["assigned_power_w"] = (
                 assigned if is_charging else -assigned
             )
-            if phase_remaining_before > phase_capacities[phase]:
-                self._log_limit(snapshot, phase_remaining_before, assigned)
-            remaining -= assigned
+            if assigned < requested_total:
+                self._log_limit(snapshot, requested_total, assigned)
 
-        # A missing/invalid phase is deliberately represented as zero here.  The
-        # next guard in _set_battery_power covers automatic routes that bypass
-        # this normal distribution path.
-        self._planned = {
+        # Restore the normal plan's aggregate request using only spare capacity
+        # on healthy phases. Existing selected batteries keep priority; additional
+        # batteries are activated only when a capped phase left real overflow.
+        remaining = _round_down(
+            sum(max(0, int(power)) for power in requested_allocation.values())
+            - sum(allocation.values()),
+            self.rounding_w,
+        )
+        candidates: list[Any] = list(requested_allocation)
+        for coordinator in available_batteries or []:
+            if coordinator not in candidates:
+                candidates.append(coordinator)
+                allocation[coordinator] = 0
+
+        for coordinator in candidates:
+            if remaining < self.rounding_w:
+                break
+            phase = self._battery_phase(coordinator)
+            if phase not in PHASE_VALUES:
+                continue
+            snapshot = self._snapshots.get(phase) or self.phase_snapshot(phase)
+            if snapshot["degraded"]:
+                continue
+            budget = int(
+                snapshot[
+                    "charge_budget_w" if is_charging else "discharge_budget_w"
+                ]
+            )
+            assigned_on_phase = sum(
+                power
+                for battery, power in allocation.items()
+                if self._battery_phase(battery) == phase
+            )
+            phase_room = _round_down(
+                budget - assigned_on_phase,
+                self.rounding_w,
+            )
+            battery_room = _round_down(
+                self._individual_limit(coordinator, is_charging)
+                - allocation[coordinator],
+                self.rounding_w,
+            )
+            extra = min(remaining, phase_room, battery_room)
+            if extra <= 0:
+                continue
+            allocation[coordinator] += extra
+            remaining -= extra
+
+        # Refresh final per-phase assigned values after overflow placement.
+        for phase, snapshot in self._snapshots.items():
+            if phase not in PHASE_VALUES:
+                continue
+            assigned = sum(
+                power
+                for coordinator, power in allocation.items()
+                if self._battery_phase(coordinator) == phase
+            )
+            snapshot["assigned_power_w"] = assigned if is_charging else -assigned
+
+        self._planned.update({
             coordinator: (is_charging, value)
             for coordinator, value in allocation.items()
-        }
+        })
         active = [coordinator for coordinator, value in allocation.items() if value > 0]
         if self.controller is not None:
             if is_charging:

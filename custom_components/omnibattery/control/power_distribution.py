@@ -59,6 +59,40 @@ class PowerDistribution:
         """Round value to nearest 5W granularity."""
         return round(value / 5) * 5
 
+    def _ordered_batteries_for_operation(
+        self,
+        available_batteries: list,
+        is_charging: bool,
+    ) -> list:
+        """Return batteries in the selector's normal SOC/energy priority order."""
+        previous_active = (
+            self._controller._active_charge_batteries
+            if is_charging
+            else self._controller._active_discharge_batteries
+        )
+
+        def sort_key(coordinator):
+            soc = coordinator.data.get("battery_soc", 50) if coordinator.data else 50
+            is_active = coordinator in previous_active
+            if is_charging:
+                effective_soc = soc - (5.0 if is_active else 0)
+                energy = (
+                    coordinator.data.get("total_charging_energy", 0)
+                    if coordinator.data
+                    else 0
+                )
+                return (effective_soc, energy - (2.5 if is_active else 0))
+
+            effective_soc = soc + (5.0 if is_active else 0)
+            energy = (
+                coordinator.data.get("total_discharging_energy", 0)
+                if coordinator.data
+                else 0
+            )
+            return (-effective_soc, energy - (2.5 if is_active else 0))
+
+        return sorted(available_batteries, key=sort_key)
+
     def _distribute_power_by_limits(self, total_power: float, available_batteries: list, is_charging: bool) -> dict:
         """Distribute power among batteries proportionally to their individual limits.
 
@@ -66,25 +100,6 @@ class PowerDistribution:
         """
         if not available_batteries:
             return {}
-
-        # Three-phase protection is an aggregate envelope, not another
-        # per-battery cap.  Give it the whole healthy pool so a phase selected by
-        # SOC can hand its unaccepted remainder to batteries on another phase.
-        phase_limiter = getattr(self._controller, "_phase_power_limiter", None)
-        if phase_limiter is not None and phase_limiter.enabled:
-            all_available = list(available_batteries)
-            get_available = getattr(self._controller, "_get_available_batteries", None)
-            if get_available is not None:
-                try:
-                    all_available = list(get_available(is_charging))
-                except TypeError:
-                    all_available = list(get_available(is_charging, True))
-            return phase_limiter.allocate(
-                total_power,
-                list(available_batteries),
-                all_available,
-                is_charging,
-            )
 
         # Get each battery's individual limit
         limits = {}
@@ -132,6 +147,24 @@ class PowerDistribution:
         for c in available_batteries:
             if c not in allocation:
                 allocation[c] = 0
+
+        # Preserve the normal selector and proportional distribution exactly.
+        # Three-phase protection is a final aggregate cap on that plan: it must
+        # never activate an unselected battery or move rejected power elsewhere.
+        phase_limiter = getattr(self._controller, "_phase_power_limiter", None)
+        if phase_limiter is not None and phase_limiter.enabled:
+            all_available = list(available_batteries)
+            get_available = getattr(self._controller, "_get_available_batteries", None)
+            if get_available is not None:
+                try:
+                    all_available = list(get_available(is_charging))
+                except TypeError:
+                    all_available = list(get_available(is_charging, True))
+            return phase_limiter.limit_allocation(
+                allocation,
+                is_charging,
+                self._ordered_batteries_for_operation(all_available, is_charging),
+            )
 
         return allocation
 
@@ -198,9 +231,6 @@ class PowerDistribution:
             else MULTI_BATTERY_DISCHARGE_CROSSOVER_W
         )
         activation_threshold = MULTI_BATTERY_MIN_ACTIVATION  # updated per step in loop
-        SOC_HYSTERESIS = 5.0
-        ENERGY_HYSTERESIS = 2.5  # kWh advantage for active battery in tiebreaker
-
         previous_active = (
             self._controller._active_charge_batteries if is_charging
             else self._controller._active_discharge_batteries
@@ -211,26 +241,10 @@ class PowerDistribution:
         )
         now = time.monotonic()
 
-        def sort_key(coordinator):
-            soc = coordinator.data.get("battery_soc", 50) if coordinator.data else 50
-            is_active = coordinator in previous_active
-
-            if is_charging:
-                # Lowest SOC first; active batteries get -5% to stay selected
-                effective_soc = soc - (SOC_HYSTERESIS if is_active else 0)
-                energy = coordinator.data.get("total_charging_energy", 0) if coordinator.data else 0
-                # Active battery gets -2.5 kWh advantage (lower = selected first)
-                effective_energy = energy - (ENERGY_HYSTERESIS if is_active else 0)
-                return (effective_soc, effective_energy)
-            else:
-                # Highest SOC first; active batteries get +5% to stay selected
-                effective_soc = soc + (SOC_HYSTERESIS if is_active else 0)
-                energy = coordinator.data.get("total_discharging_energy", 0) if coordinator.data else 0
-                # Active battery gets -2.5 kWh advantage (lower = selected first)
-                effective_energy = energy - (ENERGY_HYSTERESIS if is_active else 0)
-                return (-effective_soc, effective_energy)
-
-        sorted_batteries = sorted(available_batteries, key=sort_key)
+        sorted_batteries = self._ordered_batteries_for_operation(
+            available_batteries,
+            is_charging,
+        )
 
         # Select minimum batteries needed
         selected = []

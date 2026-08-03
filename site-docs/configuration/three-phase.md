@@ -35,8 +35,10 @@ discharge_budget = max(0, limit + grid_reading - battery_power_on_phase)
 ```
 
 Battery power uses the controller convention (`+` charge, `−` discharge). The
-allocation is rounded down in 5 W increments, respects each battery's own limit,
-and may use a healthy battery on another phase if the selected phase is full.
+normal load-sharing selection and proportional allocation run first. The result
+is then rounded down in 5 W increments and capped independently on each phase.
+Only power rejected by that cap is moved to batteries on healthy phases with
+remaining capacity, following the normal SOC/energy priority order.
 
 The envelope is applied to normal PD and direct-tracking control, predictive grid
 charging, automatic time-slot PD, active-balance rebalances and the final common
