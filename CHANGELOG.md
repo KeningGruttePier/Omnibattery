@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.3.0b1] - 2026-08-03
 
 ### Added
 - **Optional three-phase power protection**: configure L1/L2/L3 grid sensors, positive symmetric per-phase limits and each battery's physical phase. Automatic PD, direct tracking, predictive charging, time-slot PD and rebalances now share a conservative 5 W-rounded safety envelope that preserves the normal initial selection and moves only phase-capped overflow to healthy phases with spare capacity; invalid or stale phase telemetry holds only that phase at 0 W, and healthy phases continue. Grid 0 remains the global consumption sensor. Manual register/time-slot commands can bypass the envelope and are surfaced through Repairs; leave margin for latency, external loads, voltage, power factor and transient peaks.
