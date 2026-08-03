@@ -518,14 +518,13 @@ const K = {
   capacityActive: "capacity_protection_active",
   weeklyFullCharge: "weekly_full_charge",
   chargeDelay: "charge_delay_status",
-  configSummary: "configuration_summary", // hidden; holds excluded-device config
 };
 
 const MPPT_KEYS = ["mppt1_power", "mppt2_power", "mppt3_power", "mppt4_power"];
 
 // Diagnostic rows shown in the SOC card's second section (2-column grid).
-// One per diagnostic-category entity on the system device, except the hidden
-// configuration_summary (support-only) and balance_neto (own dedicated card).
+// One per diagnostic-category entity on the system device, except balance_neto
+// (own dedicated card).
 // Values are localized at render time via hass.formatEntityState.
 const DIAG_ROWS = [
   { key: K.integration, lk: "diagIntegration" },
@@ -1373,29 +1372,26 @@ class MarstekVenusPanel extends HTMLElement {
     return u === "kw" ? n * 1000 : n;
   }
   /** Sum live power (W) of every enabled excluded device. The per-device power
-   *  sensors are configured in the (hidden) configuration_summary sensor's
-   *  attributes. Returns null when no excluded device exposes a power sensor
-   *  (e.g. none configured, or only EV-no-telemetry entries). */
+   *  sensors and consumption-inclusion flags come from each device's Enabled
+   *  switch attributes. Returns null when no excluded device exposes a power
+   *  sensor (e.g. none configured, or only EV-no-telemetry entries). */
   _excludedPowerW() {
     const hass = this._hass;
     const domain = this._domain();
-    // configuration_summary is hidden, so _index() skips it — find it directly.
-    let cfgId = null;
-    for (const e of Object.values(hass.entities || {})) {
-      if (e.platform === domain && e.translation_key === K.configSummary) {
-        cfgId = e.entity_id;
-        break;
-      }
-    }
-    const cfg = cfgId ? hass.states[cfgId] : null;
-    if (!cfg) return null;
-    const a = cfg.attributes || {};
-    const n = Number(a.num_excluded_devices) || 0;
+    // Read these entries directly instead of through _index(): a user may hide
+    // the control switch, but the flow diagram still needs the live power
+    // sensor.
+    const devices = Object.values(hass.entities || {})
+      .filter((e) => e.platform === domain && e.translation_key === "excluded_device_enabled")
+      .map((e) => hass.states[e.entity_id])
+      .filter(Boolean);
+    if (!devices.length) return null;
     let total = null;
     let included = 0; // portion the home sensor already counts (subtract from Home)
-    for (let i = 1; i <= n; i++) {
-      if (a[`excluded_device_${i}_enabled`] === false) continue;
-      const sid = a[`excluded_device_${i}_sensor`];
+    for (const device of devices) {
+      if (device.state !== "on") continue;
+      const a = device.attributes || {};
+      const sid = a.power_sensor;
       if (!sid) continue; // EV-no-telemetry has no power sensor
       const w = this._watts(hass.states[sid]);
       if (w == null) continue;
@@ -1407,7 +1403,7 @@ class MarstekVenusPanel extends HTMLElement {
       // the device's full demand, so Home must be total − D for the flow to
       // balance. The exclusion % only changes the supply mix (battery covers
       // more, shown as a larger Battery flow) — not the demand-node magnitudes.
-      if (a[`excluded_device_${i}_included_in_consumption`] !== false) included += w;
+      if (a.included_in_consumption !== false) included += w;
     }
     return total == null ? null : { total, included };
   }

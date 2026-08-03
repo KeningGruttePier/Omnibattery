@@ -1322,9 +1322,6 @@
       "non_responsive_batteries": {
         "name": "Baterías Sin Respuesta"
       },
-      "configuration_summary": {
-        "name": "Resumen de Configuración"
-      },
       "integration_status": {
         "name": "Estado de la Integración",
         "state": {

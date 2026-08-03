@@ -1322,9 +1322,6 @@
       "non_responsive_batteries": {
         "name": "Bateries Sense Resposta"
       },
-      "configuration_summary": {
-        "name": "Resum de Configuració"
-      },
       "integration_status": {
         "name": "Estat de la Integració",
         "state": {

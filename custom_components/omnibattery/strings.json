@@ -1304,9 +1304,6 @@
       "non_responsive_batteries": {
         "name": "Non-Responsive Batteries"
       },
-      "configuration_summary": {
-        "name": "Configuration Summary"
-      },
       "integration_status": {
         "name": "Integration Status",
         "state": {

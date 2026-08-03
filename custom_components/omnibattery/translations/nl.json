@@ -1322,9 +1322,6 @@
       "non_responsive_batteries": {
         "name": "Niet-reagerende Batterijen"
       },
-      "configuration_summary": {
-        "name": "Configuratieoverzicht"
-      },
       "integration_status": {
         "name": "Integratiestatus",
         "state": {

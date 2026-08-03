@@ -1322,9 +1322,6 @@
       "non_responsive_batteries": {
         "name": "Batteries Non Réactives"
       },
-      "configuration_summary": {
-        "name": "Résumé de Configuration"
-      },
       "integration_status": {
         "name": "État de l'Intégration",
         "state": {

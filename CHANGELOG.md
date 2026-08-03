@@ -7,6 +7,7 @@
 - **Smart Pre-discharge / Anti-curtailment for Dynamic Pricing**: an opt-in planner detects forecast PV surplus during configurable negative-injection price windows, creates headroom using the existing PD controller, blocks discharge while the protected window is active, and exposes live controls and diagnostics. Existing installations remain disabled by default.
 
 ### Changed
+- **Configuration Summary sensor removed**: the hidden support entity was redundant with Home Assistant's Download diagnostics action. Support documentation now requests the redacted diagnostics JSON, and the dashboard reads excluded-device telemetry from the corresponding device switches.
 - **Peak shaving limit extended to 20 kW**: the runtime slider now accepts values from `500 W` to `20000 W` in `100 W` steps.
 
 ### Fixed
