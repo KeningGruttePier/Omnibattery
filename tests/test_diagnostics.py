@@ -112,6 +112,7 @@ async def test_diagnostics_dump_structure_and_redaction():
             "username": "SESSY1234",
             "password": "secret",
             "consumption_sensor": "sensor.grid",
+            "solar_forecast_sensor": "sensor.solcast",
             "brand": "sessy",
         },
         options={},
@@ -125,7 +126,8 @@ async def test_diagnostics_dump_structure_and_redaction():
     assert result["entry"]["data"]["host"] == "**REDACTED**"
     assert result["entry"]["data"]["username"] == "**REDACTED**"
     assert result["entry"]["data"]["password"] == "**REDACTED**"
-    assert result["entry"]["data"]["consumption_sensor"] == "**REDACTED**"
+    assert result["entry"]["data"]["consumption_sensor"] == "sensor.grid"
+    assert result["entry"]["data"]["solar_forecast_sensor"] == "**REDACTED**"
     assert result["entry"]["data"]["brand"] == "sessy"  # non-sensitive kept
 
     battery = result["batteries"][0]
