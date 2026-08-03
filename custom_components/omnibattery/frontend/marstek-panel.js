@@ -1247,6 +1247,10 @@ class MarstekVenusPanel extends HTMLElement {
   }
   set panel(panel) {
     this._panelConfig = (panel && panel.config) || {};
+    // Home Assistant may assign/refresh `panel` after `hass`. Recompute now so
+    // payload-backed sources (notably excluded devices) do not remain hidden
+    // until an unrelated entity state update happens to arrive.
+    if (this._hass) this._update();
   }
   set narrow(v) {
     this._narrow = v;
