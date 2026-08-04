@@ -45,7 +45,7 @@
       },
       "three_phase": {
         "title": "Protecció de potència trifàsica",
-        "description": "Configura un sensor de xarxa i un límit simètric positiu per a cada fase. Els sensors han de ser entitats sensor W/kW diferents i fan servir importació (+) / exportació (-).",
+        "description": "Configura un sensor de xarxa i un límit simètric positiu per a cada fase que vulguis protegir. Deixa tots dos camps buits per a les fases no utilitzades. Els sensors han de ser entitats sensor W/kW diferents i fan servir importació (+) / exportació (-).",
         "data": {
           "phase_1_power_sensor": "Sensor de potència de xarxa L1",
           "phase_2_power_sensor": "Sensor de potència de xarxa L2",
@@ -631,6 +631,7 @@
       "phase_sensor_invalid_domain": "La font de potència de fase ha de ser una entitat sensor.",
       "phase_sensor_invalid_unit": "El sensor de potència de fase ha de tenir com a unitat 'W' o 'kW'.",
       "phase_limit_must_be_positive": "La potència màxima de fase ha de ser un valor finit i positiu en watts.",
+      "phase_sensor_and_limit_required": "Indica el sensor de fase i la seva potència màxima, o deixa tots dos camps buits.",
       "battery_phase_required": "Selecciona la fase física d'aquesta bateria.",
       "incomplete_window": "Cada franja de càrrega addicional necessita hora d'inici i de fi. Omple les dues o deixa-les buides per ometre-la.",
       "overlapping_slots": "Aquesta franja es solapa amb una altra ja configurada per a la mateixa bateria. Ajusta els horaris, dies o bateria.",
@@ -656,7 +657,7 @@
     "step": {
       "three_phase": {
         "title": "Protecció de potència trifàsica",
-        "description": "Configura els sensors, límits i assignacions físiques de les fases.",
+        "description": "Configura el sensor i el límit de cada fase que vulguis protegir. Deixa tots dos camps buits per a les fases no utilitzades.",
         "data": {
           "phase_1_power_sensor": "Sensor de potència de xarxa L1",
           "phase_2_power_sensor": "Sensor de potència de xarxa L2",
@@ -1190,6 +1191,7 @@
       "phase_sensor_invalid_domain": "La font de potència de fase ha de ser una entitat sensor.",
       "phase_sensor_invalid_unit": "El sensor de potència de fase ha de tenir com a unitat 'W' o 'kW'.",
       "phase_limit_must_be_positive": "La potència màxima de fase ha de ser un valor finit i positiu en watts.",
+      "phase_sensor_and_limit_required": "Indica el sensor de fase i la seva potència màxima, o deixa tots dos camps buits.",
       "battery_phase_required": "Selecciona la fase física d'aquesta bateria.",
       "incomplete_window": "Cada franja de càrrega addicional necessita hora d'inici i de fi. Omple les dues o deixa-les buides per ometre-la.",
       "overlapping_slots": "Aquesta franja es solapa amb una altra ja configurada per a la mateixa bateria. Ajusta els horaris, dies o bateria.",

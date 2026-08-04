@@ -45,7 +45,7 @@
       },
       "three_phase": {
         "title": "Protection de puissance triphasée",
-        "description": "Configurez un capteur réseau et une limite symétrique positive pour chaque phase. Les capteurs doivent être des entités sensor W/kW distinctes.",
+        "description": "Configurez un capteur réseau et une limite symétrique positive pour chaque phase à protéger. Laissez les deux champs vides pour les phases non utilisées. Les capteurs doivent être des entités sensor W/kW distinctes.",
         "data": {
           "phase_1_power_sensor": "Capteur de puissance réseau L1",
           "phase_2_power_sensor": "Capteur de puissance réseau L2",
@@ -628,6 +628,7 @@
       "phase_sensor_invalid_domain": "La source de puissance de phase doit être une entité sensor.",
       "phase_sensor_invalid_unit": "Le capteur de puissance de phase doit avoir 'W' ou 'kW' comme unité.",
       "phase_limit_must_be_positive": "La puissance maximale de phase doit être une valeur positive et finie en watts.",
+      "phase_sensor_and_limit_required": "Renseignez à la fois le capteur de phase et sa puissance maximale, ou laissez les deux champs vides.",
       "battery_phase_required": "Sélectionnez la phase physique de cette batterie.",
       "incomplete_window": "Chaque fenêtre de charge supplémentaire nécessite une heure de début et de fin. Remplissez les deux, ou laissez les deux vides pour l'ignorer.",
       "overlapping_slots": "Ce créneau chevauche un autre créneau pour la même batterie. Ajustez les horaires, jours ou batterie cible.",
@@ -653,7 +654,7 @@
     "step": {
       "three_phase": {
         "title": "Protection de puissance triphasée",
-        "description": "Configurez les capteurs, limites et affectations physiques des phases.",
+        "description": "Configurez le capteur et la limite de chaque phase à protéger. Laissez les deux champs vides pour les phases non utilisées.",
         "data": {
           "phase_1_power_sensor": "Capteur de puissance réseau L1",
           "phase_2_power_sensor": "Capteur de puissance réseau L2",
@@ -1182,6 +1183,7 @@
       "phase_sensor_invalid_domain": "La source de puissance de phase doit être une entité sensor.",
       "phase_sensor_invalid_unit": "Le capteur de puissance de phase doit avoir 'W' ou 'kW' comme unité.",
       "phase_limit_must_be_positive": "La puissance maximale de phase doit être une valeur positive et finie en watts.",
+      "phase_sensor_and_limit_required": "Renseignez à la fois le capteur de phase et sa puissance maximale, ou laissez les deux champs vides.",
       "battery_phase_required": "Sélectionnez la phase physique de cette batterie.",
       "incomplete_window": "Chaque fenêtre de charge supplémentaire nécessite une heure de début et de fin. Remplissez les deux, ou laissez les deux vides pour l'ignorer.",
       "overlapping_slots": "Ce créneau chevauche un autre créneau pour la même batterie. Ajustez les horaires, jours ou batterie cible.",

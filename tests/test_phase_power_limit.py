@@ -17,6 +17,7 @@ from custom_components.omnibattery.const import (
     CONF_THREE_PHASE_ENABLED,
     PHASE_L1,
     PHASE_L2,
+    PHASE_L3,
     SLOT_MODE_MANUAL,
 )
 from custom_components.omnibattery.control import (
@@ -27,7 +28,10 @@ from custom_components.omnibattery.control.phase_power_limit import (
     calculate_phase_budgets,
     normalize_power_sensor_state,
 )
-from custom_components.omnibattery.config_flow import _validate_phase_protection
+from custom_components.omnibattery.config_flow import (
+    _phase_protection_schema,
+    _validate_phase_protection,
+)
 
 
 class FakeStates:
@@ -78,7 +82,7 @@ def _state(value, unit="W", now=None, age_s=0):
     )
 
 
-def _limiter(states, coordinators, *, now=None):
+def _limiter(states, coordinators, *, now=None, configured_phases=None):
     entry = SimpleNamespace(
         data={
             CONF_THREE_PHASE_ENABLED: True,
@@ -91,6 +95,16 @@ def _limiter(states, coordinators, *, now=None):
             CONF_PHASE_3_MAX_POWER: 5750,
         }
     )
+    if configured_phases is not None:
+        phase_fields = {
+            PHASE_L1: (CONF_PHASE_1_POWER_SENSOR, CONF_PHASE_1_MAX_POWER),
+            PHASE_L2: (CONF_PHASE_2_POWER_SENSOR, CONF_PHASE_2_MAX_POWER),
+            PHASE_L3: (CONF_PHASE_3_POWER_SENSOR, CONF_PHASE_3_MAX_POWER),
+        }
+        for phase, (sensor_key, limit_key) in phase_fields.items():
+            if phase not in configured_phases:
+                entry.data[sensor_key] = None
+                entry.data[limit_key] = None
     controller = FakeController(coordinators)
     hass = SimpleNamespace(states=FakeStates(states))
     return PhasePowerLimiter(
@@ -312,6 +326,30 @@ def test_degraded_phase_is_detected_without_a_new_sensor_event():
     assert limiter.limit_allocation({battery: 500}, True) == {battery: 0}
 
 
+def test_unconfigured_phases_are_optional_but_fail_safe_for_assigned_batteries():
+    now = datetime.now(timezone.utc)
+    l1_battery = FakeCoordinator("L1 battery", PHASE_L1)
+    limiter = _limiter(
+        {
+            "sensor.l1": _state(0, now=now),
+            "sensor.l2": _state(0, now=now),
+            "sensor.l3": _state(0, now=now),
+        },
+        [l1_battery],
+        configured_phases={PHASE_L1},
+    )
+
+    assert limiter.has_degraded_phase() is False
+    assert limiter.phase_snapshot(PHASE_L2)["reason"] == "not_configured"
+
+    l2_battery = FakeCoordinator("L2 battery", PHASE_L2)
+    limiter.controller.coordinators.append(l2_battery)
+    limiter.begin_cycle()
+
+    assert limiter.has_degraded_phase() is True
+    assert limiter.limit_allocation({l2_battery: 500}, True) == {l2_battery: 0}
+
+
 def test_direct_command_guard_blocks_unassigned_and_caps_valid_phase():
     now = datetime.now(timezone.utc)
     b1 = FakeCoordinator("L1 battery", PHASE_L1)
@@ -349,13 +387,57 @@ def test_config_validation_rejects_duplicate_sensors_and_bad_units():
     }
     assert _validate_phase_protection(hass, valid) == {}
 
+    two_phase = {
+        key: valid[key]
+        for key in (
+            CONF_PHASE_1_POWER_SENSOR,
+            CONF_PHASE_1_MAX_POWER,
+            CONF_PHASE_2_POWER_SENSOR,
+            CONF_PHASE_2_MAX_POWER,
+        )
+    }
+    assert _validate_phase_protection(hass, two_phase) == {}
+
     invalid = {**valid, CONF_PHASE_2_POWER_SENSOR: "sensor.l1", CONF_PHASE_3_MAX_POWER: 0}
     errors = _validate_phase_protection(hass, invalid)
     assert errors[CONF_PHASE_1_POWER_SENSOR] == "phase_sensors_must_differ"
     assert errors[CONF_PHASE_2_POWER_SENSOR] == "phase_sensors_must_differ"
     assert errors[CONF_PHASE_3_MAX_POWER] == "phase_limit_must_be_positive"
 
-    missing = {**valid, CONF_PHASE_1_POWER_SENSOR: None, CONF_PHASE_2_POWER_SENSOR: None}
+    missing = {**valid}
+    for key in (
+        CONF_PHASE_1_POWER_SENSOR,
+        CONF_PHASE_1_MAX_POWER,
+        CONF_PHASE_2_POWER_SENSOR,
+        CONF_PHASE_2_MAX_POWER,
+    ):
+        missing.pop(key)
     missing_errors = _validate_phase_protection(hass, missing)
-    assert missing_errors[CONF_PHASE_1_POWER_SENSOR] == "phase_sensor_not_found"
-    assert missing_errors[CONF_PHASE_2_POWER_SENSOR] == "phase_sensor_not_found"
+    assert missing_errors == {}
+
+    partial = {
+        CONF_PHASE_1_POWER_SENSOR: "sensor.l1",
+        CONF_PHASE_1_MAX_POWER: None,
+    }
+    partial_errors = _validate_phase_protection(hass, partial)
+    assert partial_errors[CONF_PHASE_1_MAX_POWER] == "phase_sensor_and_limit_required"
+
+    orphan_limit_errors = _validate_phase_protection(
+        hass,
+        {CONF_PHASE_1_MAX_POWER: 5750},
+    )
+    assert orphan_limit_errors[CONF_PHASE_1_POWER_SENSOR] == (
+        "phase_sensor_and_limit_required"
+    )
+
+
+def test_phase_form_accepts_a_single_configured_phase():
+    assert _phase_protection_schema()(
+        {
+            CONF_PHASE_1_POWER_SENSOR: "sensor.l1",
+            CONF_PHASE_1_MAX_POWER: 5750,
+        }
+    ) == {
+        CONF_PHASE_1_POWER_SENSOR: "sensor.l1",
+        CONF_PHASE_1_MAX_POWER: 5750.0,
+    }

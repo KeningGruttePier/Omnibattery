@@ -222,6 +222,13 @@ class PhasePowerLimiter:
             phase = getattr(coordinator, CONF_BATTERY_PHASE, None)
         return phase if phase in PHASE_VALUES else None
 
+    def _phase_has_batteries(self, phase: str) -> bool:
+        """Return whether a battery is assigned to a physical phase."""
+        return any(
+            self._battery_phase(coordinator) == phase
+            for coordinator in getattr(self.controller, "coordinators", []) or []
+        )
+
     def _battery_power(self, coordinator: Any) -> float:
         """Read measured AC power in the controller's +charge/-discharge form."""
         if self.controller is not None:
@@ -268,6 +275,7 @@ class PhasePowerLimiter:
         snapshot: dict[str, Any] = {
             "phase": phase,
             "sensor": sensor_id,
+            "configured": bool(sensor_id) and limit > 0,
             "reading_w": None,
             "limit_w": limit if limit > 0 else None,
             "base_w": None,
@@ -282,8 +290,14 @@ class PhasePowerLimiter:
             snapshot["reason"] = "disabled"
             self._snapshots[phase] = snapshot
             return snapshot
-        if limit <= 0:
-            snapshot.update({"degraded": True, "reason": "invalid_limit"})
+        if not sensor_id and limit <= 0:
+            snapshot["reason"] = "not_configured"
+            if self._phase_has_batteries(phase):
+                snapshot.update({"degraded": True, "reason": "phase_not_configured"})
+            self._snapshots[phase] = snapshot
+            return snapshot
+        if not sensor_id or limit <= 0:
+            snapshot.update({"degraded": True, "reason": "invalid_configuration"})
             self._log_state_change(snapshot)
             self._snapshots[phase] = snapshot
             return snapshot
@@ -317,7 +331,11 @@ class PhasePowerLimiter:
             return False
         return any(
             snapshot["degraded"]
-            for snapshot in self.all_snapshots().values()
+            and (
+                snapshot.get("configured", False)
+                or self._phase_has_batteries(phase)
+            )
+            for phase, snapshot in self.all_snapshots().items()
         )
 
     def _individual_limit(self, coordinator: Any, is_charging: bool) -> float:

@@ -66,7 +66,6 @@ from .const import (
     PHASE_L3,
     PHASE_VALUES,
     DEFAULT_THREE_PHASE_ENABLED,
-    DEFAULT_PHASE_MAX_POWER,
     CONF_ENABLE_WEEKLY_FULL_CHARGE,
     CONF_WEEKLY_FULL_CHARGE_DAY,
     CONF_ENABLE_BALANCE_MONITOR,
@@ -159,13 +158,13 @@ def _parse_optional_float(value: Any) -> float | None:
 
 
 def _phase_sensor_schema_field(key: str, default: str | None = None):
-    """Return a required phase sensor field, with an optional current value."""
-    field = vol.Required(key, default=default) if default else vol.Required(key)
+    """Return an optional phase sensor field, with an optional current value."""
+    field = vol.Optional(key, default=default) if default else vol.Optional(key)
     return field, EntitySelector(EntitySelectorConfig(domain="sensor"))
 
 
 def _phase_protection_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
-    """Build the three-phase protection form schema."""
+    """Build the protection form schema with an optional pair per phase."""
     defaults = defaults or {}
     schema: dict = {}
     for key in (
@@ -180,7 +179,9 @@ def _phase_protection_schema(defaults: dict[str, Any] | None = None) -> vol.Sche
         CONF_PHASE_2_MAX_POWER,
         CONF_PHASE_3_MAX_POWER,
     ):
-        schema[vol.Required(key, default=defaults.get(key, DEFAULT_PHASE_MAX_POWER))] = NumberSelector(
+        default = defaults.get(key)
+        field = vol.Optional(key, default=default) if default is not None else vol.Optional(key)
+        schema[field] = NumberSelector(
             NumberSelectorConfig(
                 min=1,
                 max=30000,
@@ -211,13 +212,23 @@ def _battery_phase_schema(default: str | None = None):
 
 
 def _validate_phase_protection(hass, user_input: dict[str, Any]) -> dict[str, str]:
-    """Validate phase sensors and positive per-phase safety limits."""
+    """Validate configured phase pairs and positive safety limits."""
     errors: dict[str, str] = {}
-    sensor_keys = (
-        CONF_PHASE_1_POWER_SENSOR,
-        CONF_PHASE_2_POWER_SENSOR,
-        CONF_PHASE_3_POWER_SENSOR,
+    phase_fields = (
+        (
+            CONF_PHASE_1_POWER_SENSOR,
+            CONF_PHASE_1_MAX_POWER,
+        ),
+        (
+            CONF_PHASE_2_POWER_SENSOR,
+            CONF_PHASE_2_MAX_POWER,
+        ),
+        (
+            CONF_PHASE_3_POWER_SENSOR,
+            CONF_PHASE_3_MAX_POWER,
+        ),
     )
+    sensor_keys = tuple(sensor_key for sensor_key, _ in phase_fields)
     sensor_ids = [user_input.get(key) for key in sensor_keys]
 
     present_sensor_ids = [entity_id for entity_id in sensor_ids if entity_id]
@@ -226,29 +237,37 @@ def _validate_phase_protection(hass, user_input: dict[str, Any]) -> dict[str, st
             if entity_id and present_sensor_ids.count(entity_id) > 1:
                 errors[key] = "phase_sensors_must_differ"
 
-    for key, entity_id in zip(sensor_keys, sensor_ids):
+    for sensor_key, limit_key in phase_fields:
+        entity_id = user_input.get(sensor_key)
+        raw_limit = user_input.get(limit_key)
+        sensor_present = bool(entity_id)
+        limit_present = raw_limit not in (None, "")
+        if sensor_present != limit_present:
+            errors.setdefault(
+                sensor_key if not sensor_present else limit_key,
+                "phase_sensor_and_limit_required",
+            )
+            continue
+        if not sensor_present:
+            continue
+
         state = hass.states.get(entity_id) if entity_id else None
         if state is None:
-            errors.setdefault(key, "phase_sensor_not_found")
+            errors.setdefault(sensor_key, "phase_sensor_not_found")
             continue
         if not str(entity_id).startswith("sensor."):
-            errors[key] = "phase_sensor_invalid_domain"
+            errors[sensor_key] = "phase_sensor_invalid_domain"
             continue
         unit = state.attributes.get("unit_of_measurement")
         if unit not in ("W", "kW"):
-            errors[key] = "phase_sensor_invalid_unit"
+            errors[sensor_key] = "phase_sensor_invalid_unit"
 
-    for key in (
-        CONF_PHASE_1_MAX_POWER,
-        CONF_PHASE_2_MAX_POWER,
-        CONF_PHASE_3_MAX_POWER,
-    ):
         try:
-            value = float(user_input.get(key))
+            value = float(raw_limit)
         except (TypeError, ValueError):
             value = 0.0
         if not math.isfinite(value) or value <= 0:
-            errors[key] = "phase_limit_must_be_positive"
+            errors[limit_key] = "phase_limit_must_be_positive"
 
     return errors
 
@@ -858,7 +877,7 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
             if not errors:
                 self.config_data.update(
                     {
-                        key: user_input[key]
+                        key: user_input.get(key)
                         for key in (
                             CONF_PHASE_1_POWER_SENSOR,
                             CONF_PHASE_2_POWER_SENSOR,
@@ -2624,7 +2643,7 @@ class OptionsFlowHandler(OptionsFlow):
             if not errors:
                 self.config_data.update(
                     {
-                        key: user_input[key]
+                        key: user_input.get(key)
                         for key in (
                             CONF_PHASE_1_POWER_SENSOR,
                             CONF_PHASE_2_POWER_SENSOR,

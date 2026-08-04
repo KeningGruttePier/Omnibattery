@@ -45,7 +45,7 @@
       },
       "three_phase": {
         "title": "Dreiphasiger Leistungsschutz",
-        "description": "Konfigurieren Sie einen Netzleistungssensor und ein positives symmetrisches Limit für jede Phase. Die Sensoren müssen unterschiedliche W/kW-Sensoren sein.",
+        "description": "Konfigurieren Sie einen Netzleistungssensor und ein positives symmetrisches Limit für jede Phase, die Sie schützen möchten. Lassen Sie beide Felder für nicht verwendete Phasen leer. Die Sensoren müssen unterschiedliche W/kW-Sensoren sein.",
         "data": {
           "phase_1_power_sensor": "Netzleistungssensor L1",
           "phase_2_power_sensor": "Netzleistungssensor L2",
@@ -628,6 +628,7 @@
       "phase_sensor_invalid_domain": "Die Phasenleistungsquelle muss eine Sensor-Entität sein.",
       "phase_sensor_invalid_unit": "Der Phasenleistungssensor muss 'W' oder 'kW' als Einheit haben.",
       "phase_limit_must_be_positive": "Die maximale Phasenleistung muss ein endlicher positiver Wattwert sein.",
+      "phase_sensor_and_limit_required": "Geben Sie sowohl den Phasensensor als auch dessen maximale Leistung an oder lassen Sie beide Felder leer.",
       "battery_phase_required": "Wählen Sie die physische Phase dieser Batterie aus.",
       "incomplete_window": "Jedes zusätzliche Ladefenster benötigt eine Start- und eine Endzeit. Füllen Sie beide aus oder lassen Sie beide leer, um es zu überspringen.",
       "overlapping_slots": "Dieses Zeitfenster überschneidet sich mit einem bestehenden für dieselbe Batterie. Passen Sie Zeiten, Tage oder die Batterie an.",
@@ -653,7 +654,7 @@
     "step": {
       "three_phase": {
         "title": "Dreiphasiger Leistungsschutz",
-        "description": "Konfigurieren Sie Sensoren, Limits und die physische Phasenzuordnung.",
+        "description": "Konfigurieren Sie den Sensor und das Limit für jede Phase, die Sie schützen möchten. Lassen Sie beide Felder für nicht verwendete Phasen leer.",
         "data": {
           "phase_1_power_sensor": "Netzleistungssensor L1",
           "phase_2_power_sensor": "Netzleistungssensor L2",
@@ -1182,6 +1183,7 @@
       "phase_sensor_invalid_domain": "Die Phasenleistungsquelle muss eine Sensor-Entität sein.",
       "phase_sensor_invalid_unit": "Der Phasenleistungssensor muss 'W' oder 'kW' als Einheit haben.",
       "phase_limit_must_be_positive": "Die maximale Phasenleistung muss ein endlicher positiver Wattwert sein.",
+      "phase_sensor_and_limit_required": "Geben Sie sowohl den Phasensensor als auch dessen maximale Leistung an oder lassen Sie beide Felder leer.",
       "battery_phase_required": "Wählen Sie die physische Phase dieser Batterie aus.",
       "incomplete_window": "Jedes zusätzliche Ladefenster benötigt eine Start- und eine Endzeit. Füllen Sie beide aus oder lassen Sie beide leer, um es zu überspringen.",
       "overlapping_slots": "Dieses Zeitfenster überschneidet sich mit einem bestehenden für dieselbe Batterie. Passen Sie Zeiten, Tage oder die Batterie an.",

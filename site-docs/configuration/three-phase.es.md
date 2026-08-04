@@ -4,12 +4,12 @@ La protección trifásica es una envolvente de seguridad opcional para instalaci
 
 ## Configuración
 
-Activa la función y selecciona un sensor de potencia en tiempo real para **L1**, **L2** y **L3**. Deben ser entidades `sensor` de Home Assistant con unidad `W` o `kW`, usando la misma convención que el sensor global:
+Activa la función y selecciona un sensor de potencia en tiempo real y un límite para cada fase que quieras proteger. Deja ambos campos vacíos para las fases no utilizadas, de modo que una instalación de una o dos fases no necesite valores ficticios para las restantes. Deben ser entidades `sensor` de Home Assistant con unidad `W` o `kW`, usando la misma convención que el sensor global:
 
 - positivo = importación de red
 - negativo = exportación a red
 
-El ajuste global **Signo del medidor invertido** se aplica a los cuatro medidores. Configura un límite máximo positivo y simétrico, en vatios, para cada fase. La asignación física (`L1`, `L2` o `L3`) es obligatoria para cada batería; Omnibattery no puede descubrir a qué fase está cableada.
+El ajuste global **Signo del medidor invertido** se aplica a los medidores de fase configurados y a Grid 0. Configura un límite máximo positivo y simétrico, en vatios, para cada fase configurada. La asignación física (`L1`, `L2` o `L3`) es obligatoria para cada batería; Omnibattery no puede descubrir a qué fase está cableada. Una batería asignada a una fase sin sensor ni límite recibe 0 W mientras la protección está activa.
 
 El sensor global de consumo sigue siendo la señal Grid 0 del controlador. Los sensores de fase son solo envolventes de seguridad: no sustituyen Grid 0 ni cambian el objetivo del controlador PD.
 
@@ -27,7 +27,7 @@ La potencia de batería usa la convención del controlador (`+` carga, `−` des
 
 La envolvente se aplica al PD normal y al seguimiento directo, a la carga predictiva desde red, al PD de franjas automáticas, a los reequilibrios y al último guard común de comandos automáticos. El total asignado vuelve al controlador para evitar windup integral cuando una fase está limitada.
 
-Si el sensor de una fase falta, no está disponible, no es numérico, tiene una unidad incorrecta o supera los 65 segundos de antigüedad, las baterías asignadas a esa fase reciben 0 W. Las demás fases sanas continúan funcionando.
+Si falta el sensor de una fase configurada, no está disponible, no es numérico, tiene una unidad incorrecta o supera los 65 segundos de antigüedad, las baterías asignadas a esa fase reciben 0 W. Una fase sin configurar también queda limitada a 0 W si se asigna una batería a ella. Las demás fases sanas continúan funcionando.
 
 ## Limitaciones importantes
 

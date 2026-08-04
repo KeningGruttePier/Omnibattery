@@ -4,12 +4,12 @@ Three-phase protection is an optional safety envelope for installations where th
 
 ## Configuration
 
-Enable the feature and select one real-time power sensor for **L1**, **L2** and **L3**. The sensors must be Home Assistant `sensor` entities with a `W` or `kW` unit. They use the same convention as the global grid sensor:
+Enable the feature and select one real-time power sensor and one limit for each phase you want to protect. Leave both fields empty for unused phases, so a one- or two-phase installation does not need placeholder values for the remaining phases. The sensors must be Home Assistant `sensor` entities with a `W` or `kW` unit. They use the same convention as the global grid sensor:
 
 - positive = grid import
 - negative = grid export
 
-The global **Inverted meter sign** setting is applied to all four grid meters. Set one positive symmetric maximum power in watts for each phase. The physical phase assignment (`L1`, `L2` or `L3`) is required for every battery; Omnibattery cannot discover which AC phase a battery is wired to.
+The global **Inverted meter sign** setting is applied to the configured phase meters and Grid 0. Set one positive symmetric maximum power in watts for each configured phase. The physical phase assignment (`L1`, `L2` or `L3`) is required for every battery; Omnibattery cannot discover which AC phase a battery is wired to. A battery assigned to a phase without a sensor and limit is held at 0 W while protection is enabled.
 
 The global consumption sensor remains the controller's Grid 0 signal. Phase sensors are safety envelopes only: they do not replace Grid 0 or change the PD target.
 
@@ -27,7 +27,7 @@ Battery power uses the controller convention (`+` charge, `−` discharge). The 
 
 The envelope is applied to normal PD and direct-tracking control, predictive grid charging, automatic time-slot PD, active-balance rebalances and the final common automatic command guard. The assigned total is fed back into the controller so a phase cap does not create integral windup.
 
-If a phase sensor is missing, unavailable, non-numeric, in the wrong unit or older than 65 seconds, batteries assigned to that phase receive 0 W. Other healthy phases continue operating. Sensor recovery is picked up on the next report.
+If a configured phase sensor is missing, unavailable, non-numeric, in the wrong unit or older than 65 seconds, batteries assigned to that phase receive 0 W. A phase left unconfigured is also held at 0 W if a battery is assigned to it. Other healthy phases continue operating. Sensor recovery is picked up on the next report.
 
 ## Important limitations
 

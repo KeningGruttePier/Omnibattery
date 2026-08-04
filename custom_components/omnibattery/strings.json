@@ -45,7 +45,7 @@
       },
       "three_phase": {
         "title": "Three-phase power protection",
-        "description": "Configure one grid power sensor and one positive symmetric limit for each phase. The sensors use the global import (+) / export (-) convention and must be distinct W/kW sensor entities.",
+        "description": "Configure one grid power sensor and one positive symmetric limit for each phase you want to protect. Leave both fields empty for unused phases. The sensors use the global import (+) / export (-) convention and must be distinct W/kW sensor entities.",
         "data": {
           "phase_1_power_sensor": "L1 grid power sensor",
           "phase_2_power_sensor": "L2 grid power sensor",
@@ -625,6 +625,7 @@
       "phase_sensor_invalid_domain": "The phase power source must be a sensor entity.",
       "phase_sensor_invalid_unit": "The phase power sensor must have 'W' or 'kW' as unit.",
       "phase_limit_must_be_positive": "The phase maximum power must be a positive finite value in watts.",
+      "phase_sensor_and_limit_required": "Set both the phase sensor and its maximum power, or leave both fields empty.",
       "battery_phase_required": "Select the physical phase for this battery.",
       "incomplete_window": "Each extra charging window needs both a start and an end time. Fill both, or leave both empty to skip it.",
       "overlapping_slots": "This time slot overlaps with an existing one for the same battery. Adjust the times, days, or battery scope.",
@@ -686,7 +687,7 @@
       },
       "three_phase": {
         "title": "Three-phase power protection",
-        "description": "Configure one grid power sensor and one positive symmetric limit for each phase. The sensors use the global import (+) / export (-) convention and must be distinct W/kW sensor entities.",
+        "description": "Configure one grid power sensor and one positive symmetric limit for each phase you want to protect. Leave both fields empty for unused phases. The sensors use the global import (+) / export (-) convention and must be distinct W/kW sensor entities.",
         "data": {
           "phase_1_power_sensor": "L1 grid power sensor",
           "phase_2_power_sensor": "L2 grid power sensor",
@@ -1180,6 +1181,7 @@
       "phase_sensor_invalid_domain": "The phase power source must be a sensor entity.",
       "phase_sensor_invalid_unit": "The phase power sensor must have 'W' or 'kW' as unit.",
       "phase_limit_must_be_positive": "The phase maximum power must be a positive finite value in watts.",
+      "phase_sensor_and_limit_required": "Set both the phase sensor and its maximum power, or leave both fields empty.",
       "battery_phase_required": "Select the physical phase for this battery.",
       "incomplete_window": "Each extra charging window needs both a start and an end time. Fill both, or leave both empty to skip it.",
       "overlapping_slots": "This time slot overlaps with an existing one for the same battery. Adjust the times, days, or battery scope.",
