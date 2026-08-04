@@ -1,9 +1,10 @@
 # Changelog
 
-## [1.3.0b2] - 2026-08-03
+## [1.3.0b2] - 2026-08-04
 
 ### Fixed
 - **Three-phase manual-mode Repairs warning could appear unnecessarily** (#236): the warning is now shown only while manual mode is active or an enabled manual time slot is configured, and it is cleared when neither bypass route is available.
+- **Incremental PD could oscillate on identical grid-meter publications**: `last_reported` is now used for sensor health and cadence, while P/D and predictive control advance only for a new transformed meter value. Unchanged reports no longer trigger a full control cycle, and stale-safety checks remain active.
 - **Sessy power writes could fail with `Server disconnected`**: the local HTTP driver now avoids stale keep-alive sockets, consumes write responses and retries a control request once after rebuilding its client session.
 
 ### Changed

@@ -536,6 +536,8 @@ class ChargeDischargeController:
         # Stale sensor detection
         self._last_sensor_report_time = None    # datetime of last real sensor publication (HA last_reported)
         self._last_sensor_cadence_time = None   # latest publication consumed by the cadence detector
+        self._last_control_sample_value = None  # last transformed value consumed by P/D
+        self._control_sample_is_new = True      # result of the current control-loop sample
         self._stale_cycles = 0                  # consecutive cycles without a sensor publication
         self._max_sensor_stale_s = MAX_SENSOR_STALE_S
         self._control_lock = asyncio.Lock()     # serialize control cycle across timer + sensor-event triggers
@@ -3263,13 +3265,52 @@ class ChargeDischargeController:
 
         # Cadence-independent time bases (this loop runs event-driven too). The stored
         # timestamp is shared with the main loop; exactly one of the two runs per cycle.
-        _, sensor_elapsed_s, _ = self._track_sensor_report(consumption_state)
+        sensor_report_time, sensor_elapsed_s, is_stale = self._track_sensor_report(
+            consumption_state, sensor_raw
+        )
+        has_new_control_sample = getattr(self, "_control_sample_is_new", True)
+        # A publication can refresh last_reported without changing the transformed
+        # meter value. It still counts for sensor health, but must not integrate the
+        # incremental predictive P/D controller again. Keep the structural
+        # availability check so an SOC/limit transition can still end the mode.
+        if not has_new_control_sample and self._grid_charging_initialized:
+            available_batteries = self._get_available_batteries(is_charging=True)
+            if not available_batteries:
+                _LOGGER.info(
+                    "Predictive charging complete: all batteries reached their active SOC target"
+                )
+                self.grid_charging_active = False
+                self._grid_charging_initialized = False
+                self.first_execution = True
+                return
+            _LOGGER.debug(
+                "Predictive charging: meter publication has no new transformed value; "
+                "maintaining last command %.1fW",
+                self.previous_power,
+            )
+            sensor_within_stale_tolerance = (
+                sensor_report_time is None
+                or self._sensor_is_within_stale_tolerance(sensor_report_time)
+            )
+            if sensor_within_stale_tolerance:
+                return
+            self._stale_cycles = getattr(self, "_stale_cycles", 0) + 1
+            _LOGGER.debug(
+                "Predictive charging: grid sensor stale; maintaining %.1fW for safety review",
+                self.previous_power,
+            )
+        elif is_stale:
+            self._stale_cycles = getattr(self, "_stale_cycles", 0) + 1
+        else:
+            self._stale_cycles = 0
         base_dt = sensor_elapsed_s if (sensor_elapsed_s and sensor_elapsed_s > 0) else self.dt
         real_dt = max(1.0, min(base_dt, 30.0))
         scale_dt = max(0.1, min(base_dt, 30.0))
 
         # Apply sensor filtering (shared time-constant EMA).
-        sensor_filtered = self._filter_grid_sample(sensor_raw, sensor_elapsed_s)
+        sensor_filtered = self._filter_grid_sample(
+            sensor_raw, 0.0 if not has_new_control_sample else sensor_elapsed_s
+        )
         
         # Establish the typed per-battery ceiling before availability is
         # evaluated.  This prevents a battery that already reached its
@@ -3317,26 +3358,34 @@ class ChargeDischargeController:
             _LOGGER.info("Initialized predictive charging: target=%dW, initial_charge=%dW",
                         target_power, abs(self.previous_power))
         
-        # Calculate derivative over real elapsed time, low-pass filtered (see main loop).
-        error_derivative_raw = (error - self.previous_error) / real_dt
-        d_alpha = real_dt / (self.derivative_tau + real_dt)
-        self.derivative_filtered += d_alpha * (error_derivative_raw - self.derivative_filtered)
+        if not has_new_control_sample:
+            # A stale-safety pass may still clamp the existing order to the
+            # currently available capacity, but it must not integrate P or D.
+            P = 0.0
+            D = 0.0
+            pd_adjustment = 0.0
+            new_power_raw = self.previous_power
+        else:
+            # Calculate derivative over real elapsed time, low-pass filtered (see main loop).
+            error_derivative_raw = (error - self.previous_error) / real_dt
+            d_alpha = real_dt / (self.derivative_tau + real_dt)
+            self.derivative_filtered += d_alpha * (error_derivative_raw - self.derivative_filtered)
 
-        # PD terms. P is applied incrementally (integral action), so scale it by elapsed
-        # time normalized to the nominal dt to keep tuning cadence-independent. Cap the
-        # multiplier to the discrete stability bound (kp * ratio <= 1) so a slow sensor's
-        # large elapsed value can't apply an open-loop step that oscillates rail-to-rail.
-        p_scale = scale_dt / self.dt
-        if self.kp > 0:
-            p_scale = min(p_scale, max(1.0, 1.0 / self.kp))
-        P = self.kp * error * p_scale
-        D = self.kd * self.derivative_filtered
-        pd_adjustment = P + D
-        
-        # Calculate new charging power (incremental)
-        # If error > 0 (importing too little) -> increase charging (adjustment is positive -> previous_power becomes more negative)
-        # If error < 0 (importing too much) -> reduce charging (adjustment is negative -> previous_power becomes less negative)
-        new_power_raw = self.previous_power - pd_adjustment
+            # PD terms. P is applied incrementally (integral action), so scale it by elapsed
+            # time normalized to the nominal dt to keep tuning cadence-independent. Cap the
+            # multiplier to the discrete stability bound (kp * ratio <= 1) so a slow sensor's
+            # large elapsed value can't apply an open-loop step that oscillates rail-to-rail.
+            p_scale = scale_dt / self.dt
+            if self.kp > 0:
+                p_scale = min(p_scale, max(1.0, 1.0 / self.kp))
+            P = self.kp * error * p_scale
+            D = self.kd * self.derivative_filtered
+            pd_adjustment = P + D
+
+            # Calculate new charging power (incremental)
+            # If error > 0 (importing too little) -> increase charging (adjustment is positive -> previous_power becomes more negative)
+            # If error < 0 (importing too much) -> reduce charging (adjustment is negative -> previous_power becomes less negative)
+            new_power_raw = self.previous_power - pd_adjustment
         
         # Apply rate limiter (per-cycle cap scaled to a constant W/s under variable cadence)
         max_change = self.max_power_change_per_cycle * (scale_dt / self.dt)
@@ -5138,13 +5187,33 @@ class ChargeDischargeController:
             return sensor_elapsed_s
         return None
 
-    def _track_sensor_report(self, sensor_state):
+    def _track_control_sample(self, sensor_value):
+        """Record whether the transformed meter value is new for control.
+
+        ``last_reported`` answers whether the meter is alive, not whether the
+        incremental controller has a new measurement to act on.  The transformed
+        value is the only meter input used by the controller, so it is also the
+        appropriate fingerprint: changes to unrelated state attributes do not
+        reapply P/D, while unit changes that alter the transformed value still do.
+        """
+        previous_value = getattr(self, "_last_control_sample_value", None)
+        is_new = previous_value is None or sensor_value != previous_value
+        self._last_control_sample_value = sensor_value
+        self._control_sample_is_new = is_new
+        return is_new
+
+    def _track_sensor_report(self, sensor_state, sensor_value=None):
         """Track real sensor publications, including unchanged state reports.
 
         Home Assistant leaves ``last_updated`` unchanged when an integration
         republishes the same state and attributes. ``last_reported`` still advances,
         so it is the correct source for cadence and stale-data health. The fallback
         keeps compatibility with State-like objects from older Home Assistant versions.
+
+        ``sensor_value`` is optional to preserve the helper's State-like test/API
+        compatibility. Production control paths pass the value returned by
+        ``_apply_meter_transform`` so health tracking and control freshness remain
+        separate.
         """
         sensor_report_time = ChargeDischargeController._sensor_report_time(
             sensor_state
@@ -5157,12 +5226,28 @@ class ChargeDischargeController:
         )
         sensor_elapsed_s = (
             (sensor_report_time - previous_report_time).total_seconds()
-            if previous_report_time is not None else None
+            if previous_report_time is not None and sensor_report_time is not None
+            else None
         )
         ChargeDischargeController._observe_sensor_cadence(
             self, sensor_report_time
         )
+        if sensor_value is not None:
+            ChargeDischargeController._track_control_sample(self, sensor_value)
         return sensor_report_time, sensor_elapsed_s, is_stale
+
+    def _observe_consumption_report(self, event):
+        """Record a state publication for health without scheduling control.
+
+        ``EVENT_STATE_REPORTED`` is intentionally cadence-only. A changed state
+        still schedules through its separate callback; repeated P1 publications
+        are consumed here and by the watchdog without re-running incremental P/D.
+        """
+        new_state = event.data.get("new_state")
+        report_time = ChargeDischargeController._sensor_report_time(new_state)
+        if report_time is None:
+            report_time = event.data.get("last_reported")
+        return self._observe_sensor_cadence(report_time)
 
     def _check_sensor_cadence(self, sensor_elapsed_s):
         """Raise one repair per run when the main sensor cadence is slow.
@@ -5386,10 +5471,11 @@ class ChargeDischargeController:
 
         # Detect real sensor publications, even when the numeric value is unchanged.
         sensor_report_time, sensor_elapsed_s, is_stale = (
-            self._track_sensor_report(consumption_state)
+            self._track_sensor_report(consumption_state, sensor_raw)
         )
-        # Real time since the last sensor report — single source of truth for every
-        # cadence-dependent term (filter, derivative, P scaling, rate limiter).
+        has_new_control_sample = getattr(self, "_control_sample_is_new", True)
+        # A report timestamp drives health/cadence. Only a new transformed value
+        # drives the cadence-dependent filter, derivative, P scaling and limiter.
 
         # Same cadence, different failure: a configured solar-forecast sensor that
         # stops reading. Cheap state lookup, so no extra throttle.
@@ -5400,43 +5486,60 @@ class ChargeDischargeController:
         # already-acted-on stale data, so a factor-1 P push every 2s tick winds up and
         # ramps the command rail-to-rail on sensors slower than the watchdog (~30s).
         stale_safety_recalc = False
-        if is_stale:
+        capacity_protection_must_recheck = (
+            self.previous_power < 0
+            and self._is_capacity_protection_soc_limited()
+        )
+        sensor_age_s = (
+            self._sensor_age_seconds(sensor_report_time, now)
+            if sensor_report_time is not None
+            else None
+        )
+        sensor_within_stale_tolerance = (
+            sensor_report_time is None
+            or self._sensor_is_within_stale_tolerance(sensor_report_time, now)
+        )
+
+        if is_stale and not has_new_control_sample:
             self._stale_cycles += 1
-            sensor_age_s = self._sensor_age_seconds(sensor_report_time, now)
-            capacity_protection_must_recheck = (
-                self.previous_power < 0
-                and self._is_capacity_protection_soc_limited()
-            )
+        else:
+            self._stale_cycles = 0
+
+        if not self.first_execution and not has_new_control_sample:
+            # last_reported may advance on an identical P1 publication. That is
+            # fresh health data, but it is not a new feedback sample for the
+            # incremental P/D law. Structural checks above have already run; keep
+            # the command unless stale safety or a structural transition requires
+            # the downstream limits/availability path to review it.
             if (
-                self._sensor_is_within_stale_tolerance(sensor_report_time, now)
+                sensor_within_stale_tolerance
                 and not capacity_protection_must_recheck
                 and not blocked_active_changed
                 and not self._phase_safety_pending
             ):
                 if DEBUG_CONTROL_LOOP_DETAIL:
                     _LOGGER.debug(
-                        "ChargeDischargeController: Sensor unchanged for %.1fs/%.1fs, maintaining last command %.1fW",
-                        sensor_age_s, self._max_sensor_stale_s, self.previous_power
+                        "ChargeDischargeController: No new control sample (age %.1fs/%s), maintaining last command %.1fW",
+                        sensor_age_s if sensor_age_s is not None else 0.0,
+                        f"{self._max_sensor_stale_s:.1f}s" if sensor_age_s is not None else "unknown age",
+                        self.previous_power,
                     )
                 return
-            elif capacity_protection_must_recheck:
+            stale_safety_recalc = True
+            if capacity_protection_must_recheck:
                 _LOGGER.debug(
-                    "ChargeDischargeController: Sensor stale but peak shaving is SOC-limited; recalculating instead of maintaining discharge %.1fW",
+                    "ChargeDischargeController: No new control sample but peak shaving is SOC-limited; reviewing discharge %.1fW",
                     self.previous_power,
                 )
-            else:
-                stale_safety_recalc = True
+            elif sensor_age_s is not None and not sensor_within_stale_tolerance:
                 _LOGGER.debug(
                     "ChargeDischargeController: Sensor stale for %.1fs. Safety recalculation.",
-                    sensor_age_s
+                    sensor_age_s,
                 )
-        else:
-            self._stale_cycles = 0
-
         # Smooth instantaneous spikes with a time-constant EMA (advances only on a real
         # update; a stale recalculation passes elapsed 0 and keeps the last value).
         sensor_filtered = self._filter_grid_sample(
-            sensor_raw, 0.0 if is_stale else sensor_elapsed_s
+            sensor_raw, 0.0 if not has_new_control_sample else sensor_elapsed_s
         )
 
         active_target = self.compute_active_target()
@@ -5684,7 +5787,11 @@ class ChargeDischargeController:
         error = sensor_actual - active_target
 
         feedforward_fired = False
-        if self.no_pd_mode_enabled:
+        if not has_new_control_sample:
+            # Safety/structural checks below may still clamp or stop this command,
+            # but the incremental controller must not integrate a repeated sample.
+            new_power = self.previous_power
+        elif self.no_pd_mode_enabled:
             new_power = self._compute_no_pd_new_power(error)
             if DEBUG_CONTROL_LOOP_DETAIL:
                 _LOGGER.debug(
@@ -6713,10 +6820,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # with battery I/O when the next meter update arrives; measuring cadence
         # only when that cycle eventually samples hass.states would turn a fast P1
         # into a false 65-second sensor.
-        new_state = event.data.get("new_state")
-        controller._observe_sensor_cadence(
-            controller._sensor_report_time(new_state)
-        )
+        controller._observe_consumption_report(event)
         # Do not forward the Event as `now`; the handler expects datetime|None.
         controller.schedule_control_cycle()
 
@@ -6726,9 +6830,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     entry.async_on_unload(unsub_consumption)
 
     # Newer Home Assistant versions emit EVENT_STATE_REPORTED for a publication
-    # that leaves the state unchanged.  Use it for exact cadence tracking and for
-    # the same event-driven control path; older versions simply keep the changed-
-    # state listener and the control-loop fallback above.
+    # that leaves the state unchanged. Use it for exact cadence tracking only:
+    # last_reported is health data, not a new feedback sample for the incremental
+    # controller. Older versions simply keep the changed-state listener and the
+    # control-loop fallback above.
     unsub_consumption_reported = None
     track_state_report_event = getattr(
         event_helpers, "async_track_state_report_event", None
@@ -6736,12 +6841,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if track_state_report_event is not None:
         @callback
         def _on_consumption_reported(event):
-            new_state = event.data.get("new_state")
-            report_time = controller._sensor_report_time(new_state)
-            if report_time is None:
-                report_time = event.data.get("last_reported")
-            controller._observe_sensor_cadence(report_time)
-            controller.schedule_control_cycle()
+            controller._observe_consumption_report(event)
 
         unsub_consumption_reported = _call_once(track_state_report_event(
             hass, [controller.consumption_sensor], _on_consumption_reported
