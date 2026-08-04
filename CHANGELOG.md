@@ -6,6 +6,9 @@
 - **Three-phase manual-mode Repairs warning could appear unnecessarily** (#236): the warning is now shown only while manual mode is active or an enabled manual time slot is configured, and it is cleared when neither bypass route is available.
 - **Sessy power writes could fail with `Server disconnected`**: the local HTTP driver now avoids stale keep-alive sockets, consumes write responses and retries a control request once after rebuilding its client session.
 
+### Changed
+- **Three-phase protection accepts partial phase layouts**: each phase sensor and limit is an optional pair. Leaving both fields empty disables phase protection for that phase, so its batteries continue under normal controller and per-battery limits; incomplete or invalid configured pairs remain fail-safe.
+
 ## [1.3.0b1] - 2026-08-03
 
 ### Added
@@ -14,7 +17,6 @@
 - **Smart Pre-discharge / Anti-curtailment for Dynamic Pricing**: an opt-in planner detects forecast PV surplus during configurable negative-injection price windows, creates headroom using the existing PD controller, blocks discharge while the protected window is active, and exposes live controls and diagnostics. Existing installations remain disabled by default.
 
 ### Changed
-- **Three-phase protection accepts partial phase layouts**: each phase sensor and limit is now an optional pair, so one- and two-phase installations can leave unused phases empty instead of entering placeholder limits. Batteries assigned to an unconfigured phase continue under normal control without a phase protection cap.
 - **Configuration Summary sensor removed**: the hidden support entity was redundant with Home Assistant's Download diagnostics action. Support documentation now requests the redacted diagnostics JSON.
 - **Configured sensor IDs retained in diagnostics**: downloaded diagnostics now include the grid, solar-forecast, average-price and three-phase power sensor entity IDs to make support issues easier to diagnose, while connection hosts, IPs, credentials, serial ports and MACs remain redacted.
 - **Peak shaving limit extended to 20 kW**: the runtime slider now accepts values from `500 W` to `20000 W` in `100 W` steps.
