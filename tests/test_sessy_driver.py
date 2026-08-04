@@ -3,6 +3,7 @@
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
+import aiohttp
 import pytest
 import voluptuous as vol
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
@@ -29,6 +30,9 @@ class _Response:
 
     async def json(self, content_type=None):
         return self._data
+
+    async def read(self):
+        return b"{}"
 
 
 class _Context:
@@ -102,6 +106,30 @@ async def test_setpoint_selects_api_strategy_and_inverts_sign():
     assert result.ok and result.net_power_w == 700
     assert session.post.call_args_list[0].kwargs["json"] == {"strategy": "POWER_STRATEGY_API"}
     assert session.post.call_args_list[1].kwargs["json"] == {"setpoint": -700}
+
+
+@pytest.mark.asyncio
+async def test_setpoint_retries_after_sessy_closes_http_connection():
+    session = _session()
+    session.post.side_effect = [
+        aiohttp.ServerDisconnectedError(),
+        _Context(_Response(200)),
+        _Context(_Response(200)),
+    ]
+
+    result = await SessyLocalDriver("sessy.local", session=session).apply_setpoint(
+        700, read_back=False
+    )
+
+    assert result.ok
+    assert session.post.call_count == 3
+    assert session.post.call_args_list[0].kwargs["json"] == {
+        "strategy": "POWER_STRATEGY_API"
+    }
+    assert session.post.call_args_list[1].kwargs["json"] == {
+        "strategy": "POWER_STRATEGY_API"
+    }
+    assert session.post.call_args_list[2].kwargs["json"] == {"setpoint": -700}
 
 
 @pytest.mark.asyncio

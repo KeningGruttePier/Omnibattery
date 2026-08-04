@@ -4,6 +4,7 @@
 
 ### Fixed
 - **Three-phase manual-mode Repairs warning could appear unnecessarily** (#236): the warning is now shown only while manual mode is active or an enabled manual time slot is configured, and it is cleared when neither bypass route is available.
+- **Sessy power writes could fail with `Server disconnected`**: the local HTTP driver now avoids stale keep-alive sockets, consumes write responses and retries a control request once after rebuilding its client session.
 
 ## [1.3.0b1] - 2026-08-03
 
