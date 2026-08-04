@@ -291,6 +291,29 @@ def test_overflow_activates_fallback_only_after_selected_phase_is_capped():
     assert allocation == {selected: 750, fallback: 1250}
 
 
+def test_overflow_can_use_an_unconfigured_phase_without_a_phase_cap():
+    now = datetime.now(timezone.utc)
+    selected = FakeCoordinator("Selected L1", PHASE_L1)
+    fallback = FakeCoordinator("Fallback L2", PHASE_L2)
+    limiter = _limiter(
+        {
+            "sensor.l1": _state(5000, now=now),
+            "sensor.l2": _state(0, now=now),
+            "sensor.l3": _state(0, now=now),
+        },
+        [selected, fallback],
+        configured_phases={PHASE_L1},
+    )
+
+    allocation = limiter.limit_allocation(
+        {selected: 2000},
+        True,
+        [selected, fallback],
+    )
+
+    assert allocation == {selected: 750, fallback: 1250}
+
+
 def test_allocation_preserves_normal_proportional_split_below_phase_cap():
     now = datetime.now(timezone.utc)
     b1 = FakeCoordinator("First", PHASE_L1)
@@ -326,7 +349,7 @@ def test_degraded_phase_is_detected_without_a_new_sensor_event():
     assert limiter.limit_allocation({battery: 500}, True) == {battery: 0}
 
 
-def test_unconfigured_phases_are_optional_but_fail_safe_for_assigned_batteries():
+def test_unconfigured_phases_are_optional_and_unlimited():
     now = datetime.now(timezone.utc)
     l1_battery = FakeCoordinator("L1 battery", PHASE_L1)
     limiter = _limiter(
@@ -346,8 +369,9 @@ def test_unconfigured_phases_are_optional_but_fail_safe_for_assigned_batteries()
     limiter.controller.coordinators.append(l2_battery)
     limiter.begin_cycle()
 
-    assert limiter.has_degraded_phase() is True
-    assert limiter.limit_allocation({l2_battery: 500}, True) == {l2_battery: 0}
+    assert limiter.has_degraded_phase() is False
+    assert limiter.limit_allocation({l2_battery: 500}, True) == {l2_battery: 500}
+    assert limiter.limit_single_command(l2_battery, 1000, 0) == (1000, 0)
 
 
 def test_direct_command_guard_blocks_unassigned_and_caps_valid_phase():

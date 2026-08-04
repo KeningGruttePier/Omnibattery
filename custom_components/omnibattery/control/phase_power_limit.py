@@ -292,8 +292,6 @@ class PhasePowerLimiter:
             return snapshot
         if not sensor_id and limit <= 0:
             snapshot["reason"] = "not_configured"
-            if self._phase_has_batteries(phase):
-                snapshot.update({"degraded": True, "reason": "phase_not_configured"})
             self._snapshots[phase] = snapshot
             return snapshot
         if not sensor_id or limit <= 0:
@@ -418,11 +416,16 @@ class PhasePowerLimiter:
 
             snapshot = self.phase_snapshot(phase)
             requested_total = sum(phase_request.values())
-            budget = 0 if snapshot["degraded"] else int(
-                snapshot[
-                    "charge_budget_w" if is_charging else "discharge_budget_w"
-                ]
-            )
+            if snapshot["degraded"]:
+                budget = 0
+            elif snapshot.get("reason") == "not_configured":
+                budget = requested_total
+            else:
+                budget = int(
+                    snapshot[
+                        "charge_budget_w" if is_charging else "discharge_budget_w"
+                    ]
+                )
             group_alloc = self._cap_group_allocation(
                 min(requested_total, budget),
                 phase_request,
@@ -460,20 +463,23 @@ class PhasePowerLimiter:
             snapshot = self._snapshots.get(phase) or self.phase_snapshot(phase)
             if snapshot["degraded"]:
                 continue
-            budget = int(
-                snapshot[
-                    "charge_budget_w" if is_charging else "discharge_budget_w"
-                ]
-            )
             assigned_on_phase = sum(
                 power
                 for battery, power in allocation.items()
                 if self._battery_phase(battery) == phase
             )
-            phase_room = _round_down(
-                budget - assigned_on_phase,
-                self.rounding_w,
-            )
+            if snapshot.get("reason") == "not_configured":
+                phase_room = remaining
+            else:
+                budget = int(
+                    snapshot[
+                        "charge_budget_w" if is_charging else "discharge_budget_w"
+                    ]
+                )
+                phase_room = _round_down(
+                    budget - assigned_on_phase,
+                    self.rounding_w,
+                )
             battery_room = _round_down(
                 self._individual_limit(coordinator, is_charging)
                 - allocation[coordinator],
@@ -544,6 +550,16 @@ class PhasePowerLimiter:
         if snapshot["degraded"]:
             return 0, 0
 
+        own_limit = _round_down(
+            self._individual_limit(coordinator, is_charging), self.rounding_w
+        )
+        if snapshot.get("reason") == "not_configured":
+            allowed = _round_down(
+                min(float(requested), own_limit),
+                self.rounding_w,
+            )
+            return (allowed, 0) if is_charging else (0, allowed)
+
         budget = (
             snapshot["charge_budget_w"]
             if is_charging
@@ -553,9 +569,6 @@ class PhasePowerLimiter:
             self._commanded_direction_power(other, is_charging)
             for other in getattr(self.controller, "coordinators", []) or []
             if other is not coordinator and self._battery_phase(other) == phase
-        )
-        own_limit = _round_down(
-            self._individual_limit(coordinator, is_charging), self.rounding_w
         )
         allowed = _round_down(
             min(float(requested), max(0.0, float(budget) - other_power), own_limit),

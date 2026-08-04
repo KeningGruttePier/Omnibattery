@@ -4294,6 +4294,10 @@ class ChargeDischargeController:
                 ]
                 if not phase_batteries:
                     continue
+                if snapshot.get("reason") == "not_configured":
+                    # An intentionally empty phase has no envelope to saturate;
+                    # its batteries follow the normal controller limits.
+                    continue
                 if snapshot.get("degraded"):
                     return True
                 budget_key = "charge_budget_w" if is_charging else "discharge_budget_w"

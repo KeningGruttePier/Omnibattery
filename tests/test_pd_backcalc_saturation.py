@@ -74,6 +74,26 @@ def test_zendure_ramp_lag_not_saturated():
     assert _saturated([_zendure(400, limit=1250)]) is False
 
 
+def test_unconfigured_phase_is_not_treated_as_saturated():
+    coordinator = _coord(-400, limit=1250)
+    coordinator.phase = "l2"
+    controller = _ctrl([coordinator])
+    controller._phase_power_limiter = SimpleNamespace(
+        enabled=True,
+        all_snapshots=lambda: {
+            "l2": {
+                "configured": False,
+                "degraded": False,
+                "reason": "not_configured",
+                "charge_budget_w": 0,
+                "discharge_budget_w": 0,
+            }
+        },
+    )
+
+    assert ChargeDischargeController._backcalc_is_saturated(controller, True) is False
+
+
 def test_mixed_blocked_plus_headroom_not_saturated():
     # Marstek blocked (max_soc) + Zendure still ramping below cap → not saturated.
     coords = [_coord(0, limit=2500, blocked=True), _coord(-400, limit=1250)]
