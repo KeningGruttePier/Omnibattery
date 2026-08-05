@@ -16,6 +16,8 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 
+import pytest
+
 from custom_components.omnibattery.const import (
     DEFAULT_ROUND_TRIP_EFFICIENCY,
     PRICE_INTEGRATION_CKW,
@@ -34,6 +36,11 @@ from custom_components.omnibattery.pricing import (
 from custom_components.omnibattery.pricing import engine as pricing_engine
 from custom_components.omnibattery.pricing.engine import PricingManager
 from custom_components.omnibattery.pricing.nordpool import OfficialNordPoolSource
+from custom_components.omnibattery.pricing.curtailment import (
+    EXPORT_MODE_AUTOMATIC,
+    EXPORT_MODE_CUSTOM,
+    EXPORT_MODE_SELF_CONSUMPTION,
+)
 
 
 # ----------------------------------------------------------------------
@@ -675,3 +682,96 @@ def test_smart_predischarge_runtime_starts_stops_and_protects_negative_window():
     manager.refresh_curtailment_runtime()
     assert ctrl._curtailment_runtime_status == "disabled"
     assert ("remove_override", "curtailment_predischarge") in calls
+
+
+def test_curtailment_runtime_releases_space_for_underproduction_and_stops_on_excess():
+    now = datetime.now()
+    risk = PriceSlot(now + timedelta(minutes=5), now + timedelta(hours=1), -0.10)
+    plan = CurtailmentPlan(
+        status="protected",
+        reason="headroom_sufficient",
+        risk_slots=[risk],
+        required_headroom_kwh=3.0,
+        solar_reserve_remaining_kwh=3.0,
+        solar_reserve_by_slot={risk: 3.0},
+        solar_forecast_by_slot={risk: 4.0},
+        consumption_forecast_by_slot={risk: 0.0},
+        headroom_margin_kwh=0.0,
+        opportunistic_space_kwh=1.0,
+    )
+    plan.actual_solar_by_slot = {risk: 2.0}
+    ctrl = _controller(
+        smart_predischarge_enabled=True,
+        predictive_charging_enabled=True,
+        predictive_charging_mode=PREDICTIVE_MODE_DYNAMIC_PRICING,
+        max_charge_capacity=4000.0,
+        _curtailment_plan=plan,
+    )
+    manager = _mgr(ctrl)
+    snapshots = [BatterySnapshot("b1", 60.0, 10.0, 100.0, 10.0, 2000.0)]
+
+    manager._update_curtailment_opportunistic_diagnostics(plan, snapshots, now)
+    assert plan.solar_reserve_remaining_kwh == pytest.approx(1.5)
+    assert plan.opportunistic_space_kwh == pytest.approx(2.5)
+    assert plan.opportunistic_charge_reason == "solar_underproduction_released_space"
+
+    plan.actual_solar_by_slot = {risk: 6.0}
+    manager._update_curtailment_opportunistic_diagnostics(plan, snapshots, now)
+    assert plan.solar_reserve_remaining_kwh == pytest.approx(4.5)
+    assert plan.opportunistic_space_kwh == 0.0
+    assert plan.opportunistic_charge_reason == "solar_overproduction_reduced_space"
+
+
+def test_curtailment_daily_solar_accumulator_releases_space_progressively():
+    now = datetime.now()
+    risk = PriceSlot(now + timedelta(minutes=5), now + timedelta(hours=1), -0.10)
+    plan = CurtailmentPlan(
+        status="protected",
+        reason="headroom_sufficient",
+        risk_slots=[risk],
+        solar_forecast_kwh=4.0,
+        solar_reserve_by_slot={risk: 3.0},
+        solar_forecast_by_slot={risk: 4.0},
+        consumption_forecast_by_slot={risk: 0.0},
+    )
+    manager = _solar_ctrl(forecast="4.0", produced=1.0, t_start=6.0)
+    manager._controller._curtailment_plan = plan
+    snapshots = [BatterySnapshot("b1", 60.0, 10.0, 100.0, 10.0, 2000.0)]
+
+    manager._update_curtailment_opportunistic_diagnostics(plan, snapshots, now)
+
+    # The fake tracker says 50% of the forecast should have arrived by now;
+    # 1 kWh actual versus 2 kWh expected halves the remaining reserve.
+    assert plan.solar_reserve_remaining_kwh == pytest.approx(1.5)
+    assert plan.opportunistic_space_kwh == pytest.approx(2.5)
+    assert plan.opportunistic_charge_reason == "solar_underproduction_released_space"
+
+
+def test_curtailment_export_settings_keep_legacy_compatibility_and_modes():
+    legacy_zero = _controller(predischarge_max_export_power_w=0.0)
+    legacy_custom = _controller(predischarge_max_export_power_w=750.0)
+    automatic = _controller(
+        predischarge_export_mode=EXPORT_MODE_AUTOMATIC,
+        predischarge_max_export_power_w=750.0,
+    )
+    custom = _controller(
+        predischarge_export_mode=EXPORT_MODE_CUSTOM,
+        predischarge_export_limit_w=900.0,
+    )
+
+    assert _mgr(legacy_zero)._curtailment_export_settings() == (
+        EXPORT_MODE_SELF_CONSUMPTION,
+        0.0,
+    )
+    assert _mgr(legacy_custom)._curtailment_export_settings() == (
+        EXPORT_MODE_CUSTOM,
+        750.0,
+    )
+    assert _mgr(automatic)._curtailment_export_settings() == (
+        EXPORT_MODE_AUTOMATIC,
+        0.0,
+    )
+    assert _mgr(custom)._curtailment_export_settings() == (
+        EXPORT_MODE_CUSTOM,
+        900.0,
+    )

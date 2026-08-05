@@ -133,6 +133,8 @@ from .const import (
     CONF_NEGATIVE_INJECTION_THRESHOLD,
     CONF_PREDISCHARGE_RESERVE_SOC,
     CONF_PREDISCHARGE_MAX_EXPORT_POWER_W,
+    CONF_PREDISCHARGE_EXPORT_MODE,
+    normalize_predischarge_export_settings,
     DEFAULT_SMART_PREDISCHARGE_ENABLED,
     DEFAULT_NEGATIVE_INJECTION_THRESHOLD,
     DEFAULT_PREDISCHARGE_RESERVE_SOC,
@@ -691,9 +693,20 @@ class ChargeDischargeController:
         self.predischarge_reserve_soc = config_entry.data.get(
             CONF_PREDISCHARGE_RESERVE_SOC, DEFAULT_PREDISCHARGE_RESERVE_SOC
         )
-        self.predischarge_max_export_power_w = config_entry.data.get(
-            CONF_PREDISCHARGE_MAX_EXPORT_POWER_W, DEFAULT_PREDISCHARGE_MAX_EXPORT_POWER_W
+        self.predischarge_export_mode, self.predischarge_max_export_power_w = (
+            normalize_predischarge_export_settings(
+                config_entry.data.get(
+                    CONF_PREDISCHARGE_EXPORT_MODE,
+                ),
+                config_entry.data.get(
+                    CONF_PREDISCHARGE_MAX_EXPORT_POWER_W,
+                    DEFAULT_PREDISCHARGE_MAX_EXPORT_POWER_W,
+                ),
+            )
         )
+        # Alias used by the pricing manager for the custom deliberate-export
+        # ceiling. Automatic and self-consumption intentionally expose 0 W.
+        self.predischarge_export_limit_w = self.predischarge_max_export_power_w
         self.negative_price_charging_enabled = config_entry.data.get(
             CONF_NEGATIVE_PRICE_CHARGING_ENABLED,
             DEFAULT_NEGATIVE_PRICE_CHARGING_ENABLED,
@@ -744,6 +757,12 @@ class ChargeDischargeController:
         self._curtailment_runtime_reason = "disabled"
         self._curtailment_active = False
         self._curtailment_active_export_target_w = 0.0
+        self._curtailment_solar_reserve_remaining_kwh = 0.0
+        self._curtailment_opportunistic_space_kwh = 0.0
+        self._curtailment_opportunistic_charge_reason = "not_calculated"
+        self._curtailment_opportunistic_charge_limit_w = 0.0
+        self._curtailment_opportunity_limited = False
+        self._curtailment_opportunistic_target_soc = None
         self._curtailment_last_evaluation = None
         self._pricing_mgr = PricingManager(hass, self)
 
@@ -1206,6 +1225,7 @@ class ChargeDischargeController:
         old_curtailment_config = (
             self.negative_injection_threshold,
             self.predischarge_reserve_soc,
+            self.predischarge_export_mode,
             self.predischarge_max_export_power_w,
             self._predictive_safety_margin_kwh,
         )
@@ -1303,9 +1323,16 @@ class ChargeDischargeController:
         self.predischarge_reserve_soc = self.config_entry.data.get(
             CONF_PREDISCHARGE_RESERVE_SOC, DEFAULT_PREDISCHARGE_RESERVE_SOC
         )
-        self.predischarge_max_export_power_w = self.config_entry.data.get(
-            CONF_PREDISCHARGE_MAX_EXPORT_POWER_W, DEFAULT_PREDISCHARGE_MAX_EXPORT_POWER_W
+        self.predischarge_export_mode, self.predischarge_max_export_power_w = (
+            normalize_predischarge_export_settings(
+                self.config_entry.data.get(CONF_PREDISCHARGE_EXPORT_MODE),
+                self.config_entry.data.get(
+                    CONF_PREDISCHARGE_MAX_EXPORT_POWER_W,
+                    DEFAULT_PREDISCHARGE_MAX_EXPORT_POWER_W,
+                ),
+            )
         )
+        self.predischarge_export_limit_w = self.predischarge_max_export_power_w
         self.negative_price_charging_enabled = self.config_entry.data.get(
             CONF_NEGATIVE_PRICE_CHARGING_ENABLED,
             DEFAULT_NEGATIVE_PRICE_CHARGING_ENABLED,
@@ -1313,6 +1340,7 @@ class ChargeDischargeController:
         new_curtailment_config = (
             self.negative_injection_threshold,
             self.predischarge_reserve_soc,
+            self.predischarge_export_mode,
             self.predischarge_max_export_power_w,
             self._predictive_safety_margin_kwh,
         )
@@ -3185,12 +3213,30 @@ class ChargeDischargeController:
 
     def _compute_opportunistic_target_soc(self) -> Optional[dict]:
         """Return each battery's configured maximum SOC as the opportunity ceiling."""
-        targets = {
-            coordinator: float(coordinator.max_soc)
-            for coordinator in self.coordinators
-            if coordinator.data is not None
-            and getattr(coordinator, "is_available", True)
-        }
+        transient_targets = getattr(
+            self, "_curtailment_opportunistic_target_soc", None
+        )
+        targets = {}
+        for coordinator in self.coordinators:
+            if coordinator.data is None or not getattr(coordinator, "is_available", True):
+                continue
+            target = float(coordinator.max_soc)
+            if isinstance(transient_targets, dict):
+                target = min(
+                    target,
+                    float(transient_targets.get(coordinator, target)),
+                )
+            # A guaranteed minimum SOC remains a safety exception: the solar
+            # reserve may not prevent the battery from reaching that floor.
+            if getattr(self, "_predictive_min_soc_floor_enabled", False):
+                try:
+                    current_soc = float(coordinator.data.get("battery_soc", 0.0) or 0.0)
+                    floor = float(getattr(self, "_predictive_min_soc_floor", 0.0) or 0.0)
+                    if current_soc < floor:
+                        target = max(target, floor)
+                except (AttributeError, TypeError, ValueError):
+                    pass
+            targets[coordinator] = target
         return targets or None
 
     def _compute_predictive_target_soc(self) -> Optional[dict]:

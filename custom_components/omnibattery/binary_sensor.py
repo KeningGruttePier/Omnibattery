@@ -240,6 +240,7 @@ class CurtailmentStatusSensor(BinarySensorEntity):
         "risk_slots",
         "selected_discharge_slots",
         "target_soc_by_battery",
+        "charge_limit_reasons",
     })
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry, controller) -> None:
@@ -276,6 +277,24 @@ class CurtailmentStatusSensor(BinarySensorEntity):
             "active_export_target_w": getattr(
                 self.controller, "_curtailment_active_export_target_w", 0.0
             ),
+            "solar_reserve_remaining_kwh": getattr(
+                self.controller, "_curtailment_solar_reserve_remaining_kwh", 0.0
+            ),
+            "opportunistic_space_available_kwh": getattr(
+                self.controller, "_curtailment_opportunistic_space_kwh", 0.0
+            ),
+            "opportunistic_charge_limit_w": getattr(
+                self.controller, "_curtailment_opportunistic_charge_limit_w", 0.0
+            ),
+            "charge_limit_reason": getattr(
+                self.controller, "_curtailment_opportunistic_charge_reason", "not_calculated"
+            ),
+            "export_mode": getattr(
+                self.controller, "predischarge_export_mode", None
+            ),
+            "export_limit_w": getattr(
+                self.controller, "predischarge_export_limit_w", 0.0
+            ),
             "negative_injection_threshold": getattr(
                 self.controller, "negative_injection_threshold", 0.0
             ),
@@ -303,6 +322,23 @@ class CurtailmentStatusSensor(BinarySensorEntity):
             ],
             "required_headroom_kwh": round(plan.required_headroom_kwh, 3),
             "current_headroom_kwh": round(plan.current_headroom_kwh, 3),
+            "solar_reserve_remaining_kwh": round(
+                getattr(
+                    plan,
+                    "solar_reserve_remaining_kwh",
+                    getattr(plan, "required_headroom_kwh", 0.0),
+                ),
+                3,
+            ),
+            "opportunistic_space_available_kwh": round(
+                getattr(plan, "opportunistic_space_kwh", 0.0), 3
+            ),
+            "opportunistic_charge_limit_w": round(
+                getattr(plan, "opportunistic_charge_limit_w", 0.0)
+            ),
+            "charge_limit_reason": getattr(
+                plan, "opportunistic_charge_reason", "not_calculated"
+            ),
             "headroom_deficit_kwh": round(headroom_deficit, 3),
             "planned_discharge_kwh": round(plan.planned_discharge_kwh, 3),
             "shortfall_kwh": round(plan.shortfall_kwh, 3),

@@ -19,6 +19,67 @@ from . import PriceSlot
 
 EPSILON = 1e-6
 
+# These values intentionally live in this pure module as well as in the
+# configuration layer.  The planner must remain usable by older callers that
+# only provide ``max_export_power_w``.
+EXPORT_MODE_SELF_CONSUMPTION = "self_consumption"
+EXPORT_MODE_AUTOMATIC = "automatic"
+EXPORT_MODE_CUSTOM = "custom"
+
+
+def normalize_export_mode(
+    mode: object | None,
+    max_export_power_w: float | None = 0.0,
+) -> str:
+    """Normalize the selector value while preserving the legacy W setting.
+
+    Older entries have no selector: zero was the self-consumption behaviour and
+    a positive value was an intentional-export cap.  Unknown values are treated
+    the same way as the legacy field rather than accidentally enabling export.
+    """
+    if mode is not None:
+        value = str(mode).strip().lower().replace("-", "_").replace(" ", "_")
+        if value in {
+            EXPORT_MODE_SELF_CONSUMPTION,
+            "selfconsume",
+            "self_consumption_only",
+            "solo_autoconsumo",
+            "autoconsumo",
+            "zero",
+        }:
+            return EXPORT_MODE_SELF_CONSUMPTION
+        if value in {EXPORT_MODE_AUTOMATIC, "auto", "automatico", "automático"}:
+            return EXPORT_MODE_AUTOMATIC
+        if value in {
+            EXPORT_MODE_CUSTOM,
+            "custom_limit",
+            "custom_limit_w",
+            "limite_personalizado",
+            "límite_personalizado",
+        }:
+            return EXPORT_MODE_CUSTOM
+
+    try:
+        legacy_limit = float(max_export_power_w or 0.0)
+    except (TypeError, ValueError):
+        legacy_limit = 0.0
+    return EXPORT_MODE_CUSTOM if math.isfinite(legacy_limit) and legacy_limit > EPSILON else EXPORT_MODE_SELF_CONSUMPTION
+
+
+def calculate_opportunistic_space_kwh(
+    free_space_kwh: float,
+    solar_reserve_remaining_kwh: float,
+) -> float:
+    """Return battery space that may be used by opportunistic grid charging."""
+    try:
+        free = max(0.0, float(free_space_kwh))
+        reserve = max(0.0, float(solar_reserve_remaining_kwh))
+    except (TypeError, ValueError):
+        return 0.0
+    if not math.isfinite(free) or not math.isfinite(reserve):
+        return 0.0
+    return max(0.0, free - reserve)
+
 
 @dataclass(frozen=True)
 class BatterySnapshot:
@@ -66,6 +127,20 @@ class CurtailmentPlan:
     target_soc_by_battery: dict[str, float] = field(default_factory=dict)
     active_export_target_w: float = 0.0
     solar_surplus_kwh: float = 0.0
+    # Anti-curtailment accounting used by the negative-price runtime.  The
+    # reserve is battery-side energy still needed for the future solar risk;
+    # opportunistic charging may consume only the difference from free space.
+    solar_reserve_remaining_kwh: float = 0.0
+    opportunistic_space_kwh: float = 0.0
+    opportunistic_charge_limit_w: float = 0.0
+    opportunistic_charge_reason: str = "not_calculated"
+    export_mode: str = EXPORT_MODE_SELF_CONSUMPTION
+    export_limit_w: float = 0.0
+    solar_reserve_by_slot: dict[PriceSlot, float] = field(default_factory=dict)
+    solar_forecast_by_slot: dict[PriceSlot, float] = field(default_factory=dict)
+    consumption_forecast_by_slot: dict[PriceSlot, float] = field(default_factory=dict)
+    solar_forecast_kwh: float = 0.0
+    headroom_margin_kwh: float = 0.0
 
     # Short aliases make the object convenient for integrations and tests while
     # keeping the explicit diagnostic name used by the entity attributes.
@@ -80,6 +155,16 @@ class CurtailmentPlan:
     @property
     def current_headroom(self) -> float:
         return self.current_headroom_kwh
+
+    @property
+    def solar_reserve(self) -> float:
+        """Compatibility alias for diagnostics consumers."""
+        return self.solar_reserve_remaining_kwh
+
+    @property
+    def opportunistic_space(self) -> float:
+        """Compatibility alias for diagnostics consumers."""
+        return self.opportunistic_space_kwh
 
     @property
     def is_fail_safe(self) -> bool:
@@ -227,7 +312,8 @@ def select_most_valuable_discharge_slots(
     energy_needed_kwh: float,
     max_discharge_power_w: float,
     *,
-    max_export_power_w: float = 0.0,
+    max_export_power_w: float | None = 0.0,
+    export_mode: str | None = None,
     available_energy_by_slot: Mapping[PriceSlot, float] | None = None,
 ) -> list[PreDischargeSlot]:
     """Choose expensive contiguous blocks before risk windows.
@@ -238,6 +324,12 @@ def select_most_valuable_discharge_slots(
     """
     if energy_needed_kwh <= EPSILON or max_discharge_power_w <= EPSILON:
         return []
+
+    normalized_mode = normalize_export_mode(export_mode, max_export_power_w)
+    try:
+        export_limit = max(0.0, float(max_export_power_w or 0.0))
+    except (TypeError, ValueError):
+        export_limit = 0.0
 
     blocks = _make_blocks(candidates)
     ranked: list[tuple[float, datetime, list[PriceSlot]]] = []
@@ -284,7 +376,11 @@ def select_most_valuable_discharge_slots(
                     if _duration_hours(slot) > EPSILON
                     else 0.0
                 ),
-                export_target_w=max(0.0, float(max_export_power_w)),
+                export_target_w=(
+                    export_limit
+                    if normalized_mode == EXPORT_MODE_CUSTOM
+                    else 0.0
+                ),
             )
             for slot in block
             if slot_capacities[slot] > EPSILON
@@ -317,7 +413,8 @@ def plan_curtailment(
     predischarge_reserve_soc: float = 0.0,
     headroom_margin_kwh: float = 0.0,
     charge_power_w: float | None = None,
-    max_export_power_w: float = 0.0,
+    max_export_power_w: float | None = 0.0,
+    export_mode: str | None = None,
     solar_fraction_fn: Callable[[float], float] | None = None,
     consumption_fraction_fn: Callable[[float], float] | None = None,
     solar_by_slot: Mapping[PriceSlot, float] | None = None,
@@ -328,6 +425,16 @@ def plan_curtailment(
     """Build an anti-curtailment plan from normalized prices and live capacity."""
     evaluated_at = now or datetime.now()
     plan = CurtailmentPlan(evaluation_time=evaluated_at)
+
+    normalized_export_mode = normalize_export_mode(export_mode, max_export_power_w)
+    try:
+        export_limit_w = max(0.0, float(max_export_power_w or 0.0))
+    except (TypeError, ValueError):
+        export_limit_w = 0.0
+    if normalized_export_mode != EXPORT_MODE_CUSTOM:
+        export_limit_w = 0.0
+    plan.export_mode = normalized_export_mode
+    plan.export_limit_w = export_limit_w
 
     if not price_slots:
         plan.status, plan.reason = "fail_safe", "missing_prices"
@@ -378,7 +485,7 @@ def plan_curtailment(
     risk_slots: list[PriceSlot] = []
     required_kwh = 0.0
     surplus_kwh = 0.0
-    export_cap_w = max(0.0, float(max_export_power_w or 0.0))
+    reserve_by_slot: dict[PriceSlot, float] = {}
     for slot in ordered_slots:
         slot_solar = max(0.0, float(solar.get(slot, 0.0) or 0.0))
         slot_consumption = max(0.0, float(consumption.get(slot, 0.0) or 0.0))
@@ -390,14 +497,39 @@ def plan_curtailment(
             # window; it does not permit export during that protected window.
             # Convert AC-side PV surplus to the battery-side headroom that it
             # can consume, accounting for the integration's charge efficiency.
-            required_kwh += min(
+            slot_reserve = min(
                 surplus,
                 float(charge_power_w) * _duration_hours(slot) / 1000.0,
             ) * CHARGE_EFFICIENCY
+            reserve_by_slot[slot] = slot_reserve
+            required_kwh += slot_reserve
 
     plan.risk_slots = risk_slots
     plan.solar_surplus_kwh = surplus_kwh
+    plan.solar_forecast_kwh = max(0.0, float(solar_forecast_kwh))
+    plan.solar_reserve_by_slot = reserve_by_slot
+    plan.solar_forecast_by_slot = {
+        slot: max(0.0, float(solar.get(slot, 0.0) or 0.0)) for slot in ordered_slots
+    }
+    plan.consumption_forecast_by_slot = {
+        slot: max(0.0, float(consumption.get(slot, 0.0) or 0.0))
+        for slot in ordered_slots
+    }
+
+    # Calculate this even on no-risk days.  It makes the runtime diagnostic
+    # explicit and correctly reports all free SOC as usable opportunistic space
+    # when no solar reserve has to be protected.
+    current_headroom = sum(
+        max(0.0, (snapshot.max_soc_pct - snapshot.soc_pct) / 100.0 * snapshot.capacity_kwh)
+        for snapshot in valid_batteries
+    )
+    plan.current_headroom_kwh = current_headroom
     if not risk_slots:
+        plan.solar_reserve_remaining_kwh = 0.0
+        plan.opportunistic_space_kwh = calculate_opportunistic_space_kwh(
+            current_headroom, 0.0
+        )
+        plan.opportunistic_charge_reason = "no_solar_risk_reserve"
         plan.status, plan.reason = "no_risk", "no_negative_injection_window"
         return plan
 
@@ -413,12 +545,16 @@ def plan_curtailment(
     )
     required_kwh += margin_kwh
     plan.required_headroom_kwh = required_kwh
-
-    current_headroom = sum(
-        max(0.0, (snapshot.max_soc_pct - snapshot.soc_pct) / 100.0 * snapshot.capacity_kwh)
-        for snapshot in valid_batteries
+    plan.headroom_margin_kwh = margin_kwh
+    plan.solar_reserve_remaining_kwh = required_kwh
+    plan.opportunistic_space_kwh = calculate_opportunistic_space_kwh(
+        current_headroom, required_kwh
     )
-    plan.current_headroom_kwh = current_headroom
+    plan.opportunistic_charge_reason = (
+        "solar_reserve_protected"
+        if plan.opportunistic_space_kwh <= EPSILON
+        else "solar_reserve_space_available"
+    )
 
     if current_headroom + EPSILON >= required_kwh:
         plan.status, plan.reason = "protected", "headroom_sufficient"
@@ -459,20 +595,29 @@ def plan_curtailment(
         # cannot retroactively satisfy an earlier deadline.
         and slot.end <= earliest_risk_start
     ]
-    available_energy_by_slot = {
-        slot: max(
+    available_energy_by_slot = {}
+    for slot in candidates:
+        slot_duration = _duration_hours(slot)
+        net_load_energy = max(
             0.0,
             float(consumption.get(slot, 0.0) or 0.0)
-            - float(solar.get(slot, 0.0) or 0.0)
-            + export_cap_w * _duration_hours(slot) / 1000.0,
+            - float(solar.get(slot, 0.0) or 0.0),
         )
-        for slot in candidates
-    }
+        # Self-consumption only may discharge into the household load.  Custom
+        # mode adds exactly its deliberate-export limit.  Automatic mode has no
+        # fixed export cap: it may use the battery power needed to create the
+        # calculated headroom, but never more than that need is selected.
+        if normalized_export_mode == EXPORT_MODE_AUTOMATIC:
+            deliberate_export = max_discharge_power_w * slot_duration / 1000.0
+        else:
+            deliberate_export = export_limit_w * slot_duration / 1000.0
+        available_energy_by_slot[slot] = net_load_energy + deliberate_export
     selected = select_most_valuable_discharge_slots(
         candidates,
         min(extra_needed, available_discharge_kwh),
         max_discharge_power_w,
-        max_export_power_w=max_export_power_w,
+        max_export_power_w=export_limit_w,
+        export_mode=normalized_export_mode,
         available_energy_by_slot=available_energy_by_slot,
     )
     planned_kwh = min(
@@ -501,6 +646,16 @@ def plan_curtailment(
         )
         remaining -= allocation
     plan.target_soc_by_battery = targets
+    projected_headroom = current_headroom + planned_kwh
+    plan.opportunistic_space_kwh = calculate_opportunistic_space_kwh(
+        projected_headroom, plan.solar_reserve_remaining_kwh
+    )
+    if plan.opportunistic_space_kwh > EPSILON:
+        plan.opportunistic_charge_reason = "solar_reserve_space_available"
+    elif plan.shortfall_kwh > EPSILON:
+        plan.opportunistic_charge_reason = "solar_reserve_shortfall"
+    else:
+        plan.opportunistic_charge_reason = "solar_reserve_protected"
     return plan
 
 

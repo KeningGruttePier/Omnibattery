@@ -331,7 +331,7 @@
           "smart_predischarge_enabled": "Predescàrrega intel·ligent / anti-abocament",
           "negative_injection_threshold": "Llindar d'injecció negativa",
           "predischarge_reserve_soc": "Reserva de SOC de predescàrrega (%)",
-          "predischarge_max_export_power_w": "Exportació màxima de predescàrrega (W)",
+          "predischarge_export_mode": "Mode d'exportació deliberada a la xarxa",
           "solar_forecast_sensor": "Sensor de predicció solar (kWh)",
           "predictive_safety_margin_kwh": "Marge de seguretat de previsió solar (kWh)",
           "predictive_grid_charge_margin_pct": "Marge de càrrega de xarxa predictiva (%)"
@@ -346,10 +346,20 @@
           "smart_predischarge_enabled": "Activa la predescàrrega optativa només en el mode de preus dinàmics per crear espai abans de franges amb preu d'injecció negatiu.",
           "negative_injection_threshold": "Preus iguals o inferiors a aquest llindar es consideren franges de risc quan hi ha excedent solar previst.",
           "predischarge_reserve_soc": "SOC que la predescàrrega ha de reservar, a més dels límits mínims existents.",
-          "predischarge_max_export_power_w": "Potència d'exportació permesa durant la predescàrrega. 0 només cobreix el consum de la llar.",
+          "predischarge_export_mode": "Tria com crear espai anti-abocament: Solo autoconsum (0 W), Automàtic (només la potència necessària) o Límit personalitzat (es configura al pas següent). És un límit d'exportació deliberada, no la potència total de descàrrega.",
           "solar_forecast_sensor": "Sensor que proporciona la predicció de producció solar en kWh (ex: Solcast). Si tens panells solars, configura'l — el sistema només carregarà des de la xarxa quan la previsió solar sigui insuficient. Si no tens panells, deixa'l buit — el sistema carregarà quan la bateria no tingui energia suficient per al dia. No cal si ja has configurat aquest sensor al pas inicial: s'utilitzarà automàticament.",
           "predictive_safety_margin_kwh": "Energia addicional afegida a la previsió de consum abans de decidir si carregar. El mateix marge en kWh també es reserva com a espai addicional contra l'anti-abocament en Preu Dinàmic. Posa 0 per desactivar (per defecte). Limitat a la capacitat total de la bateria.",
           "predictive_grid_charge_margin_pct": "Percentatge extra carregat des de la xarxa sobre el dèficit solar, per cobrir previsions solars optimistes. Ex.: una necessitat de 2 kWh de xarxa al 50% carrega 3 kWh. 0 per desactivar (per defecte). Limitat al marge fins al SOC màxim."
+        }
+      },
+      "predischarge_export_limit": {
+        "title": "Anti-abocament — Límit d'exportació personalitzat",
+        "description": "Configura la màxima exportació deliberada a la xarxa mentre es crea espai. És un límit d'exportació, no la potència total de descàrrega de la bateria.",
+        "data": {
+          "predischarge_max_export_power_w": "Límit d'exportació deliberada a la xarxa (W)"
+        },
+        "data_description": {
+          "predischarge_max_export_power_w": "Potència màxima que es pot exportar deliberadament abans d'una finestra de risc solar. Els límits de SOC, reserva, potència i bloquejos existents continuen tenint prioritat."
         }
       },
       "realtime_price_config": {
@@ -974,7 +984,7 @@
           "smart_predischarge_enabled": "Predescàrrega intel·ligent / anti-abocament",
           "negative_injection_threshold": "Llindar d'injecció negativa",
           "predischarge_reserve_soc": "Reserva de SOC de predescàrrega (%)",
-          "predischarge_max_export_power_w": "Exportació màxima de predescàrrega (W)",
+          "predischarge_export_mode": "Mode d'exportació deliberada a la xarxa",
           "solar_forecast_sensor": "Sensor de predicció solar (kWh)",
           "predictive_safety_margin_kwh": "Marge de seguretat de previsió solar (kWh)",
           "predictive_grid_charge_margin_pct": "Marge de càrrega de xarxa predictiva (%)"
@@ -989,10 +999,20 @@
           "smart_predischarge_enabled": "Activa la predescàrrega optativa només en el mode de preus dinàmics per crear espai abans de franges amb preu d'injecció negatiu.",
           "negative_injection_threshold": "Preus iguals o inferiors a aquest llindar es consideren franges de risc quan hi ha excedent solar previst.",
           "predischarge_reserve_soc": "SOC que la predescàrrega ha de reservar, a més dels límits mínims existents.",
-          "predischarge_max_export_power_w": "Potència d'exportació permesa durant la predescàrrega. 0 només cobreix el consum de la llar.",
+          "predischarge_export_mode": "Tria com crear espai anti-abocament: Solo autoconsum (0 W), Automàtic (només la potència necessària) o Límit personalitzat (es configura al pas següent). És un límit d'exportació deliberada, no la potència total de descàrrega.",
           "solar_forecast_sensor": "Sensor que proporciona la predicció de producció solar en kWh (ex: Solcast). Si tens panells solars, configura'l — el sistema només carregarà des de la xarxa quan la previsió solar sigui insuficient. Si no tens panells, deixa'l buit — el sistema carregarà quan la bateria no tingui energia suficient per al dia. No cal si ja has configurat aquest sensor al pas inicial: s'utilitzarà automàticament.",
           "predictive_safety_margin_kwh": "Energia addicional afegida a la previsió de consum abans de decidir si carregar. El mateix marge en kWh també es reserva com a espai addicional contra l'anti-abocament en Preu Dinàmic. Posa 0 per desactivar (per defecte). Limitat a la capacitat total de la bateria.",
           "predictive_grid_charge_margin_pct": "Percentatge extra carregat des de la xarxa sobre el dèficit solar, per cobrir previsions solars optimistes. Ex.: una necessitat de 2 kWh de xarxa al 50% carrega 3 kWh. 0 per desactivar (per defecte). Limitat al marge fins al SOC màxim."
+        }
+      },
+      "predischarge_export_limit": {
+        "title": "Anti-abocament — Límit d'exportació personalitzat",
+        "description": "Configura la màxima exportació deliberada a la xarxa mentre es crea espai. És un límit d'exportació, no la potència total de descàrrega de la bateria.",
+        "data": {
+          "predischarge_max_export_power_w": "Límit d'exportació deliberada a la xarxa (W)"
+        },
+        "data_description": {
+          "predischarge_max_export_power_w": "Potència màxima que es pot exportar deliberadament abans d'una finestra de risc solar. Els límits de SOC, reserva, potència i bloquejos existents continuen tenint prioritat."
         }
       },
       "realtime_price_config": {
@@ -1242,7 +1262,7 @@
         "realtime_price": "Preu en temps real (llindar instantani)"
       }
     },
-    "price_integration_type": {
+      "price_integration_type": {
       "options": {
         "nordpool": "Nordpool",
         "pvpc": "PVPC (Espanya – ESIOS REE)",
@@ -1250,6 +1270,13 @@
         "epex": "EPEX Spot (p. ex. aWATTar)",
         "entsoe": "ENTSO-e (Plataforma de Transparència)",
         "tibber": "Tibber (basat en servei)"
+      }
+    },
+    "predischarge_export_mode": {
+      "options": {
+        "self_consumption": "Només autoconsum",
+        "automatic": "Automàtic",
+        "custom": "Límit personalitzat"
       }
     }
   },
@@ -1836,7 +1863,7 @@
         "name": "Reserva de SOC de predescàrrega"
       },
       "predischarge_max_export_power_w": {
-        "name": "Exportació màxima de predescàrrega"
+        "name": "Límit d'exportació deliberada a la xarxa"
       },
       "predictive_min_soc_floor": {
         "name": "SOC mínim garantit"

@@ -457,6 +457,85 @@ def test_smart_predischarge_risk_revokes_opportunity_but_fail_safe_does_not():
     assert manager._effective_slot_purpose(slot) == SLOT_PURPOSE_NEGATIVE_PRICE
 
 
+def test_negative_price_inside_risk_uses_only_opportunistic_space():
+    battery = _Battery("b1", 60, 10, max_soc=100)
+    ctrl = _controller([battery])
+    ctrl.smart_predischarge_enabled = True
+    slot = _future_slots([-0.10])[0]
+    ctrl._dynamic_pricing_schedule = _schedule(
+        [slot], {slot: SLOT_PURPOSE_NEGATIVE_PRICE}
+    )
+    ctrl._curtailment_plan = CurtailmentPlan(
+        status="protected",
+        reason="headroom_sufficient",
+        risk_slots=[slot],
+        current_headroom_kwh=4.0,
+        required_headroom_kwh=2.0,
+        solar_reserve_remaining_kwh=2.0,
+        opportunistic_space_kwh=2.0,
+    )
+    manager = PricingManager(SimpleNamespace(), ctrl)
+    manager._get_current_price = lambda: -0.10
+
+    assert manager._effective_slot_purpose(slot) == SLOT_PURPOSE_NEGATIVE_PRICE
+
+    # Reaching the reserve does not revoke the physical negative-price slot
+    # permanently; it simply makes this cycle ineligible for import charging.
+    ctrl._curtailment_plan.opportunistic_space_kwh = 0.0
+    ctrl._curtailment_plan.current_headroom_kwh = 2.0
+    assert manager._effective_slot_purpose(slot) is None
+
+
+def test_risk_window_target_is_capped_to_free_space_and_soc_limit():
+    battery = _Battery("b1", 60, 10, max_soc=100)
+    ctrl = _controller([battery])
+    ctrl.smart_predischarge_enabled = True
+    slot = _future_slots([-0.10])[0]
+    plan = CurtailmentPlan(
+        status="protected",
+        risk_slots=[slot],
+        current_headroom_kwh=4.0,
+        required_headroom_kwh=2.0,
+        solar_reserve_remaining_kwh=2.0,
+        opportunistic_space_kwh=2.0,
+    )
+    ctrl._curtailment_plan = plan
+    manager = PricingManager(SimpleNamespace(), ctrl)
+    manager._get_current_price = lambda: -0.10
+
+    assert manager._prepare_curtailment_opportunistic_charge(
+        plan, slot, SLOT_PURPOSE_NEGATIVE_PRICE
+    ) is True
+    assert ctrl._predictive_charge_target_soc[battery] == pytest.approx(80.0)
+
+    ctrl._curtailment_opportunistic_space_kwh = 0.0
+    plan.opportunistic_space_kwh = 0.0
+    assert manager._prepare_curtailment_opportunistic_charge(
+        plan, slot, SLOT_PURPOSE_NEGATIVE_PRICE
+    ) is False
+
+
+def test_negative_price_outside_risk_releases_transient_reserve_ceiling():
+    battery = _Battery("b1", 60, 10, max_soc=100)
+    ctrl = _controller([battery])
+    ctrl.smart_predischarge_enabled = True
+    slot = _future_slots([-0.10])[0]
+    plan = CurtailmentPlan(status="protected", reason="headroom_sufficient")
+    ctrl._curtailment_opportunity_limited = True
+    ctrl._curtailment_opportunistic_target_soc = {battery: 80.0}
+    ctrl._predictive_charge_target_soc = {battery: 80.0}
+    ctrl._grid_charging_initialized = True
+    manager = PricingManager(SimpleNamespace(), ctrl)
+    manager._slot_overlaps_curtailment_risk = lambda _slot: False
+
+    assert manager._prepare_curtailment_opportunistic_charge(
+        plan, slot, SLOT_PURPOSE_NEGATIVE_PRICE
+    ) is False
+    assert ctrl._curtailment_opportunistic_target_soc is None
+    assert ctrl._predictive_charge_target_soc is None
+    assert ctrl._grid_charging_initialized is False
+
+
 def test_evaluation_moves_opportunity_out_of_solar_risk_window():
     battery = _Battery("b1", 50, 4)
     ctrl = _controller([battery])

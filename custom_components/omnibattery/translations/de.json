@@ -331,7 +331,7 @@
           "smart_predischarge_enabled": "Intelligente Vorentladung / Anti-Abregelung",
           "negative_injection_threshold": "Schwellenwert für negative Einspeisung",
           "predischarge_reserve_soc": "SOC-Reserve für Vorentladung (%)",
-          "predischarge_max_export_power_w": "Maximale Vorentlade-Einspeisung (W)",
+          "predischarge_export_mode": "Modus für gezielte Netzeinspeisung",
           "solar_forecast_sensor": "Solarprognose-Sensor (kWh)",
           "predictive_safety_margin_kwh": "Solarprognose-Sicherheitspuffer (kWh)",
           "predictive_grid_charge_margin_pct": "Prädiktive Netzladungs-Marge (%)"
@@ -346,10 +346,20 @@
           "smart_predischarge_enabled": "Aktiviert die optionale Vorentladung nur im dynamischen Preismodus, um vor negativen Einspeisepreisen Platz zu schaffen.",
           "negative_injection_threshold": "Preise gleich oder unter diesem Wert gelten bei erwarteter Solarüberschussenergie als Risikofenster.",
           "predischarge_reserve_soc": "SOC, der zusätzlich zu den vorhandenen Mindestgrenzen reserviert wird.",
-          "predischarge_max_export_power_w": "Erlaubte Einspeiseleistung während der Vorentladung. 0 bedeutet nur Eigenverbrauch.",
+          "predischarge_export_mode": "Wähle, wie der Anti-Abregelungs-Puffer erstellt wird: Nur Eigenverbrauch (0 W), Automatisch (nur die erforderliche Leistung) oder Benutzerdefiniertes Limit (im nächsten Schritt). Dies ist ein Limit für gezielte Einspeisung, nicht die gesamte Entladeleistung.",
           "solar_forecast_sensor": "Sensor, der die Solarproduktionsprognose in kWh liefert (z.B. Solcast). Mit Solaranlage: konfigurieren — das System lädt nur dann aus dem Netz, wenn die Solarprognose unzureichend ist. Ohne Solaranlage: leer lassen — das System lädt, wenn die Batterieenergie für den Tag nicht ausreicht. Nicht erforderlich, wenn dieser Sensor bereits im ersten Schritt konfiguriert wurde — er wird automatisch verwendet.",
           "predictive_safety_margin_kwh": "Zusätzlicher Energiepuffer, der der Verbrauchsprognose hinzugefügt wird. Derselbe kWh-Puffer wird bei dynamischen Preisen auch als zusätzlicher Speicherplatz gegen Abregelung reserviert. Auf 0 setzen zum Deaktivieren (Standard). Begrenzt auf Gesamtbatteriekapazität.",
           "predictive_grid_charge_margin_pct": "Zusätzlicher Prozentsatz, der über das Solar-Defizit hinaus aus dem Netz geladen wird, um optimistische Solarprognosen abzufedern. Z. B. lädt ein Netzbedarf von 2 kWh bei 50% 3 kWh. 0 zum Deaktivieren (Standard). Auf die Lücke bis zum max. SOC begrenzt."
+        }
+      },
+      "predischarge_export_limit": {
+        "title": "Anti-Abregelung — Benutzerdefiniertes Einspeiselimit",
+        "description": "Lege die maximale gezielte Einspeisung ins Netz beim Erstellen des Puffers fest. Dies ist ein Einspeiselimit, nicht die gesamte Entladeleistung der Batterie.",
+        "data": {
+          "predischarge_max_export_power_w": "Limit für gezielte Netzeinspeisung (W)"
+        },
+        "data_description": {
+          "predischarge_max_export_power_w": "Maximale gezielte Einspeiseleistung vor einem Solar-Risikofenster. SOC, Reserve, Leistung und vorhandene Sperren bleiben maßgeblich."
         }
       },
       "realtime_price_config": {
@@ -974,7 +984,7 @@
           "smart_predischarge_enabled": "Intelligente Vorentladung / Anti-Abregelung",
           "negative_injection_threshold": "Schwellenwert für negative Einspeisung",
           "predischarge_reserve_soc": "SOC-Reserve für Vorentladung (%)",
-          "predischarge_max_export_power_w": "Maximale Vorentlade-Einspeisung (W)",
+          "predischarge_export_mode": "Modus für gezielte Netzeinspeisung",
           "solar_forecast_sensor": "Solarprognose-Sensor (kWh)",
           "predictive_safety_margin_kwh": "Solarprognose-Sicherheitspuffer (kWh)",
           "predictive_grid_charge_margin_pct": "Prädiktive Netzladungs-Marge (%)"
@@ -989,10 +999,20 @@
           "smart_predischarge_enabled": "Aktiviert die optionale Vorentladung nur im dynamischen Preismodus, um vor negativen Einspeisepreisen Platz zu schaffen.",
           "negative_injection_threshold": "Preise gleich oder unter diesem Wert gelten bei erwarteter Solarüberschussenergie als Risikofenster.",
           "predischarge_reserve_soc": "SOC, der zusätzlich zu den vorhandenen Mindestgrenzen reserviert wird.",
-          "predischarge_max_export_power_w": "Erlaubte Einspeiseleistung während der Vorentladung. 0 bedeutet nur Eigenverbrauch.",
+          "predischarge_export_mode": "Wähle, wie der Anti-Abregelungs-Puffer erstellt wird: Nur Eigenverbrauch (0 W), Automatisch (nur die erforderliche Leistung) oder Benutzerdefiniertes Limit (im nächsten Schritt). Dies ist ein Limit für gezielte Einspeisung, nicht die gesamte Entladeleistung.",
           "solar_forecast_sensor": "Sensor, der die Solarproduktionsprognose in kWh liefert (z.B. Solcast). Mit Solaranlage: konfigurieren — das System lädt nur dann aus dem Netz, wenn die Solarprognose unzureichend ist. Ohne Solaranlage: leer lassen — das System lädt, wenn die Batterieenergie für den Tag nicht ausreicht. Nicht erforderlich, wenn dieser Sensor bereits im ersten Schritt konfiguriert wurde — er wird automatisch verwendet.",
           "predictive_safety_margin_kwh": "Zusätzlicher Energiepuffer, der der Verbrauchsprognose hinzugefügt wird. Derselbe kWh-Puffer wird bei dynamischen Preisen auch als zusätzlicher Speicherplatz gegen Abregelung reserviert. Auf 0 setzen zum Deaktivieren (Standard). Begrenzt auf Gesamtbatteriekapazität.",
           "predictive_grid_charge_margin_pct": "Zusätzlicher Prozentsatz, der über das Solar-Defizit hinaus aus dem Netz geladen wird, um optimistische Solarprognosen abzufedern. Z. B. lädt ein Netzbedarf von 2 kWh bei 50% 3 kWh. 0 zum Deaktivieren (Standard). Auf die Lücke bis zum max. SOC begrenzt."
+        }
+      },
+      "predischarge_export_limit": {
+        "title": "Anti-Abregelung — Benutzerdefiniertes Einspeiselimit",
+        "description": "Lege die maximale gezielte Einspeisung ins Netz beim Erstellen des Puffers fest. Dies ist ein Einspeiselimit, nicht die gesamte Entladeleistung der Batterie.",
+        "data": {
+          "predischarge_max_export_power_w": "Limit für gezielte Netzeinspeisung (W)"
+        },
+        "data_description": {
+          "predischarge_max_export_power_w": "Maximale gezielte Einspeiseleistung vor einem Solar-Risikofenster. SOC, Reserve, Leistung und vorhandene Sperren bleiben maßgeblich."
         }
       },
       "realtime_price_config": {
@@ -1242,7 +1262,7 @@
         "realtime_price": "Echtzeit-Preis (sofortiger Schwellenwert)"
       }
     },
-    "price_integration_type": {
+      "price_integration_type": {
       "options": {
         "nordpool": "Nordpool",
         "pvpc": "PVPC (Spanien – ESIOS REE)",
@@ -1250,6 +1270,13 @@
         "epex": "EPEX Spot (z. B. aWATTar)",
         "entsoe": "ENTSO-e (Transparency-Plattform)",
         "tibber": "Tibber (dienstbasiert)"
+      }
+    },
+    "predischarge_export_mode": {
+      "options": {
+        "self_consumption": "Nur Eigenverbrauch",
+        "automatic": "Automatisch",
+        "custom": "Benutzerdefiniertes Limit"
       }
     }
   },
@@ -1836,7 +1863,7 @@
         "name": "SOC-Reserve für Vorentladung"
       },
       "predischarge_max_export_power_w": {
-        "name": "Maximale Vorentlade-Einspeisung"
+        "name": "Limit für gezielte Netzeinspeisung"
       },
       "predictive_min_soc_floor": {
         "name": "Garantierter Mindest-SOC"

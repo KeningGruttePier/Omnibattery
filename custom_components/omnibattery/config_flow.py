@@ -90,6 +90,13 @@ from .const import (
     CONF_NEGATIVE_INJECTION_THRESHOLD,
     CONF_PREDISCHARGE_RESERVE_SOC,
     CONF_PREDISCHARGE_MAX_EXPORT_POWER_W,
+    CONF_PREDISCHARGE_EXPORT_MODE,
+    PREDISCHARGE_EXPORT_MODE_SELF_CONSUMPTION,
+    PREDISCHARGE_EXPORT_MODE_AUTOMATIC,
+    PREDISCHARGE_EXPORT_MODE_CUSTOM,
+    PREDISCHARGE_EXPORT_MODES,
+    DEFAULT_PREDISCHARGE_EXPORT_MODE,
+    normalize_predischarge_export_settings,
     DEFAULT_SMART_PREDISCHARGE_ENABLED,
     DEFAULT_NEGATIVE_INJECTION_THRESHOLD,
     DEFAULT_PREDISCHARGE_RESERVE_SOC,
@@ -155,6 +162,65 @@ def _parse_optional_float(value: Any) -> float | None:
     if value is None or value == "":
         return None
     return float(str(value).replace(",", "."))
+
+
+def _predischarge_export_defaults(
+    config: dict[str, Any],
+    *,
+    default_mode: str = DEFAULT_PREDISCHARGE_EXPORT_MODE,
+) -> tuple[str, float]:
+    """Return selector defaults, inferring the mode for legacy entries."""
+    stored_mode = config.get(CONF_PREDISCHARGE_EXPORT_MODE)
+    stored_power = config.get(
+        CONF_PREDISCHARGE_MAX_EXPORT_POWER_W,
+        DEFAULT_PREDISCHARGE_MAX_EXPORT_POWER_W,
+    )
+    if stored_mode is None and CONF_PREDISCHARGE_MAX_EXPORT_POWER_W not in config:
+        stored_mode = default_mode
+    return normalize_predischarge_export_settings(stored_mode, stored_power)
+
+
+def _predischarge_export_from_input(
+    user_input: dict[str, Any],
+    *,
+    fallback_mode: str,
+    fallback_power: float = 0.0,
+) -> tuple[str, float]:
+    """Normalize submitted selector data while accepting legacy test/API data."""
+    mode = user_input.get(CONF_PREDISCHARGE_EXPORT_MODE)
+    if mode is None and CONF_PREDISCHARGE_MAX_EXPORT_POWER_W not in user_input:
+        mode = fallback_mode
+    return normalize_predischarge_export_settings(
+        mode,
+        user_input.get(CONF_PREDISCHARGE_MAX_EXPORT_POWER_W, fallback_power),
+    )
+
+
+def _predischarge_export_mode_selector(default: str):
+    """Build the three-way deliberate-export selector."""
+    return vol.Required(CONF_PREDISCHARGE_EXPORT_MODE, default=default), SelectSelector(
+        SelectSelectorConfig(
+            options=list(PREDISCHARGE_EXPORT_MODES),
+            translation_key="predischarge_export_mode",
+            mode=SelectSelectorMode.LIST,
+        )
+    )
+
+
+def _predischarge_export_limit_selector(default: float):
+    """Build the custom deliberate-export limit field."""
+    return vol.Required(
+        CONF_PREDISCHARGE_MAX_EXPORT_POWER_W,
+        default=default,
+    ), NumberSelector(
+        NumberSelectorConfig(
+            min=0,
+            max=10000,
+            step=50,
+            unit_of_measurement="W",
+            mode=NumberSelectorMode.BOX,
+        )
+    )
 
 
 def _phase_sensor_schema_field(key: str, default: str | None = None):
@@ -1807,9 +1873,18 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
                         self.config_data[CONF_PREDISCHARGE_RESERVE_SOC] = user_input.get(
                             CONF_PREDISCHARGE_RESERVE_SOC, DEFAULT_PREDISCHARGE_RESERVE_SOC
                         )
-                        self.config_data[CONF_PREDISCHARGE_MAX_EXPORT_POWER_W] = user_input.get(
-                            CONF_PREDISCHARGE_MAX_EXPORT_POWER_W, DEFAULT_PREDISCHARGE_MAX_EXPORT_POWER_W
+                        export_mode, export_power = _predischarge_export_from_input(
+                            user_input,
+                            fallback_mode=DEFAULT_PREDISCHARGE_EXPORT_MODE,
+                            fallback_power=DEFAULT_PREDISCHARGE_MAX_EXPORT_POWER_W,
                         )
+                        self.config_data[CONF_PREDISCHARGE_EXPORT_MODE] = export_mode
+                        self.config_data[CONF_PREDISCHARGE_MAX_EXPORT_POWER_W] = export_power
+                        if (
+                            export_mode == PREDISCHARGE_EXPORT_MODE_CUSTOM
+                            and CONF_PREDISCHARGE_MAX_EXPORT_POWER_W not in user_input
+                        ):
+                            return await self.async_step_predischarge_export_limit()
                         return await self._finish_setup()
             except Exception as e:
                 _LOGGER.error("Error validating dynamic pricing config: %s", e)
@@ -1858,13 +1933,37 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
         schema_dict[vol.Optional(CONF_PREDISCHARGE_RESERVE_SOC, default=DEFAULT_PREDISCHARGE_RESERVE_SOC)] = NumberSelector(
             NumberSelectorConfig(min=0, max=100, step=1, unit_of_measurement="%", mode=NumberSelectorMode.BOX)
         )
-        schema_dict[vol.Optional(CONF_PREDISCHARGE_MAX_EXPORT_POWER_W, default=DEFAULT_PREDISCHARGE_MAX_EXPORT_POWER_W)] = NumberSelector(
-            NumberSelectorConfig(min=0, max=10000, step=50, unit_of_measurement="W", mode=NumberSelectorMode.BOX)
+        mode_field, mode_selector = _predischarge_export_mode_selector(
+            DEFAULT_PREDISCHARGE_EXPORT_MODE
         )
+        schema_dict[mode_field] = mode_selector
         return self.async_show_form(
             step_id="dynamic_pricing_config",
             data_schema=vol.Schema(schema_dict),
             errors=errors,
+        )
+
+    async def async_step_predischarge_export_limit(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Configure the W limit only for the custom export policy."""
+        if user_input is not None:
+            _mode, export_power = _predischarge_export_from_input(
+                user_input,
+                fallback_mode=PREDISCHARGE_EXPORT_MODE_CUSTOM,
+            )
+            self.config_data[CONF_PREDISCHARGE_EXPORT_MODE] = PREDISCHARGE_EXPORT_MODE_CUSTOM
+            self.config_data[CONF_PREDISCHARGE_MAX_EXPORT_POWER_W] = export_power
+            return await self._finish_setup()
+
+        _mode, export_power = _predischarge_export_defaults(
+            self.config_data,
+            default_mode=PREDISCHARGE_EXPORT_MODE_CUSTOM,
+        )
+        limit_field, limit_selector = _predischarge_export_limit_selector(export_power)
+        return self.async_show_form(
+            step_id="predischarge_export_limit",
+            data_schema=vol.Schema({limit_field: limit_selector}),
         )
 
     async def async_step_realtime_price_config(
@@ -3827,10 +3926,22 @@ class OptionsFlowHandler(OptionsFlow):
                             CONF_PREDISCHARGE_RESERVE_SOC,
                             existing_config.get(CONF_PREDISCHARGE_RESERVE_SOC, DEFAULT_PREDISCHARGE_RESERVE_SOC),
                         )
-                        self.config_data[CONF_PREDISCHARGE_MAX_EXPORT_POWER_W] = user_input.get(
-                            CONF_PREDISCHARGE_MAX_EXPORT_POWER_W,
-                            existing_config.get(CONF_PREDISCHARGE_MAX_EXPORT_POWER_W, DEFAULT_PREDISCHARGE_MAX_EXPORT_POWER_W),
+                        existing_export_mode, existing_export_power = _predischarge_export_defaults(
+                            existing_config,
+                            default_mode=PREDISCHARGE_EXPORT_MODE_SELF_CONSUMPTION,
                         )
+                        export_mode, export_power = _predischarge_export_from_input(
+                            user_input,
+                            fallback_mode=existing_export_mode,
+                            fallback_power=existing_export_power,
+                        )
+                        self.config_data[CONF_PREDISCHARGE_EXPORT_MODE] = export_mode
+                        self.config_data[CONF_PREDISCHARGE_MAX_EXPORT_POWER_W] = export_power
+                        if (
+                            export_mode == PREDISCHARGE_EXPORT_MODE_CUSTOM
+                            and CONF_PREDISCHARGE_MAX_EXPORT_POWER_W not in user_input
+                        ):
+                            return await self.async_step_predischarge_export_limit()
                         return await self._save_and_finish()
             except Exception as e:
                 _LOGGER.error("Error validating dynamic pricing config: %s", e)
@@ -3857,9 +3968,10 @@ class OptionsFlowHandler(OptionsFlow):
         default_reserve_soc = existing_config.get(
             CONF_PREDISCHARGE_RESERVE_SOC, DEFAULT_PREDISCHARGE_RESERVE_SOC
         )
-        default_export_power = existing_config.get(
-            CONF_PREDISCHARGE_MAX_EXPORT_POWER_W, DEFAULT_PREDISCHARGE_MAX_EXPORT_POWER_W
-        )
+        default_export_mode = _predischarge_export_defaults(
+            existing_config,
+            default_mode=PREDISCHARGE_EXPORT_MODE_SELF_CONSUMPTION,
+        )[0]
 
         schema_dict: dict = {
             vol.Required(CONF_PRICE_INTEGRATION_TYPE, default=default_integration):
@@ -3911,13 +4023,37 @@ class OptionsFlowHandler(OptionsFlow):
         schema_dict[vol.Optional(CONF_PREDISCHARGE_RESERVE_SOC, default=default_reserve_soc)] = NumberSelector(
             NumberSelectorConfig(min=0, max=100, step=1, unit_of_measurement="%", mode=NumberSelectorMode.BOX)
         )
-        schema_dict[vol.Optional(CONF_PREDISCHARGE_MAX_EXPORT_POWER_W, default=default_export_power)] = NumberSelector(
-            NumberSelectorConfig(min=0, max=10000, step=50, unit_of_measurement="W", mode=NumberSelectorMode.BOX)
-        )
+        mode_field, mode_selector = _predischarge_export_mode_selector(default_export_mode)
+        schema_dict[mode_field] = mode_selector
         return self.async_show_form(
             step_id="dynamic_pricing_config",
             data_schema=vol.Schema(schema_dict),
             errors=errors,
+        )
+
+    async def async_step_predischarge_export_limit(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Configure the W limit only for the custom export policy."""
+        if user_input is not None:
+            _mode, export_power = _predischarge_export_from_input(
+                user_input,
+                fallback_mode=PREDISCHARGE_EXPORT_MODE_CUSTOM,
+            )
+            self.config_data[CONF_PREDISCHARGE_EXPORT_MODE] = PREDISCHARGE_EXPORT_MODE_CUSTOM
+            self.config_data[CONF_PREDISCHARGE_MAX_EXPORT_POWER_W] = export_power
+            return await self._save_and_finish()
+
+        export_config = dict(self.config_entry.data)
+        export_config.update(self.config_data)
+        _mode, export_power = _predischarge_export_defaults(
+            export_config,
+            default_mode=PREDISCHARGE_EXPORT_MODE_CUSTOM,
+        )
+        limit_field, limit_selector = _predischarge_export_limit_selector(export_power)
+        return self.async_show_form(
+            step_id="predischarge_export_limit",
+            data_schema=vol.Schema({limit_field: limit_selector}),
         )
 
     async def async_step_realtime_price_config(

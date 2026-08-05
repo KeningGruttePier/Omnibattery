@@ -57,6 +57,11 @@ from . import (
 from .curtailment import (
     BatterySnapshot,
     CurtailmentPlan,
+    EXPORT_MODE_AUTOMATIC,
+    EXPORT_MODE_CUSTOM,
+    EXPORT_MODE_SELF_CONSUMPTION,
+    calculate_opportunistic_space_kwh,
+    normalize_export_mode,
     plan_curtailment,
 )
 from .nordpool import (
@@ -703,6 +708,172 @@ class PricingManager:
             )
         )
 
+    def _curtailment_opportunistic_space(self, plan: CurtailmentPlan) -> float:
+        """Return live free space after protecting the remaining solar reserve."""
+        controller_space = getattr(
+            self._controller, "_curtailment_opportunistic_space_kwh", None
+        )
+        if controller_space is not None:
+            try:
+                value = float(controller_space)
+                if math.isfinite(value):
+                    return max(0.0, value)
+            except (TypeError, ValueError):
+                pass
+
+        explicit_space = getattr(plan, "opportunistic_space_kwh", None)
+        try:
+            explicit_value = float(explicit_space or 0.0)
+        except (TypeError, ValueError):
+            explicit_value = 0.0
+        if math.isfinite(explicit_value) and explicit_value > 1e-6:
+            return explicit_value
+
+        # This fallback makes manually-created legacy plans safe and useful in
+        # tests: derive the value from their old headroom fields when present.
+        try:
+            free = float(getattr(plan, "current_headroom_kwh", 0.0) or 0.0)
+            reserve = float(
+                getattr(plan, "solar_reserve_remaining_kwh", None)
+                or getattr(plan, "required_headroom_kwh", 0.0)
+                or 0.0
+            )
+        except (TypeError, ValueError):
+            return 0.0
+        return calculate_opportunistic_space_kwh(free, reserve)
+
+    def _curtailment_opportunistic_targets(
+        self, space_kwh: float
+    ) -> dict[object, float] | None:
+        """Allocate only the spare, non-reserved SOC to import charging."""
+        if space_kwh <= 1e-6:
+            return None
+        entries: list[tuple[object, float, float, float]] = []
+        for coordinator in getattr(self._controller, "coordinators", []):
+            if not self._opportunistic_battery_eligible(coordinator):
+                continue
+            data = getattr(coordinator, "data", None) or {}
+            try:
+                soc = float(data.get("battery_soc", 0.0) or 0.0)
+                capacity = float(data.get("battery_total_energy", 0.0) or 0.0)
+                max_soc = float(getattr(coordinator, "max_soc", 100.0))
+            except (TypeError, ValueError):
+                continue
+            free = max(0.0, (max_soc - soc) / 100.0 * capacity)
+            if capacity > 0 and free > 1e-6:
+                entries.append((coordinator, soc, capacity, free))
+        total_free = sum(entry[3] for entry in entries)
+        if total_free <= 1e-6:
+            return None
+
+        allowed = min(max(0.0, space_kwh), total_free)
+        targets: dict[object, float] = {}
+        for coordinator, soc, capacity, free in entries:
+            allocation = allowed * free / total_free
+            targets[coordinator] = min(
+                float(getattr(coordinator, "max_soc", 100.0)),
+                soc + allocation / capacity * 100.0,
+            )
+        return targets or None
+
+    def _prepare_curtailment_opportunistic_charge(
+        self,
+        plan: CurtailmentPlan,
+        slot: PriceSlot | None,
+        purpose: str | None,
+    ) -> bool:
+        """Apply a transient SOC ceiling for a risk-window opportunity charge."""
+        controller = self._controller
+        limited = bool(
+            slot is not None
+            and purpose in {SLOT_PURPOSE_NEGATIVE_PRICE, SLOT_PURPOSE_COMBINED}
+            and self._slot_overlaps_curtailment_risk(slot)
+        )
+        was_limited = bool(
+            getattr(controller, "_curtailment_opportunity_limited", False)
+        )
+        had_transient_target = getattr(
+            controller, "_curtailment_opportunistic_target_soc", None
+        ) is not None
+        controller._curtailment_opportunity_limited = limited
+        if not limited:
+            # A slot can remain active while the live risk window moves past
+            # it. Remove the old reserve ceiling in that transition so normal
+            # negative-price charging resumes up to the configured SOC max.
+            controller._curtailment_opportunistic_target_soc = None
+            if purpose in {SLOT_PURPOSE_NEGATIVE_PRICE, SLOT_PURPOSE_COMBINED} and (
+                was_limited or had_transient_target
+            ):
+                controller._predictive_charge_target_soc = None
+                controller._grid_charging_initialized = False
+            return False
+
+        space = self._curtailment_opportunistic_space(plan)
+        targets = self._curtailment_opportunistic_targets(space)
+        if not targets:
+            controller._curtailment_opportunity_limited = False
+            return False
+
+        # A combined slot still has to satisfy its ordinary predictive deficit.
+        # The solar-space ceiling only limits the opportunistic part; it must
+        # never turn a required charge (especially the guaranteed-minimum-SOC
+        # safety exception) into an under-charge.
+        if purpose == SLOT_PURPOSE_COMBINED:
+            deficit_targets = getattr(
+                controller, "_predictive_deficit_target_soc", None
+            )
+            if not deficit_targets:
+                compute_deficit = getattr(
+                    controller, "_compute_deficit_target_soc", None
+                )
+                if callable(compute_deficit):
+                    try:
+                        deficit_targets = compute_deficit()
+                    except (AttributeError, TypeError, ValueError):
+                        deficit_targets = None
+            if isinstance(deficit_targets, dict):
+                for coordinator, deficit_target in deficit_targets.items():
+                    if coordinator in targets:
+                        targets[coordinator] = max(
+                            targets[coordinator], float(deficit_target)
+                        )
+
+        # The guaranteed floor is an explicit safety override even for a pure
+        # opportunity slot.  Keep it per battery so another battery's spare
+        # headroom cannot mask a battery that is below its own floor.
+        if getattr(controller, "_predictive_min_soc_floor_enabled", False):
+            floor = float(
+                getattr(controller, "_predictive_min_soc_floor", 0.0) or 0.0
+            )
+            for coordinator in list(targets):
+                try:
+                    current_soc = float(
+                        (getattr(coordinator, "data", None) or {}).get(
+                            "battery_soc", 0.0
+                        )
+                        or 0.0
+                    )
+                except (AttributeError, TypeError, ValueError):
+                    continue
+                if current_soc < floor:
+                    targets[coordinator] = max(targets[coordinator], floor)
+
+        # The controller normally recomputes its typed target when the grid
+        # handler is uninitialised.  Mark this transient target as initialized so
+        # that it cannot silently replace the solar reserve with max_soc.
+        controller._predictive_charge_target_soc = targets
+        controller._curtailment_opportunistic_target_soc = targets
+        if not getattr(controller, "_grid_charging_initialized", False):
+            max_power = min(
+                max(0.0, float(getattr(controller, "max_contracted_power", 0.0) or 0.0)),
+                max(0.0, float(getattr(controller, "max_charge_capacity", 0.0) or 0.0)),
+            )
+            controller.previous_power = -max_power
+            controller.previous_error = 0
+            controller._grid_charging_initialized = True
+            controller.first_execution = False
+        return True
+
     def _effective_slot_purpose(self, slot: PriceSlot) -> str | None:
         """Return the purpose still authorised for a slot at this instant."""
         schedule = getattr(self._controller, "_dynamic_pricing_schedule", None)
@@ -744,7 +915,14 @@ class PricingManager:
             has_opportunity
             and self._current_price_is_opportunistic()
             and self._opportunistic_target_pending()
-            and not self._slot_overlaps_curtailment_risk(slot)
+            and (
+                not self._slot_overlaps_curtailment_risk(slot)
+                or self._curtailment_opportunistic_space(
+                    getattr(self._controller, "_curtailment_plan", None)
+                    or CurtailmentPlan()
+                )
+                > 1e-6
+            )
         )
         deficit_needed = has_deficit and deficit_needed
         if deficit_needed and opportunity_needed:
@@ -1004,6 +1182,262 @@ class PricingManager:
             return None, None, None
         return forecast_kwh, fraction_fn, daily_consumption
 
+    def _curtailment_export_settings(self) -> tuple[str, float]:
+        """Return the selector mode and deliberate-export limit.
+
+        The configuration migration is intentionally outside this module.  The
+        runtime accepts the likely new attribute names and falls back to the old
+        ``predischarge_max_export_power_w`` value, so old entries keep their
+        exact meaning during a rolling upgrade.
+        """
+        controller = self._controller
+        mode = None
+        for name in (
+            "predischarge_export_mode",
+            "smart_predischarge_export_mode",
+            "curtailment_export_mode",
+        ):
+            value = getattr(controller, name, None)
+            if value is not None:
+                mode = value
+                break
+
+        limit = None
+        for name in (
+            "predischarge_export_limit_w",
+            "predischarge_custom_export_power_w",
+            "predischarge_max_export_power_w",
+        ):
+            value = getattr(controller, name, None)
+            if value is not None:
+                limit = value
+                break
+        try:
+            limit_w = max(0.0, float(limit or 0.0))
+        except (TypeError, ValueError):
+            limit_w = 0.0
+
+        normalized = normalize_export_mode(mode, limit_w)
+        if normalized != EXPORT_MODE_CUSTOM:
+            limit_w = 0.0
+        return normalized, limit_w
+
+    @staticmethod
+    def _mapping_value(mapping: object, key: PriceSlot, fallback: float) -> float:
+        """Read a finite non-negative value from a slot mapping."""
+        if not hasattr(mapping, "get"):
+            return max(0.0, fallback)
+        try:
+            value = float(mapping.get(key, fallback) or 0.0)
+        except (TypeError, ValueError):
+            return max(0.0, fallback)
+        return value if math.isfinite(value) else max(0.0, fallback)
+
+    def _curtailment_actual_solar_mapping(self, plan: CurtailmentPlan) -> object | None:
+        """Return optional per-slot measured solar energy supplied by telemetry.
+
+        The normal controller publishes a daily accumulator, while tests and
+        future telemetry providers may expose per-slot values.  Only the latter
+        can safely identify how much of each protected interval actually arrived;
+        absent such data the forecast remains the conservative source of truth.
+        """
+        for owner in (self._controller, plan):
+            for name in (
+                "_curtailment_actual_solar_by_slot",
+                "curtailment_actual_solar_by_slot",
+                "actual_solar_by_slot",
+            ):
+                mapping = getattr(owner, name, None)
+                if hasattr(mapping, "get"):
+                    return mapping
+        return None
+
+    def _curtailment_daily_solar_ratio(
+        self, plan: CurtailmentPlan, now: datetime
+    ) -> float | None:
+        """Estimate actual-versus-expected PV performance from today's accumulator.
+
+        The accumulator is a daily total, so comparing it with the full-day
+        forecast would make the reserve jump at sunrise.  Compare it with the
+        forecast fraction that should have arrived by ``now`` instead.  Keep a
+        small warm-up threshold to avoid making a decision from the first few
+        watts of the day; until then the forecast remains the safe fallback.
+        """
+        controller = self._controller
+        actual_date = getattr(controller, "_daily_solar_energy_date", None)
+        if actual_date is not None and actual_date != now.date():
+            return None
+        try:
+            actual_kwh = float(getattr(controller, "_daily_solar_energy_kwh", 0.0) or 0.0)
+            forecast_kwh = float(getattr(plan, "solar_forecast_kwh", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            return None
+        if (
+            not math.isfinite(actual_kwh)
+            or not math.isfinite(forecast_kwh)
+            or forecast_kwh <= 1e-6
+        ):
+            return None
+
+        tracker = getattr(controller, "_consumption_tracker", None)
+        try:
+            t_start = getattr(controller, "_solar_t_start", None)
+            if t_start is None:
+                t_start = tracker.calculate_sunrise()
+            if t_start is None:
+                return None
+            t_end = tracker.estimate_t_end()
+            if t_end <= t_start:
+                return None
+            now_hour = now.hour + now.minute / 60.0 + now.second / 3600.0
+            expected_fraction = float(
+                tracker.get_solar_fraction_done(now_hour, t_start, t_end)
+            )
+        except (AttributeError, TypeError, ValueError):
+            return None
+        if not math.isfinite(expected_fraction):
+            return None
+        expected_fraction = max(0.0, min(1.0, expected_fraction))
+        expected_to_now = forecast_kwh * expected_fraction
+        if expected_to_now < max(0.1, forecast_kwh * 0.05):
+            return None
+        return max(0.0, min(2.0, actual_kwh / expected_to_now))
+
+    def _update_curtailment_opportunistic_diagnostics(
+        self,
+        plan: CurtailmentPlan,
+        snapshots: list[BatterySnapshot],
+        now: datetime,
+    ) -> tuple[float, float]:
+        """Refresh solar reserve and usable opportunistic space from live SOC.
+
+        This is deliberately recalculated every control cycle.  If measured
+        per-slot solar is lower than forecast, the reserve shrinks and more
+        import charging is admitted; if it is higher, the reserve grows and the
+        charge target is reduced or stopped.  A missing measurement never shrinks
+        the forecast reserve.
+        """
+        risk_slots = [
+            slot for slot in getattr(plan, "risk_slots", []) if slot.end > now
+        ]
+        forecast_reserves = getattr(plan, "solar_reserve_by_slot", {}) or {}
+        forecast_solar = getattr(plan, "solar_forecast_by_slot", {}) or {}
+        forecast_consumption = getattr(plan, "consumption_forecast_by_slot", {}) or {}
+        actual_mapping = self._curtailment_actual_solar_mapping(plan)
+        actual_total_ratio: float | None = None
+        if actual_mapping is None and risk_slots:
+            for name in (
+                "_curtailment_actual_solar_kwh",
+                "curtailment_actual_solar_kwh",
+            ):
+                raw_actual = getattr(self._controller, name, None)
+                try:
+                    actual_total = float(raw_actual)
+                    forecast_total = float(getattr(plan, "solar_forecast_kwh", 0.0) or 0.0)
+                except (TypeError, ValueError):
+                    continue
+                if math.isfinite(actual_total) and math.isfinite(forecast_total) and forecast_total > 1e-6:
+                    actual_total_ratio = max(0.0, min(2.0, actual_total / forecast_total))
+                    break
+            if actual_total_ratio is None:
+                actual_total_ratio = self._curtailment_daily_solar_ratio(plan, now)
+
+        reserve = 0.0
+        measured_underproduction = False
+        measured_overproduction = False
+        legacy_reserve_per_slot = 0.0
+        if risk_slots and not forecast_reserves:
+            legacy_reserve_per_slot = max(
+                0.0,
+                float(getattr(plan, "required_headroom_kwh", 0.0) or 0.0),
+            ) / len(risk_slots)
+        for slot in risk_slots:
+            fallback_reserve = self._mapping_value(
+                forecast_reserves,
+                slot,
+                legacy_reserve_per_slot,
+            )
+            forecast_value = self._mapping_value(forecast_solar, slot, 0.0)
+            consumption = self._mapping_value(forecast_consumption, slot, 0.0)
+            if actual_mapping is None or not hasattr(actual_mapping, "get"):
+                if actual_total_ratio is not None:
+                    reserve += fallback_reserve * actual_total_ratio
+                    measured_underproduction |= actual_total_ratio < 1.0 - 1e-6
+                    measured_overproduction |= actual_total_ratio > 1.0 + 1e-6
+                else:
+                    reserve += fallback_reserve
+                continue
+
+            actual_value = self._mapping_value(actual_mapping, slot, forecast_value)
+            forecast_surplus = max(0.0, forecast_value - consumption)
+            actual_surplus = max(0.0, actual_value - consumption)
+            if actual_surplus + 1e-6 < forecast_surplus:
+                measured_underproduction = True
+            elif actual_surplus > forecast_surplus + 1e-6:
+                measured_overproduction = True
+            if forecast_surplus <= 1e-6:
+                reserve += fallback_reserve
+            else:
+                # Preserve the planner's charge-power cap by scaling the
+                # already-capped forecast reserve by the observed surplus ratio.
+                reserve += fallback_reserve * actual_surplus / forecast_surplus
+
+        if risk_slots:
+            reserve += max(0.0, float(getattr(plan, "headroom_margin_kwh", 0.0) or 0.0))
+        else:
+            reserve = 0.0
+
+        current_headroom = sum(
+            max(
+                0.0,
+                (snapshot.max_soc_pct - snapshot.soc_pct)
+                / 100.0
+                * snapshot.capacity_kwh,
+            )
+            for snapshot in snapshots
+            if snapshot.eligible
+        )
+        space = calculate_opportunistic_space_kwh(current_headroom, reserve)
+        plan.current_headroom_kwh = current_headroom
+        plan.solar_reserve_remaining_kwh = reserve
+        plan.opportunistic_space_kwh = space
+
+        if not risk_slots:
+            reason = "no_solar_risk_reserve"
+        elif measured_overproduction:
+            reason = "solar_overproduction_reduced_space"
+        elif space <= 1e-6:
+            reason = "solar_reserve_protected"
+        elif measured_underproduction:
+            reason = "solar_underproduction_released_space"
+        else:
+            reason = "solar_reserve_space_available"
+        plan.opportunistic_charge_reason = reason
+
+        # This is a diagnostic ceiling, not a replacement for the controller's
+        # per-battery charge limits.  The actual power path clamps again.
+        max_charge_power = max(
+            0.0, float(getattr(self._controller, "max_charge_capacity", 0.0) or 0.0)
+        )
+        remaining_hours = sum(
+            max(0.0, (slot.end - max(now, slot.start)).total_seconds() / 3600.0)
+            for slot in risk_slots
+        )
+        plan.opportunistic_charge_limit_w = (
+            min(max_charge_power, space / remaining_hours * 1000.0)
+            if remaining_hours > 1e-6
+            else 0.0
+        )
+        controller = self._controller
+        controller._curtailment_solar_reserve_remaining_kwh = reserve
+        controller._curtailment_opportunistic_space_kwh = space
+        controller._curtailment_opportunistic_charge_reason = reason
+        controller._curtailment_opportunistic_target_soc = None
+        controller._curtailment_opportunistic_charge_limit_w = (
+            plan.opportunistic_charge_limit_w
+        )
+        return reserve, space
+
     def _build_curtailment_plan(
         self,
         slots: list[PriceSlot],
@@ -1043,6 +1477,7 @@ class PricingManager:
 
         reserved = list(reserved_slots or [])
         reserved.extend(self._curtailment_operation_blocked_slots(daily_slots))
+        export_mode, export_limit_w = self._curtailment_export_settings()
         try:
             plan = plan_curtailment(
                 daily_slots,
@@ -1059,9 +1494,8 @@ class PricingManager:
                     getattr(self._controller, "_predictive_safety_margin_kwh", 0.0)
                 ),
                 charge_power_w=float(getattr(self._controller, "max_charge_capacity", 0.0) or 0.0),
-                max_export_power_w=float(
-                    getattr(self._controller, "predischarge_max_export_power_w", 0.0)
-                ),
+                max_export_power_w=export_limit_w,
+                export_mode=export_mode,
                 solar_fraction_fn=solar_model,
                 reserved_slots=reserved,
                 now=evaluated_at,
@@ -1079,6 +1513,11 @@ class PricingManager:
             return plan
         self._controller._curtailment_plan = plan
         self._controller._curtailment_last_evaluation = evaluated_at
+        self._update_curtailment_opportunistic_diagnostics(
+            plan,
+            self._curtailment_battery_snapshots(),
+            evaluated_at,
+        )
         self._set_curtailment_runtime(plan.status, plan.reason)
         return plan
 
@@ -1115,6 +1554,28 @@ class PricingManager:
             controller.remove_discharge_block("curtailment_floor", coordinator=coordinator)
         controller._curtailment_active = False
         controller._curtailment_active_export_target_w = 0.0
+        preserved = getattr(controller, "_curtailment_plan", None) if preserve_plan else None
+        controller._curtailment_solar_reserve_remaining_kwh = max(
+            0.0,
+            float(
+                getattr(preserved, "solar_reserve_remaining_kwh", 0.0) or 0.0
+            ),
+        ) if preserved is not None else 0.0
+        controller._curtailment_opportunistic_space_kwh = max(
+            0.0,
+            float(getattr(preserved, "opportunistic_space_kwh", 0.0) or 0.0),
+        ) if preserved is not None else 0.0
+        controller._curtailment_opportunistic_charge_limit_w = max(
+            0.0,
+            float(getattr(preserved, "opportunistic_charge_limit_w", 0.0) or 0.0),
+        ) if preserved is not None else 0.0
+        controller._curtailment_opportunistic_charge_reason = (
+            getattr(preserved, "opportunistic_charge_reason", reason)
+            if preserved is not None
+            else reason
+        )
+        controller._curtailment_opportunistic_target_soc = None
+        controller._curtailment_opportunity_limited = False
         if not preserve_plan:
             controller._curtailment_plan = CurtailmentPlan(
                 status="disabled", reason=reason, evaluation_time=datetime.now()
@@ -1200,11 +1661,7 @@ class PricingManager:
         self._controller._curtailment_active = False
 
         snapshots = self._curtailment_battery_snapshots()
-        plan.current_headroom_kwh = sum(
-            max(0.0, (snapshot.max_soc_pct - snapshot.soc_pct) / 100.0 * snapshot.capacity_kwh)
-            for snapshot in snapshots
-            if snapshot.eligible
-        )
+        self._update_curtailment_opportunistic_diagnostics(plan, snapshots, now)
 
         if risk_slot is not None:
             self._refresh_curtailment_floor_blocks(snapshots)
@@ -1226,7 +1683,14 @@ class PricingManager:
             return
 
         current_headroom = plan.current_headroom_kwh
-        required = max(0.0, float(plan.required_headroom_kwh))
+        required = max(
+            0.0,
+            float(
+                getattr(plan, "solar_reserve_remaining_kwh", None)
+                or getattr(plan, "required_headroom_kwh", 0.0)
+                or 0.0
+            ),
+        )
         if current_headroom + 1e-6 >= required:
             self._set_curtailment_runtime("target_reached", "headroom_sufficient")
             return
@@ -1244,17 +1708,21 @@ class PricingManager:
             for snapshot in snapshots
             if snapshot.eligible and snapshot.can_discharge
         )
-        export_cap = max(0.0, float(getattr(self._controller, "predischarge_max_export_power_w", 0.0)))
+        export_mode, export_limit = self._curtailment_export_settings()
         if hours_left <= 0 or max_power <= 0 or remaining_kwh <= 1e-6:
             self._set_curtailment_runtime("shortfall", "no_live_discharge_capacity")
             return
-        target_export = 0.0 if export_cap <= 0 else -min(
-            export_cap, max_power, remaining_kwh / hours_left * 1000.0
-        )
-        if export_cap <= 0:
+        needed_export_w = min(max_power, remaining_kwh / hours_left * 1000.0)
+        if export_mode == EXPORT_MODE_SELF_CONSUMPTION:
             # Zero means domestic self-consumption only.  A target of 0 W lets
             # normal PD cover household load but never deliberately export.
             target_export = 0.0
+        elif export_mode == EXPORT_MODE_CUSTOM:
+            target_export = -min(export_limit, needed_export_w)
+        else:
+            # Automatic mode deliberately exports only the power required to
+            # create the missing headroom, never the battery's full capability.
+            target_export = -needed_export_w
         self._controller.set_setpoint_override(
             "curtailment_predischarge", target_export, priority=5
         )
@@ -1405,9 +1873,10 @@ class PricingManager:
             await self._send_dynamic_pricing_notification(decision_data=decision_data, schedule=None)
             return
 
-        # A negative-price solar-surplus slot is protected from ordinary grid
-        # charging.  Build once with the tentative schedule, remove conflicts,
-        # then build the final plan with the remaining cheap slots reserved.
+        # A negative-price solar-surplus slot remains protected from discharge,
+        # but it is still a valid import opportunity when spare headroom exists.
+        # Build once with the tentative schedule, remove ordinary deficit
+        # conflicts, then build the final plan with charge slots reserved.
         # Risk detection is independent of reservations in the curtailment
         # planner. Pass the tentative charge calendar so its pre-discharge
         # candidates are coherent, then use the reported risk windows to remove
@@ -1426,12 +1895,30 @@ class PricingManager:
             safe_slots = [slot for slot in slots if _safe(slot)]
             old_selected_count = len(selected)
 
+            # A real planner carries per-risk reserve accounting, so retain its
+            # negative slots in the schedule and let the live SOC/reserve gate
+            # decide how much can actually flow.  Legacy hand-built plans have
+            # no accounting map; keep their old conservative filtering.
+            retain_risk_opportunity = bool(
+                getattr(tentative_plan, "solar_reserve_by_slot", {})
+                or self._curtailment_opportunistic_space(tentative_plan) > 1e-6
+            )
+            negative_candidates = (
+                [slot for slot in slots if math.isfinite(slot.price) and slot.price < 0.0]
+                if retain_risk_opportunity
+                else [
+                    slot
+                    for slot in safe_slots
+                    if math.isfinite(slot.price) and slot.price < 0.0
+                ]
+            )
             # Opportunistic energy is never allowed to consume reserved solar
-            # headroom.  This remains true when a guaranteed-minimum-SOC deficit
-            # shares the same interval: only the necessary deficit purpose keeps
-            # the protected slot.
+            # headroom.  In a guaranteed-floor slot only the necessary deficit
+            # purpose keeps the protected interval.
             negative_price_selected = calculations.select_cheapest_slots_by_duration(
-                [slot for slot in safe_slots if math.isfinite(slot.price) and slot.price < 0.0],
+                negative_candidates
+                if not decision_data.get("floor_active", False)
+                else [slot for slot in negative_candidates if _safe(slot)],
                 negative_price_hours_needed,
                 None,
                 now=eval_now,
@@ -1630,6 +2117,19 @@ class PricingManager:
             SLOT_PURPOSE_COMBINED,
         }
 
+        # Do not turn a temporarily full solar reserve into a permanent
+        # ``purpose=None`` decision.  A later under-production update may free
+        # space during the risk slot, so the live gate must retain authority.
+        curtailment_plan = getattr(self._controller, "_curtailment_plan", None)
+        if (
+            has_opportunity
+            and curtailment_plan is not None
+            and self._slot_overlaps_curtailment_risk(next_slot)
+            and getattr(curtailment_plan, "solar_reserve_by_slot", {})
+            and self._curtailment_opportunistic_space(curtailment_plan) <= 1e-6
+        ):
+            return
+
         decision = None
         deficit_needed = False
         if has_deficit and bool(
@@ -1641,11 +2141,18 @@ class PricingManager:
 
         opportunity_needed = False
         if has_opportunity and self._negative_price_feature_enabled():
+            plan = getattr(self._controller, "_curtailment_plan", None)
             opportunity_needed = bool(
                 math.isfinite(next_slot.price)
                 and next_slot.price < 0.0
                 and self._opportunistic_target_pending()
-                and not self._slot_overlaps_curtailment_risk(next_slot)
+                and (
+                    not self._slot_overlaps_curtailment_risk(next_slot)
+                    or (
+                        plan is not None
+                        and self._curtailment_opportunistic_space(plan) > 1e-6
+                    )
+                )
             )
 
         if deficit_needed and opportunity_needed:
@@ -2095,7 +2602,9 @@ class PricingManager:
         controller.grid_charging_active = False
         controller._active_dynamic_slot_purpose = None
         controller._predictive_charge_target_soc = None
+        controller._curtailment_opportunistic_target_soc = None
         controller._predictive_deficit_target_soc = None
+        controller._curtailment_opportunity_limited = False
         controller.previous_power = 0
         controller.previous_error = 0
         controller.first_execution = True
@@ -2286,8 +2795,27 @@ class PricingManager:
                     else:
                         self._controller._grid_charging_initialized = False
                         self._controller._predictive_charge_target_soc = None
+                opportunity_limited = self._prepare_curtailment_opportunistic_charge(
+                    getattr(self._controller, "_curtailment_plan", None)
+                    or CurtailmentPlan(),
+                    current_slot,
+                    effective_purpose,
+                )
                 await self._controller._handle_predictive_grid_charging()
                 if not self._controller.grid_charging_active:
+                    # Reaching the temporary solar-space ceiling is not the
+                    # same as reaching max_soc.  Keep the physical slot alive
+                    # so a later forecast shortfall can release more space.
+                    temporary_reserve_stop = bool(
+                        opportunity_limited
+                        and effective_purpose
+                        in {SLOT_PURPOSE_NEGATIVE_PRICE, SLOT_PURPOSE_COMBINED}
+                    )
+                    if temporary_reserve_stop:
+                        await self._stop_dynamic_price_slot(
+                            "solar_reserve_reached"
+                        )
+                        return
                     if not self._active_predictive_targets_pending():
                         if current_slot is not None:
                             self._controller._dp_completed_slots.add(current_slot.start)

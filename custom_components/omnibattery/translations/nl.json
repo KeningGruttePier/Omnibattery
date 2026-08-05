@@ -331,7 +331,7 @@
           "smart_predischarge_enabled": "Slim voorontladen / anti-afregeling",
           "negative_injection_threshold": "Drempelwaarde negatieve teruglevering",
           "predischarge_reserve_soc": "SOC-reserve voor voorontladen (%)",
-          "predischarge_max_export_power_w": "Maximale teruglevering bij voorontladen (W)",
+          "predischarge_export_mode": "Modus voor doelbewuste teruglevering aan het net",
           "solar_forecast_sensor": "Zonnevoorspellingssensor (kWh)",
           "predictive_safety_margin_kwh": "Veiligheidsmarge zonne-energieprognose (kWh)",
           "predictive_grid_charge_margin_pct": "Voorspellende netladingsmarge (%)"
@@ -346,10 +346,20 @@
           "smart_predischarge_enabled": "Schakelt optioneel voorontladen alleen in de dynamische prijsmode in om ruimte te maken vóór slots met negatieve terugleveringsprijzen.",
           "negative_injection_threshold": "Prijzen gelijk aan of lager dan deze drempel zijn risicoslots wanneer een zonne-overschot wordt verwacht.",
           "predischarge_reserve_soc": "SOC die naast de bestaande minimumgrenzen moet worden gereserveerd.",
-          "predischarge_max_export_power_w": "Toegestaan terugleververmogen tijdens voorontladen. 0 betekent alleen eigen verbruik.",
+          "predischarge_export_mode": "Kies hoe anti-afregelruimte wordt gemaakt: Alleen eigen verbruik (0 W), Automatisch (alleen het benodigde vermogen) of Aangepaste limiet (in de volgende stap). Dit is een limiet voor doelbewuste teruglevering, niet het totale ontlaadvermogen.",
           "solar_forecast_sensor": "Sensor die de zonneproductievoorspelling in kWh levert (bijv. Solcast). Met zonnepanelen: configureer deze sensor — het systeem laadt alleen van het net als de voorspelling onvoldoende is. Zonder zonnepanelen: laat leeg — het systeem laadt wanneer de batterij-energie niet voldoende is voor de dag. Niet vereist als u deze sensor al in de eerste stap heeft geconfigureerd — hij wordt automatisch gebruikt.",
           "predictive_safety_margin_kwh": "Extra energiebuffer bij de verbruiksprognose. Dezelfde buffer in kWh wordt bij dynamische prijzen ook gereserveerd als extra ruimte tegen afregeling. Op 0 zetten om uit te schakelen (standaard). Begrensd door de totale batterijcapaciteit.",
           "predictive_grid_charge_margin_pct": "Extra percentage dat boven het zonne-tekort uit het net wordt geladen om optimistische zonneprognoses op te vangen. Bijv.: een netbehoefte van 2 kWh laadt bij 50% 3 kWh. 0 om uit te schakelen (standaard). Begrensd tot het gat tot max SOC."
+        }
+      },
+      "predischarge_export_limit": {
+        "title": "Anti-afregeling — Aangepaste terugleverlimiet",
+        "description": "Stel de maximale doelbewuste teruglevering aan het net in tijdens het maken van ruimte. Dit is een terugleverlimiet, niet het totale ontlaadvermogen van de batterij.",
+        "data": {
+          "predischarge_max_export_power_w": "Limiet voor doelbewuste teruglevering aan het net (W)"
+        },
+        "data_description": {
+          "predischarge_max_export_power_w": "Maximaal doelbewust terugleververmogen vóór een zonne-risicoslot. SOC, reserve, vermogen en bestaande blokkeringen blijven leidend."
         }
       },
       "realtime_price_config": {
@@ -974,7 +984,7 @@
           "smart_predischarge_enabled": "Slim voorontladen / anti-afregeling",
           "negative_injection_threshold": "Drempelwaarde negatieve teruglevering",
           "predischarge_reserve_soc": "SOC-reserve voor voorontladen (%)",
-          "predischarge_max_export_power_w": "Maximale teruglevering bij voorontladen (W)",
+          "predischarge_export_mode": "Modus voor doelbewuste teruglevering aan het net",
           "solar_forecast_sensor": "Zonnevoorspellingssensor (kWh)",
           "predictive_safety_margin_kwh": "Veiligheidsmarge zonne-energieprognose (kWh)",
           "predictive_grid_charge_margin_pct": "Voorspellende netladingsmarge (%)"
@@ -989,10 +999,20 @@
           "smart_predischarge_enabled": "Schakelt optioneel voorontladen alleen in de dynamische prijsmode in om ruimte te maken vóór slots met negatieve terugleveringsprijzen.",
           "negative_injection_threshold": "Prijzen gelijk aan of lager dan deze drempel zijn risicoslots wanneer een zonne-overschot wordt verwacht.",
           "predischarge_reserve_soc": "SOC die naast de bestaande minimumgrenzen moet worden gereserveerd.",
-          "predischarge_max_export_power_w": "Toegestaan terugleververmogen tijdens voorontladen. 0 betekent alleen eigen verbruik.",
+          "predischarge_export_mode": "Kies hoe anti-afregelruimte wordt gemaakt: Alleen eigen verbruik (0 W), Automatisch (alleen het benodigde vermogen) of Aangepaste limiet (in de volgende stap). Dit is een limiet voor doelbewuste teruglevering, niet het totale ontlaadvermogen.",
           "solar_forecast_sensor": "Sensor die de zonneproductievoorspelling in kWh levert (bijv. Solcast). Met zonnepanelen: configureer deze sensor — het systeem laadt alleen van het net als de voorspelling onvoldoende is. Zonder zonnepanelen: laat leeg — het systeem laadt wanneer de batterij-energie niet voldoende is voor de dag. Niet vereist als u deze sensor al in de eerste stap heeft geconfigureerd — hij wordt automatisch gebruikt.",
           "predictive_safety_margin_kwh": "Extra energiebuffer bij de verbruiksprognose. Dezelfde buffer in kWh wordt bij dynamische prijzen ook gereserveerd als extra ruimte tegen afregeling. Op 0 zetten om uit te schakelen (standaard). Begrensd door de totale batterijcapaciteit.",
           "predictive_grid_charge_margin_pct": "Extra percentage dat boven het zonne-tekort uit het net wordt geladen om optimistische zonneprognoses op te vangen. Bijv.: een netbehoefte van 2 kWh laadt bij 50% 3 kWh. 0 om uit te schakelen (standaard). Begrensd tot het gat tot max SOC."
+        }
+      },
+      "predischarge_export_limit": {
+        "title": "Anti-afregeling — Aangepaste terugleverlimiet",
+        "description": "Stel de maximale doelbewuste teruglevering aan het net in tijdens het maken van ruimte. Dit is een terugleverlimiet, niet het totale ontlaadvermogen van de batterij.",
+        "data": {
+          "predischarge_max_export_power_w": "Limiet voor doelbewuste teruglevering aan het net (W)"
+        },
+        "data_description": {
+          "predischarge_max_export_power_w": "Maximaal doelbewust terugleververmogen vóór een zonne-risicoslot. SOC, reserve, vermogen en bestaande blokkeringen blijven leidend."
         }
       },
       "realtime_price_config": {
@@ -1242,7 +1262,7 @@
         "realtime_price": "Realtimeprijs (directe drempel)"
       }
     },
-    "price_integration_type": {
+      "price_integration_type": {
       "options": {
         "nordpool": "Nordpool",
         "pvpc": "PVPC (Spanje – ESIOS REE)",
@@ -1250,6 +1270,13 @@
         "epex": "EPEX Spot (bijv. aWATTar)",
         "entsoe": "ENTSO-e (Transparency Platform)",
         "tibber": "Tibber (servicegebaseerd)"
+      }
+    },
+    "predischarge_export_mode": {
+      "options": {
+        "self_consumption": "Alleen eigen verbruik",
+        "automatic": "Automatisch",
+        "custom": "Aangepaste limiet"
       }
     }
   },
@@ -1836,7 +1863,7 @@
         "name": "SOC-reserve voor voorontladen"
       },
       "predischarge_max_export_power_w": {
-        "name": "Maximale teruglevering bij voorontladen"
+        "name": "Limiet voor doelbewuste teruglevering aan het net"
       },
       "predictive_min_soc_floor": {
         "name": "Gegarandeerde minimale SOC"

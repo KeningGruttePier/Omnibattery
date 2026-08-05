@@ -8,7 +8,12 @@ import pytest
 from custom_components.omnibattery.pricing import PriceSlot
 from custom_components.omnibattery.pricing.curtailment import (
     BatterySnapshot,
+    EXPORT_MODE_AUTOMATIC,
+    EXPORT_MODE_CUSTOM,
+    EXPORT_MODE_SELF_CONSUMPTION,
+    calculate_opportunistic_space_kwh,
     distribute_solar_forecast,
+    normalize_export_mode,
     plan_curtailment,
 )
 
@@ -299,6 +304,85 @@ def test_multibattery_headroom_and_targets_are_allocated():
     assert plan.target_soc_by_battery["a"] >= 10.0
     assert plan.target_soc_by_battery["b"] >= 10.0
     assert plan.planned_discharge_kwh > 0
+
+
+def test_opportunistic_space_is_free_headroom_minus_solar_reserve():
+    risk = _slot(12, -0.10)
+    plan = plan_curtailment(
+        [risk],
+        solar_forecast_kwh=3.0,
+        daily_consumption_kwh=1.0,
+        batteries=[_battery(soc=60.0, capacity=10.0, power=2000.0)],
+        charge_power_w=10000.0,
+        solar_by_slot={risk: 1.0},
+        consumption_by_slot={risk: 0.0},
+        now=DAY,
+    )
+
+    # 4 kWh free, 0.85 kWh reserved for PV, 3.15 kWh available to import.
+    assert plan.solar_reserve_remaining_kwh == pytest.approx(0.85)
+    assert plan.opportunistic_space_kwh == pytest.approx(3.15)
+    assert plan.opportunistic_charge_reason == "solar_reserve_space_available"
+    assert calculate_opportunistic_space_kwh(4.0, 0.85) == pytest.approx(3.15)
+    assert calculate_opportunistic_space_kwh(0.5, 1.0) == 0.0
+
+
+def test_live_solar_shortfall_releases_space_and_excess_solar_closes_it():
+    risk = _slot(12, -0.10)
+    common = dict(
+        price_slots=[risk],
+        solar_forecast_kwh=6.0,
+        daily_consumption_kwh=1.0,
+        batteries=[_battery(soc=60.0, capacity=10.0, power=2000.0)],
+        charge_power_w=10000.0,
+        consumption_by_slot={risk: 0.0},
+        now=DAY,
+    )
+    forecast = plan_curtailment(**common, solar_by_slot={risk: 4.0})
+    actual_low = plan_curtailment(**common, solar_by_slot={risk: 1.0})
+    actual_high = plan_curtailment(**common, solar_by_slot={risk: 6.0})
+
+    assert actual_low.solar_reserve_remaining_kwh < forecast.solar_reserve_remaining_kwh
+    assert actual_low.opportunistic_space_kwh > forecast.opportunistic_space_kwh
+    assert actual_high.solar_reserve_remaining_kwh > forecast.solar_reserve_remaining_kwh
+    assert actual_high.opportunistic_space_kwh < forecast.opportunistic_space_kwh
+
+
+def test_export_selector_modes_and_legacy_values():
+    assert normalize_export_mode(None, 0.0) == EXPORT_MODE_SELF_CONSUMPTION
+    assert normalize_export_mode(None, 800.0) == EXPORT_MODE_CUSTOM
+    assert normalize_export_mode("Solo autoconsumo", 800.0) == EXPORT_MODE_SELF_CONSUMPTION
+    assert normalize_export_mode("Automático", 0.0) == EXPORT_MODE_AUTOMATIC
+    assert normalize_export_mode("Límite personalizado", 800.0) == EXPORT_MODE_CUSTOM
+
+    candidate = _slot(8, 0.30)
+    risk = _slot(9, -0.10)
+    kwargs = dict(
+        price_slots=[candidate, risk],
+        solar_forecast_kwh=5.0,
+        daily_consumption_kwh=1.0,
+        batteries=[_battery(soc=100.0, power=3000.0)],
+        charge_power_w=2000.0,
+        solar_by_slot={candidate: 0.0, risk: 3.0},
+        consumption_by_slot={candidate: 0.0, risk: 0.0},
+        now=DAY,
+    )
+    self_consumption = plan_curtailment(
+        **kwargs, export_mode=EXPORT_MODE_SELF_CONSUMPTION
+    )
+    automatic = plan_curtailment(
+        **kwargs, export_mode=EXPORT_MODE_AUTOMATIC
+    )
+    custom = plan_curtailment(
+        **kwargs, export_mode=EXPORT_MODE_CUSTOM, max_export_power_w=500.0
+    )
+
+    assert self_consumption.export_mode == EXPORT_MODE_SELF_CONSUMPTION
+    assert self_consumption.planned_discharge_kwh == 0.0
+    assert automatic.export_mode == EXPORT_MODE_AUTOMATIC
+    assert automatic.planned_discharge_kwh == pytest.approx(1.7)
+    assert custom.export_limit_w == pytest.approx(500.0)
+    assert custom.planned_discharge_kwh == pytest.approx(0.5)
 
 
 @pytest.mark.parametrize(

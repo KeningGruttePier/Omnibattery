@@ -170,3 +170,73 @@ async def test_diagnostics_handles_missing_entry_data():
     hass = SimpleNamespace(data={DOMAIN: {}})
     result = await diagnostics.async_get_config_entry_diagnostics(hass, entry)
     assert result["batteries"] == []
+
+
+def test_curtailment_diagnostics_derives_opportunistic_space_and_legacy_export():
+    controller = SimpleNamespace(
+        _curtailment_plan=SimpleNamespace(
+            current_headroom_kwh=5.0,
+            required_headroom_kwh=3.0,
+            status="planned",
+            reason="headroom_required",
+        ),
+        _curtailment_runtime_status="planned",
+        _curtailment_runtime_reason="selected_discharge_slot",
+        _active_dynamic_slot_purpose="negative_price",
+        predischarge_max_export_power_w=1200,
+        _global_charge_blockers={
+            "max_soc": {
+                "reason": "max_soc",
+                "details": {"soc": 100},
+                "since": _FakeDatetime("2026-08-05T10:00:00+00:00"),
+            }
+        },
+    )
+
+    result = diagnostics._curtailment_info(controller)
+
+    assert result["solar_reserve_remaining_kwh"] == 3.0
+    assert result["current_free_space_kwh"] == 5.0
+    assert result["opportunistic_space_available_kwh"] == 2.0
+    assert result["opportunistic_space_source"] == (
+        "current_free_space_kwh - solar_reserve_remaining_kwh"
+    )
+    assert result["charge_limit_reason"] == "max_soc: max_soc"
+    assert result["charge_blocked"] is True
+    assert result["export"]["mode"] == "custom"
+    assert result["export"]["limit_w"] == 1200.0
+
+
+def test_curtailment_diagnostics_tolerate_missing_optional_attributes():
+    result = diagnostics._curtailment_info(SimpleNamespace())
+
+    assert result["solar_reserve_remaining_kwh"] is None
+    assert result["opportunistic_space_available_kwh"] is None
+    assert result["charge_limit_reason"] is None
+    assert result["charge_blockers"] == {"global": {}, "batteries": {}}
+    assert result["export"] == {
+        "mode": None,
+        "mode_label": None,
+        "limit_w": None,
+        "limit_description": None,
+    }
+
+
+@pytest.mark.parametrize(
+    ("mode", "limit", "expected_mode"),
+    [
+        ("self_consumption", 0, "self_consumption"),
+        ("automatic", None, "automatic"),
+        ("custom", 800, "custom"),
+    ],
+)
+def test_export_diagnostics_reports_each_mode(mode, limit, expected_mode):
+    controller = SimpleNamespace(
+        predischarge_export_mode=mode,
+        predischarge_max_export_power_w=limit,
+    )
+
+    result = diagnostics._curtailment_info(controller)
+
+    assert result["export_mode"] == expected_mode
+    assert result["export_limit_w"] == limit

@@ -331,7 +331,7 @@
           "smart_predischarge_enabled": "Predescarga inteligente / anti-vertido",
           "negative_injection_threshold": "Umbral de inyección negativa",
           "predischarge_reserve_soc": "Reserva de SOC de predescarga (%)",
-          "predischarge_max_export_power_w": "Exportación máxima de predescarga (W)",
+          "predischarge_export_mode": "Modo de exportación deliberada a red",
           "solar_forecast_sensor": "Sensor de predicción solar (kWh)",
           "predictive_safety_margin_kwh": "Margen de seguridad de previsión solar (kWh)",
           "predictive_grid_charge_margin_pct": "Margen de carga de red predictiva (%)"
@@ -346,10 +346,20 @@
           "smart_predischarge_enabled": "Activa la predescarga opcional solo en el modo de precios dinámicos para crear espacio antes de franjas con precio de inyección negativo.",
           "negative_injection_threshold": "Los precios iguales o inferiores a este umbral son franjas de riesgo cuando se espera excedente solar.",
           "predischarge_reserve_soc": "SOC que debe reservar la predescarga, además de los límites mínimos existentes.",
-          "predischarge_max_export_power_w": "Potencia de exportación permitida durante la predescarga. 0 significa solo autoconsumo.",
+          "predischarge_export_mode": "Elige cómo crear hueco exportando a red: Solo autoconsumo (0 W), Automático (solo la potencia necesaria) o Límite personalizado (se configura en el paso siguiente). Es un límite de exportación deliberada, no la potencia total de descarga.",
           "solar_forecast_sensor": "Sensor que proporciona la predicción de producción solar en kWh (ej: Solcast). Si tienes paneles solares, configúralo — el sistema solo cargará desde la red cuando la previsión solar sea insuficiente. Si no tienes paneles, déjalo vacío — el sistema cargará cuando la batería no tenga energía suficiente para el día. No es necesario si ya configuraste este sensor en el paso inicial: se usará automáticamente.",
           "predictive_safety_margin_kwh": "Energía adicional añadida a la previsión de consumo antes de decidir si cargar. El mismo margen en kWh se reserva también como espacio adicional contra el anti-vertido en Precio Dinámico. Pon 0 para desactivar (por defecto). Limitado a la capacidad total de la batería.",
           "predictive_grid_charge_margin_pct": "Porcentaje extra cargado desde la red sobre el déficit solar, para cubrir previsiones solares optimistas. Ej.: una necesidad de 2 kWh de red al 50% carga 3 kWh. 0 para desactivar (por defecto). Limitado al margen hasta el SOC máximo."
+        }
+      },
+      "predischarge_export_limit": {
+        "title": "Anti-vertido — Límite de exportación personalizado",
+        "description": "Configura la exportación deliberada máxima a red para crear hueco. Es un límite de exportación, no la potencia total de descarga de la batería.",
+        "data": {
+          "predischarge_max_export_power_w": "Límite de exportación deliberada (W)"
+        },
+        "data_description": {
+          "predischarge_max_export_power_w": "Potencia máxima que se puede exportar deliberadamente a red antes de una ventana de riesgo solar. SOC, reservas, potencia del equipo y bloqueos existentes siguen siendo autoritativos."
         }
       },
       "realtime_price_config": {
@@ -974,7 +984,7 @@
           "smart_predischarge_enabled": "Predescarga inteligente / anti-vertido",
           "negative_injection_threshold": "Umbral de inyección negativa",
           "predischarge_reserve_soc": "Reserva de SOC de predescarga (%)",
-          "predischarge_max_export_power_w": "Exportación máxima de predescarga (W)",
+          "predischarge_export_mode": "Modo de exportación deliberada a red",
           "solar_forecast_sensor": "Sensor de predicción solar (kWh)",
           "predictive_safety_margin_kwh": "Margen de seguridad de previsión solar (kWh)",
           "predictive_grid_charge_margin_pct": "Margen de carga de red predictiva (%)"
@@ -989,10 +999,20 @@
           "smart_predischarge_enabled": "Activa la predescarga opcional solo en el modo de precios dinámicos para crear espacio antes de franjas con precio de inyección negativo.",
           "negative_injection_threshold": "Los precios iguales o inferiores a este umbral son franjas de riesgo cuando se espera excedente solar.",
           "predischarge_reserve_soc": "SOC que debe reservar la predescarga, además de los límites mínimos existentes.",
-          "predischarge_max_export_power_w": "Potencia de exportación permitida durante la predescarga. 0 significa solo autoconsumo.",
+          "predischarge_export_mode": "Elige cómo crear hueco exportando a red: Solo autoconsumo (0 W), Automático (solo la potencia necesaria) o Límite personalizado (se configura en el paso siguiente). Es un límite de exportación deliberada, no la potencia total de descarga.",
           "solar_forecast_sensor": "Sensor que proporciona la predicción de producción solar en kWh (ej: Solcast). Si tienes paneles solares, configúralo — el sistema solo cargará desde la red cuando la previsión solar sea insuficiente. Si no tienes paneles, déjalo vacío — el sistema cargará cuando la batería no tenga energía suficiente para el día. No es necesario si ya configuraste este sensor en el paso inicial: se usará automáticamente.",
           "predictive_safety_margin_kwh": "Energía adicional añadida a la previsión de consumo antes de decidir si cargar. El mismo margen en kWh se reserva también como espacio adicional contra el anti-vertido en Precio Dinámico. Pon 0 para desactivar (por defecto). Limitado a la capacidad total de la batería.",
           "predictive_grid_charge_margin_pct": "Porcentaje extra cargado desde la red sobre el déficit solar, para cubrir previsiones solares optimistas. Ej.: una necesidad de 2 kWh de red al 50% carga 3 kWh. 0 para desactivar (por defecto). Limitado al margen hasta el SOC máximo."
+        }
+      },
+      "predischarge_export_limit": {
+        "title": "Anti-vertido — Límite de exportación personalizado",
+        "description": "Configura la exportación deliberada máxima a red para crear hueco. Es un límite de exportación, no la potencia total de descarga de la batería.",
+        "data": {
+          "predischarge_max_export_power_w": "Límite de exportación deliberada (W)"
+        },
+        "data_description": {
+          "predischarge_max_export_power_w": "Potencia máxima que se puede exportar deliberadamente a red antes de una ventana de riesgo solar. SOC, reservas, potencia del equipo y bloqueos existentes siguen siendo autoritativos."
         }
       },
       "realtime_price_config": {
@@ -1250,6 +1270,13 @@
         "epex": "EPEX Spot (p. ej. aWATTar)",
         "entsoe": "ENTSO-e (Plataforma de Transparencia)",
         "tibber": "Tibber (basado en servicio)"
+      }
+    },
+    "predischarge_export_mode": {
+      "options": {
+        "self_consumption": "Solo autoconsumo",
+        "automatic": "Automático",
+        "custom": "Límite personalizado"
       }
     }
   },
@@ -1839,7 +1866,7 @@
         "name": "Reserva de SOC de predescarga"
       },
       "predischarge_max_export_power_w": {
-        "name": "Exportación máxima de predescarga"
+        "name": "Límite de exportación deliberada"
       },
       "predictive_min_soc_floor": {
         "name": "SOC mínimo garantizado"

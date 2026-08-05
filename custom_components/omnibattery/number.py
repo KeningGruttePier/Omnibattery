@@ -35,6 +35,10 @@ from .const import (
     CONF_NEGATIVE_INJECTION_THRESHOLD,
     CONF_PREDISCHARGE_RESERVE_SOC,
     CONF_PREDISCHARGE_MAX_EXPORT_POWER_W,
+    CONF_PREDISCHARGE_EXPORT_MODE,
+    PREDISCHARGE_EXPORT_MODE_SELF_CONSUMPTION,
+    PREDISCHARGE_EXPORT_MODE_CUSTOM,
+    normalize_predischarge_export_settings,
     MIN_CHARGE_HYSTERESIS_PERCENT,
     MAX_CHARGE_HYSTERESIS_PERCENT,
     DOMAIN,
@@ -514,15 +518,24 @@ class SmartPredischargeNumber(NumberEntity):
 
     @property
     def native_value(self) -> float:
-        value = self.entry.data.get(self._conf_key, 0.0)
-        try:
-            return float(value)
-        except (TypeError, ValueError):
-            return 0.0
+        _mode, export_power = normalize_predischarge_export_settings(
+            self.entry.data.get(CONF_PREDISCHARGE_EXPORT_MODE),
+            self.entry.data.get(self._conf_key, 0.0),
+        )
+        return export_power
 
     async def async_set_native_value(self, value: float) -> None:
         new_data = dict(self.entry.data)
-        new_data[self._conf_key] = float(value)
+        _mode, export_power = normalize_predischarge_export_settings(
+            None,
+            value,
+        )
+        new_data[self._conf_key] = export_power
+        new_data[CONF_PREDISCHARGE_EXPORT_MODE] = (
+            PREDISCHARGE_EXPORT_MODE_CUSTOM
+            if export_power > 0
+            else PREDISCHARGE_EXPORT_MODE_SELF_CONSUMPTION
+        )
         self.hass.config_entries.async_update_entry(self.entry, data=new_data)
         controller = self.hass.data[DOMAIN][self.entry.entry_id].get("controller")
         if controller is not None:
