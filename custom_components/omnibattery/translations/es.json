@@ -32,7 +32,7 @@
           "solar_production_sensor": "Sensor de producción solar (opcional)",
           "meter_inverted": "Signo del medidor invertido",
           "max_contracted_power": "Potencia máxima contratada (W)",
-          "three_phase_enabled": "Activar protección de potencia trifásica"
+          "three_phase_enabled": "Activar protección de corriente trifásica"
         },
         "data_description": {
           "consumption_sensor": "Sensor en tiempo real de potencia importada (+) o exportada (-) a la red. Se recomiendan actualizaciones cada 1-2 segundos. Se aceptan sensores más lentos, pero las lecturas retrasadas reducen la calidad de la regulación; la última lectura se sigue durante un máximo de 65 segundos.",
@@ -40,24 +40,27 @@
           "solar_production_sensor": "Sensor de potencia de producción fotovoltaica en tiempo real (W/kW) de un inversor externo que no pasa por las entradas MPPT de la batería. Se usa para mostrar el nodo Solar en el diagrama de flujo del panel. Déjalo vacío si tus paneles alimentan directamente el MPPT de la batería.",
           "meter_inverted": "Activa esta opción si tu medidor usa el convenio opuesto: positivo = exportación, negativo = importación. La unidad (W/kW) se detecta automáticamente.",
           "max_contracted_power": "Potencia total contratada en vatios. El sistema no superará este límite al cargar para evitar que salte el diferencial",
-          "three_phase_enabled": "Envolvente de seguridad opcional para instalaciones trifásicas; configura los sensores y la fase física de cada batería en el paso siguiente."
+          "three_phase_enabled": "Envolvente de seguridad de corriente opcional para instalaciones trifásicas; configura los sensores y la fase física de cada batería en el paso siguiente."
         }
       },
       "three_phase": {
-        "title": "Protección de potencia trifásica",
-        "description": "Configura un sensor de red y un límite simétrico positivo para cada fase que quieras proteger. Deja ambos campos vacíos para las fases no utilizadas. Los sensores deben ser entidades sensor W/kW distintas y usar importación (+) / exportación (-).",
+        "title": "Protección de corriente trifásica",
+        "description": "Configura un sensor de corriente RMS con signo y el tamaño/límite del fusible en amperios para cada fase que quieras proteger. Deja ambos campos vacíos para las fases no utilizadas. Los sensores deben ser entidades sensor distintas con unidades A o mA; positivo significa importación y negativo exportación.",
         "data": {
-          "phase_1_power_sensor": "Sensor de potencia de red L1",
-          "phase_2_power_sensor": "Sensor de potencia de red L2",
-          "phase_3_power_sensor": "Sensor de potencia de red L3",
-          "phase_1_max_power": "Potencia máxima L1 (W)",
-          "phase_2_max_power": "Potencia máxima L2 (W)",
-          "phase_3_max_power": "Potencia máxima L3 (W)"
+          "phase_1_current_sensor": "Sensor de corriente de red L1",
+          "phase_2_current_sensor": "Sensor de corriente de red L2",
+          "phase_3_current_sensor": "Sensor de corriente de red L3",
+          "phase_1_fuse_size": "Tamaño del fusible L1 (A)",
+          "phase_2_fuse_size": "Tamaño del fusible L2 (A)",
+          "phase_3_fuse_size": "Tamaño del fusible L3 (A)"
         },
         "data_description": {
-          "phase_1_power_sensor": "Potencia activa en tiempo real de la fase física L1.",
-          "phase_2_power_sensor": "Potencia activa en tiempo real de la fase física L2.",
-          "phase_3_power_sensor": "Potencia activa en tiempo real de la fase física L3."
+          "phase_1_current_sensor": "Corriente RMS con signo en tiempo real de la fase física L1. Se aceptan A y mA.",
+          "phase_2_current_sensor": "Corriente RMS con signo en tiempo real de la fase física L2. Se aceptan A y mA.",
+          "phase_3_current_sensor": "Corriente RMS con signo en tiempo real de la fase física L3. Se aceptan A y mA.",
+          "phase_1_fuse_size": "Tamaño/límite del fusible de L1 en amperios. Introduce un valor inferior al nominal para dejar margen ante latencias y picos transitorios.",
+          "phase_2_fuse_size": "Tamaño/límite del fusible de L2 en amperios. Introduce un valor inferior al nominal para dejar margen ante latencias y picos transitorios.",
+          "phase_3_fuse_size": "Tamaño/límite del fusible de L3 en amperios. Introduce un valor inferior al nominal para dejar margen ante latencias y picos transitorios."
         }
       },
       "phase_assignments": {
@@ -623,12 +626,12 @@
       "invalid_unit": "El sensor de predicción solar debe tener como unidad 'kWh' o 'Wh'.",
       "solar_production_sensor_not_found": "El sensor de producción solar no existe. Verifica que el sensor esté disponible.",
       "solar_production_invalid_unit": "El sensor de producción solar debe tener como unidad 'W' o 'kW'.",
-      "phase_sensors_must_differ": "Cada fase debe usar un sensor de potencia diferente.",
-      "phase_sensor_not_found": "El sensor de potencia de fase no existe o no está disponible.",
-      "phase_sensor_invalid_domain": "La fuente de potencia de fase debe ser una entidad sensor.",
-      "phase_sensor_invalid_unit": "El sensor de potencia de fase debe tener como unidad 'W' o 'kW'.",
-      "phase_limit_must_be_positive": "La potencia máxima de fase debe ser un valor finito y positivo en vatios.",
-      "phase_sensor_and_limit_required": "Indica el sensor de fase y su potencia máxima, o deja ambos campos vacíos.",
+      "phase_sensors_must_differ": "Cada fase debe usar un sensor de corriente diferente.",
+      "phase_sensor_not_found": "El sensor de corriente de fase no existe o no está disponible.",
+      "phase_sensor_invalid_domain": "La fuente de corriente de fase debe ser una entidad sensor.",
+      "phase_sensor_invalid_unit": "El sensor de corriente de fase debe tener como unidad 'A' o 'mA'.",
+      "phase_limit_must_be_positive": "El tamaño del fusible de fase debe ser un valor finito y positivo en amperios.",
+      "phase_sensor_and_limit_required": "Indica el sensor de corriente de fase y el tamaño del fusible, o deja ambos campos vacíos.",
       "battery_phase_required": "Selecciona la fase física de esta batería.",
       "incomplete_window": "Cada franja de carga adicional necesita hora de inicio y de fin. Rellena ambas o deja ambas vacías para omitirla.",
       "overlapping_slots": "Esta franja se solapa con otra ya configurada para la misma batería. Ajusta horarios, días o batería.",
@@ -653,15 +656,23 @@
   "options": {
     "step": {
       "three_phase": {
-        "title": "Protección de potencia trifásica",
-        "description": "Configura el sensor y el límite de cada fase que quieras proteger. Deja ambos campos vacíos para las fases no utilizadas.",
+        "title": "Protección de corriente trifásica",
+        "description": "Configura un sensor de corriente RMS con signo y el tamaño/límite del fusible en amperios para cada fase que quieras proteger. Deja ambos campos vacíos para las fases no utilizadas. Los sensores deben ser entidades sensor distintas con unidades A o mA; positivo significa importación y negativo exportación.",
         "data": {
-          "phase_1_power_sensor": "Sensor de potencia de red L1",
-          "phase_2_power_sensor": "Sensor de potencia de red L2",
-          "phase_3_power_sensor": "Sensor de potencia de red L3",
-          "phase_1_max_power": "Potencia máxima L1 (W)",
-          "phase_2_max_power": "Potencia máxima L2 (W)",
-          "phase_3_max_power": "Potencia máxima L3 (W)"
+          "phase_1_current_sensor": "Sensor de corriente de red L1",
+          "phase_2_current_sensor": "Sensor de corriente de red L2",
+          "phase_3_current_sensor": "Sensor de corriente de red L3",
+          "phase_1_fuse_size": "Tamaño del fusible L1 (A)",
+          "phase_2_fuse_size": "Tamaño del fusible L2 (A)",
+          "phase_3_fuse_size": "Tamaño del fusible L3 (A)"
+        },
+        "data_description": {
+          "phase_1_current_sensor": "Corriente RMS con signo en tiempo real de la fase física L1. Se aceptan A y mA.",
+          "phase_2_current_sensor": "Corriente RMS con signo en tiempo real de la fase física L2. Se aceptan A y mA.",
+          "phase_3_current_sensor": "Corriente RMS con signo en tiempo real de la fase física L3. Se aceptan A y mA.",
+          "phase_1_fuse_size": "Tamaño/límite del fusible de L1 en amperios. Introduce un valor inferior al nominal para dejar margen ante latencias y picos transitorios.",
+          "phase_2_fuse_size": "Tamaño/límite del fusible de L2 en amperios. Introduce un valor inferior al nominal para dejar margen ante latencias y picos transitorios.",
+          "phase_3_fuse_size": "Tamaño/límite del fusible de L3 en amperios. Introduce un valor inferior al nominal para dejar margen ante latencias y picos transitorios."
         }
       },
       "phase_assignments": {
@@ -695,7 +706,7 @@
           "solar_production_sensor": "Sensor de producción solar (opcional)",
           "meter_inverted": "Signo del medidor invertido",
           "max_contracted_power": "Potencia máxima contratada (W)",
-          "three_phase_enabled": "Activar protección de potencia trifásica"
+          "three_phase_enabled": "Activar protección de corriente trifásica"
         },
         "data_description": {
           "consumption_sensor": "Sensor en tiempo real de potencia importada (+) o exportada (-) a la red. Se recomiendan actualizaciones cada 1-2 segundos. Se aceptan sensores más lentos, pero las lecturas retrasadas reducen la calidad de la regulación; la última lectura se sigue durante un máximo de 65 segundos.",
@@ -703,7 +714,7 @@
           "solar_production_sensor": "Sensor de potencia de producción fotovoltaica en tiempo real (W/kW) de un inversor externo que no pasa por las entradas MPPT de la batería. Se usa para mostrar el nodo Solar en el diagrama de flujo del panel. Déjalo vacío si tus paneles alimentan directamente el MPPT de la batería.",
           "meter_inverted": "Activa esta opción si tu medidor usa el convenio opuesto: positivo = exportación, negativo = importación. La unidad (W/kW) se detecta automáticamente.",
           "max_contracted_power": "Potencia total contratada en vatios. El sistema no superará este límite al cargar para evitar que salte el diferencial",
-          "three_phase_enabled": "Envolvente de seguridad opcional para instalaciones trifásicas; configura los sensores y la fase física de cada batería en el paso siguiente."
+          "three_phase_enabled": "Envolvente de seguridad de corriente opcional para instalaciones trifásicas; configura los sensores y la fase física de cada batería en el paso siguiente."
         }
       },
       "batteries": {
@@ -1178,12 +1189,12 @@
       "invalid_unit": "El sensor de predicción solar debe tener como unidad 'kWh' o 'Wh'.",
       "solar_production_sensor_not_found": "El sensor de producción solar no existe. Verifica que el sensor esté disponible.",
       "solar_production_invalid_unit": "El sensor de producción solar debe tener como unidad 'W' o 'kW'.",
-      "phase_sensors_must_differ": "Cada fase debe usar un sensor de potencia diferente.",
-      "phase_sensor_not_found": "El sensor de potencia de fase no existe o no está disponible.",
-      "phase_sensor_invalid_domain": "La fuente de potencia de fase debe ser una entidad sensor.",
-      "phase_sensor_invalid_unit": "El sensor de potencia de fase debe tener como unidad 'W' o 'kW'.",
-      "phase_limit_must_be_positive": "La potencia máxima de fase debe ser un valor finito y positivo en vatios.",
-      "phase_sensor_and_limit_required": "Indica el sensor de fase y su potencia máxima, o deja ambos campos vacíos.",
+      "phase_sensors_must_differ": "Cada fase debe usar un sensor de corriente diferente.",
+      "phase_sensor_not_found": "El sensor de corriente de fase no existe o no está disponible.",
+      "phase_sensor_invalid_domain": "La fuente de corriente de fase debe ser una entidad sensor.",
+      "phase_sensor_invalid_unit": "El sensor de corriente de fase debe tener como unidad 'A' o 'mA'.",
+      "phase_limit_must_be_positive": "El tamaño del fusible de fase debe ser un valor finito y positivo en amperios.",
+      "phase_sensor_and_limit_required": "Indica el sensor de corriente de fase y el tamaño del fusible, o deja ambos campos vacíos.",
       "battery_phase_required": "Selecciona la fase física de esta batería.",
       "incomplete_window": "Cada franja de carga adicional necesita hora de inicio y de fin. Rellena ambas o deja ambas vacías para omitirla.",
       "overlapping_slots": "Esta franja se solapa con otra ya configurada para la misma batería. Ajusta horarios, días o batería.",

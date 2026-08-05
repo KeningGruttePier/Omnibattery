@@ -32,7 +32,7 @@
           "solar_production_sensor": "Sensor de producció solar (opcional)",
           "meter_inverted": "Signe del comptador invertit",
           "max_contracted_power": "Potència màxima contractada (W)",
-          "three_phase_enabled": "Activa la protecció de potència trifàsica"
+          "three_phase_enabled": "Activa la protecció de corrent trifàsica"
         },
         "data_description": {
           "consumption_sensor": "Sensor en temps real de potència importada (+) o exportada (-) a la xarxa. Es recomanen actualitzacions cada 1-2 segons. S'accepten sensors més lents, però les lectures retardades redueixen la qualitat de la regulació; l'última lectura se segueix durant un màxim de 65 segons.",
@@ -44,23 +44,23 @@
         }
       },
       "three_phase": {
-        "title": "Protecció de potència trifàsica",
-        "description": "Configura un sensor de xarxa i un límit simètric positiu per a cada fase que vulguis protegir. Deixa tots dos camps buits per a les fases no utilitzades. Els sensors han de ser entitats sensor W/kW diferents i fan servir importació (+) / exportació (-).",
+        "title": "Protecció de corrent trifàsica",
+        "description": "Configura un sensor de corrent RMS amb signe i la mida del fusible en amperes per a cada fase que vulguis protegir. Deixa tots dos camps buits per a les fases no utilitzades. Els sensors han de ser entitats sensor diferents amb unitats A o mA; positiu significa importació i negatiu exportació.",
         "data": {
-          "phase_1_power_sensor": "Sensor de potència de xarxa L1",
-          "phase_2_power_sensor": "Sensor de potència de xarxa L2",
-          "phase_3_power_sensor": "Sensor de potència de xarxa L3",
-          "phase_1_max_power": "Potència màxima L1 (W)",
-          "phase_2_max_power": "Potència màxima L2 (W)",
-          "phase_3_max_power": "Potència màxima L3 (W)"
+          "phase_1_current_sensor": "Sensor de corrent de xarxa L1",
+          "phase_2_current_sensor": "Sensor de corrent de xarxa L2",
+          "phase_3_current_sensor": "Sensor de corrent de xarxa L3",
+          "phase_1_fuse_size": "Mida del fusible L1 (A)",
+          "phase_2_fuse_size": "Mida del fusible L2 (A)",
+          "phase_3_fuse_size": "Mida del fusible L3 (A)"
         },
         "data_description": {
-          "phase_1_power_sensor": "Potència activa en temps real de la fase física L1.",
-          "phase_2_power_sensor": "Potència activa en temps real de la fase física L2.",
-          "phase_3_power_sensor": "Potència activa en temps real de la fase física L3.",
-          "phase_1_max_power": "Límit simètric positiu de potència activa per a L1.",
-          "phase_2_max_power": "Límit simètric positiu de potència activa per a L2.",
-          "phase_3_max_power": "Límit simètric positiu de potència activa per a L3."
+          "phase_1_current_sensor": "Corrent RMS amb signe en temps real de la fase física L1. S'accepten A i mA.",
+          "phase_2_current_sensor": "Corrent RMS amb signe en temps real de la fase física L2. S'accepten A i mA.",
+          "phase_3_current_sensor": "Corrent RMS amb signe en temps real de la fase física L3. S'accepten A i mA.",
+          "phase_1_fuse_size": "Mida o límit del fusible de L1 en amperes. Introdueix un valor inferior al nominal per deixar marge.",
+          "phase_2_fuse_size": "Mida o límit del fusible de L2 en amperes. Introdueix un valor inferior al nominal per deixar marge.",
+          "phase_3_fuse_size": "Mida o límit del fusible de L3 en amperes. Introdueix un valor inferior al nominal per deixar marge."
         }
       },
       "phase_assignments": {
@@ -626,12 +626,12 @@
       "invalid_unit": "El sensor de predicció solar ha de tenir com a unitat 'kWh' o 'Wh'.",
       "solar_production_sensor_not_found": "El sensor de producció solar no existeix. Verifica que el sensor estigui disponible.",
       "solar_production_invalid_unit": "El sensor de producció solar ha de tenir com a unitat 'W' o 'kW'.",
-      "phase_sensors_must_differ": "Cada fase ha d'utilitzar un sensor de potència diferent.",
-      "phase_sensor_not_found": "El sensor de potència de fase no existeix o no està disponible.",
-      "phase_sensor_invalid_domain": "La font de potència de fase ha de ser una entitat sensor.",
-      "phase_sensor_invalid_unit": "El sensor de potència de fase ha de tenir com a unitat 'W' o 'kW'.",
-      "phase_limit_must_be_positive": "La potència màxima de fase ha de ser un valor finit i positiu en watts.",
-      "phase_sensor_and_limit_required": "Indica el sensor de fase i la seva potència màxima, o deixa tots dos camps buits.",
+      "phase_sensors_must_differ": "Cada fase ha d'utilitzar un sensor de corrent diferent.",
+      "phase_sensor_not_found": "El sensor de corrent de fase no existeix o no està disponible.",
+      "phase_sensor_invalid_domain": "La font de corrent de fase ha de ser una entitat sensor.",
+      "phase_sensor_invalid_unit": "El sensor de corrent de fase ha de tenir com a unitat 'A' o 'mA'.",
+      "phase_limit_must_be_positive": "La mida del fusible de fase ha de ser un valor finit i positiu en amperes.",
+      "phase_sensor_and_limit_required": "Indica el sensor de corrent de fase i la mida del fusible, o deixa tots dos camps buits.",
       "battery_phase_required": "Selecciona la fase física d'aquesta bateria.",
       "incomplete_window": "Cada franja de càrrega addicional necessita hora d'inici i de fi. Omple les dues o deixa-les buides per ometre-la.",
       "overlapping_slots": "Aquesta franja es solapa amb una altra ja configurada per a la mateixa bateria. Ajusta els horaris, dies o bateria.",
@@ -656,20 +656,23 @@
   "options": {
     "step": {
       "three_phase": {
-        "title": "Protecció de potència trifàsica",
-        "description": "Configura el sensor i el límit de cada fase que vulguis protegir. Deixa tots dos camps buits per a les fases no utilitzades.",
+        "title": "Protecció de corrent trifàsica",
+        "description": "Configura un sensor de corrent RMS amb signe i la mida del fusible en amperes per a cada fase que vulguis protegir. Deixa tots dos camps buits per a les fases no utilitzades. Els sensors han de ser entitats sensor diferents amb unitats A o mA; positiu significa importació i negatiu exportació.",
         "data": {
-          "phase_1_power_sensor": "Sensor de potència de xarxa L1",
-          "phase_2_power_sensor": "Sensor de potència de xarxa L2",
-          "phase_3_power_sensor": "Sensor de potència de xarxa L3",
-          "phase_1_max_power": "Potència màxima L1 (W)",
-          "phase_2_max_power": "Potència màxima L2 (W)",
-          "phase_3_max_power": "Potència màxima L3 (W)"
+          "phase_1_current_sensor": "Sensor de corrent de xarxa L1",
+          "phase_2_current_sensor": "Sensor de corrent de xarxa L2",
+          "phase_3_current_sensor": "Sensor de corrent de xarxa L3",
+          "phase_1_fuse_size": "Mida del fusible L1 (A)",
+          "phase_2_fuse_size": "Mida del fusible L2 (A)",
+          "phase_3_fuse_size": "Mida del fusible L3 (A)"
         },
         "data_description": {
-          "phase_1_power_sensor": "Sensor de la fase física L1.",
-          "phase_2_power_sensor": "Sensor de la fase física L2.",
-          "phase_3_power_sensor": "Sensor de la fase física L3."
+          "phase_1_current_sensor": "Sensor de la fase física L1.",
+          "phase_2_current_sensor": "Sensor de la fase física L2.",
+          "phase_3_current_sensor": "Sensor de la fase física L3.",
+          "phase_1_fuse_size": "Mida o límit del fusible de L1 en amperes. Introdueix un valor inferior al nominal per deixar marge.",
+          "phase_2_fuse_size": "Mida o límit del fusible de L2 en amperes. Introdueix un valor inferior al nominal per deixar marge.",
+          "phase_3_fuse_size": "Mida o límit del fusible de L3 en amperes. Introdueix un valor inferior al nominal per deixar marge."
         }
       },
       "phase_assignments": {
@@ -703,7 +706,7 @@
           "solar_production_sensor": "Sensor de producció solar (opcional)",
           "meter_inverted": "Signe del comptador invertit",
           "max_contracted_power": "Potència màxima contractada (W)",
-          "three_phase_enabled": "Activa la protecció de potència trifàsica"
+          "three_phase_enabled": "Activa la protecció de corrent trifàsica"
         },
         "data_description": {
           "consumption_sensor": "Sensor en temps real de potència importada (+) o exportada (-) a la xarxa. Es recomanen actualitzacions cada 1-2 segons. S'accepten sensors més lents, però les lectures retardades redueixen la qualitat de la regulació; l'última lectura se segueix durant un màxim de 65 segons.",
@@ -1186,12 +1189,12 @@
       "invalid_unit": "El sensor de predicció solar ha de tenir com a unitat 'kWh' o 'Wh'.",
       "solar_production_sensor_not_found": "El sensor de producció solar no existeix. Verifica que el sensor estigui disponible.",
       "solar_production_invalid_unit": "El sensor de producció solar ha de tenir com a unitat 'W' o 'kW'.",
-      "phase_sensors_must_differ": "Cada fase ha d'utilitzar un sensor de potència diferent.",
-      "phase_sensor_not_found": "El sensor de potència de fase no existeix o no està disponible.",
-      "phase_sensor_invalid_domain": "La font de potència de fase ha de ser una entitat sensor.",
-      "phase_sensor_invalid_unit": "El sensor de potència de fase ha de tenir com a unitat 'W' o 'kW'.",
-      "phase_limit_must_be_positive": "La potència màxima de fase ha de ser un valor finit i positiu en watts.",
-      "phase_sensor_and_limit_required": "Indica el sensor de fase i la seva potència màxima, o deixa tots dos camps buits.",
+      "phase_sensors_must_differ": "Cada fase ha d'utilitzar un sensor de corrent diferent.",
+      "phase_sensor_not_found": "El sensor de corrent de fase no existeix o no està disponible.",
+      "phase_sensor_invalid_domain": "La font de corrent de fase ha de ser una entitat sensor.",
+      "phase_sensor_invalid_unit": "El sensor de corrent de fase ha de tenir com a unitat 'A' o 'mA'.",
+      "phase_limit_must_be_positive": "La mida del fusible de fase ha de ser un valor finit i positiu en amperes.",
+      "phase_sensor_and_limit_required": "Indica el sensor de corrent de fase i la mida del fusible, o deixa tots dos camps buits.",
       "battery_phase_required": "Selecciona la fase física d'aquesta bateria.",
       "incomplete_window": "Cada franja de càrrega addicional necessita hora d'inici i de fi. Omple les dues o deixa-les buides per ometre-la.",
       "overlapping_slots": "Aquesta franja es solapa amb una altra ja configurada per a la mateixa bateria. Ajusta els horaris, dies o bateria.",

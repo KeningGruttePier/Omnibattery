@@ -32,7 +32,7 @@
           "solar_production_sensor": "Solar production sensor (optional)",
           "meter_inverted": "Inverted meter sign",
           "max_contracted_power": "Maximum contracted power (W)",
-          "three_phase_enabled": "Enable three-phase power protection"
+          "three_phase_enabled": "Enable three-phase current protection"
         },
         "data_description": {
           "consumption_sensor": "Real-time sensor for imported (+) or exported (-) grid power. Updates every 1-2 seconds are recommended. Slower sensors are accepted, but delayed readings reduce regulation quality; the latest reading is followed for up to 65 seconds.",
@@ -40,27 +40,27 @@
           "solar_production_sensor": "Real-time PV production power sensor (W/kW) from an external inverter not wired through the battery MPPT inputs. Used to show the Solar node in the dashboard energy-flow diagram. Leave empty if your panels feed the battery MPPT directly.",
           "meter_inverted": "Enable this option if your meter uses the opposite convention: positive = export, negative = import. The unit (W/kW) is detected automatically.",
           "max_contracted_power": "Total contracted power in watts. System won't exceed this limit when charging to avoid tripping the breaker",
-          "three_phase_enabled": "Optional safety envelope for three-phase installations. Configure one W/kW grid sensor, positive symmetric limit and physical battery phase for each circuit in the next step."
+          "three_phase_enabled": "Optional safety envelope for three-phase installations. Configure one signed RMS current sensor in A, one fuse-size limit in A and the physical battery phase for each circuit in the next step."
         }
       },
       "three_phase": {
-        "title": "Three-phase power protection",
-        "description": "Configure one grid power sensor and one positive symmetric limit for each phase you want to protect. Leave both fields empty for unused phases. The sensors use the global import (+) / export (-) convention and must be distinct W/kW sensor entities.",
+        "title": "Three-phase current protection",
+        "description": "Configure one signed RMS current sensor and one fuse-size limit in amperes for each phase you want to protect. Leave both fields empty for unused phases. Sensors must be distinct Home Assistant sensor entities with A or mA units; positive means grid import and negative means grid export.",
         "data": {
-          "phase_1_power_sensor": "L1 grid power sensor",
-          "phase_2_power_sensor": "L2 grid power sensor",
-          "phase_3_power_sensor": "L3 grid power sensor",
-          "phase_1_max_power": "L1 maximum power (W)",
-          "phase_2_max_power": "L2 maximum power (W)",
-          "phase_3_max_power": "L3 maximum power (W)"
+          "phase_1_current_sensor": "L1 grid current sensor",
+          "phase_2_current_sensor": "L2 grid current sensor",
+          "phase_3_current_sensor": "L3 grid current sensor",
+          "phase_1_fuse_size": "L1 fuse size (A)",
+          "phase_2_fuse_size": "L2 fuse size (A)",
+          "phase_3_fuse_size": "L3 fuse size (A)"
         },
         "data_description": {
-          "phase_1_power_sensor": "Real-time active power on physical phase L1. Positive import, negative export; W and kW are accepted.",
-          "phase_2_power_sensor": "Real-time active power on physical phase L2. Positive import, negative export; W and kW are accepted.",
-          "phase_3_power_sensor": "Real-time active power on physical phase L3. Positive import, negative export; W and kW are accepted.",
-          "phase_1_max_power": "Positive symmetric active-power limit for L1. Leave margin for latency and transient peaks.",
-          "phase_2_max_power": "Positive symmetric active-power limit for L2. Leave margin for latency and transient peaks.",
-          "phase_3_max_power": "Positive symmetric active-power limit for L3. Leave margin for latency and transient peaks."
+          "phase_1_current_sensor": "Real-time signed RMS current on physical phase L1. Positive import, negative export; A and mA are accepted.",
+          "phase_2_current_sensor": "Real-time signed RMS current on physical phase L2. Positive import, negative export; A and mA are accepted.",
+          "phase_3_current_sensor": "Real-time signed RMS current on physical phase L3. Positive import, negative export; A and mA are accepted.",
+          "phase_1_fuse_size": "Fuse rating/current limit for L1 in amperes. Enter a value below the nameplate rating to leave margin for latency and transient peaks.",
+          "phase_2_fuse_size": "Fuse rating/current limit for L2 in amperes. Enter a value below the nameplate rating to leave margin for latency and transient peaks.",
+          "phase_3_fuse_size": "Fuse rating/current limit for L3 in amperes. Enter a value below the nameplate rating to leave margin for latency and transient peaks."
         }
       },
       "phase_assignments": {
@@ -620,12 +620,12 @@
       "invalid_unit": "Solar forecast sensor must have 'kWh' or 'Wh' as unit.",
       "solar_production_sensor_not_found": "Solar production sensor does not exist. Verify the sensor is available.",
       "solar_production_invalid_unit": "Solar production sensor must have 'W' or 'kW' as unit.",
-      "phase_sensors_must_differ": "Each phase must use a different power sensor.",
-      "phase_sensor_not_found": "The phase power sensor does not exist or is unavailable.",
-      "phase_sensor_invalid_domain": "The phase power source must be a sensor entity.",
-      "phase_sensor_invalid_unit": "The phase power sensor must have 'W' or 'kW' as unit.",
-      "phase_limit_must_be_positive": "The phase maximum power must be a positive finite value in watts.",
-      "phase_sensor_and_limit_required": "Set both the phase sensor and its maximum power, or leave both fields empty.",
+      "phase_sensors_must_differ": "Each phase must use a different current sensor.",
+      "phase_sensor_not_found": "The phase current sensor does not exist or is unavailable.",
+      "phase_sensor_invalid_domain": "The phase current source must be a sensor entity.",
+      "phase_sensor_invalid_unit": "The phase current sensor must have 'A' or 'mA' as unit.",
+      "phase_limit_must_be_positive": "The phase fuse size must be a positive finite value in amperes.",
+      "phase_sensor_and_limit_required": "Set both the phase current sensor and its fuse size, or leave both fields empty.",
       "battery_phase_required": "Select the physical phase for this battery.",
       "incomplete_window": "Each extra charging window needs both a start and an end time. Fill both, or leave both empty to skip it.",
       "overlapping_slots": "This time slot overlaps with an existing one for the same battery. Adjust the times, days, or battery scope.",
@@ -674,7 +674,7 @@
           "solar_production_sensor": "Solar production sensor (optional)",
           "meter_inverted": "Inverted meter sign",
           "max_contracted_power": "Maximum contracted power (W)",
-          "three_phase_enabled": "Enable three-phase power protection"
+          "three_phase_enabled": "Enable three-phase current protection"
         },
         "data_description": {
           "consumption_sensor": "Real-time sensor for imported (+) or exported (-) grid power. Updates every 1-2 seconds are recommended. Slower sensors are accepted, but delayed readings reduce regulation quality; the latest reading is followed for up to 65 seconds.",
@@ -682,27 +682,27 @@
           "solar_production_sensor": "Real-time PV production power sensor (W/kW) from an external inverter not wired through the battery MPPT inputs. Used to show the Solar node in the dashboard energy-flow diagram. Leave empty if your panels feed the battery MPPT directly.",
           "meter_inverted": "Enable this option if your meter uses the opposite convention: positive = export, negative = import. The unit (W/kW) is detected automatically.",
           "max_contracted_power": "Total contracted power in watts. System won't exceed this limit when charging to avoid tripping the breaker",
-          "three_phase_enabled": "Optional safety envelope for three-phase installations. Configure one W/kW grid sensor, positive symmetric limit and physical battery phase for each circuit in the next step."
+          "three_phase_enabled": "Optional safety envelope for three-phase installations. Configure one signed RMS current sensor in A, one fuse-size limit in A and the physical battery phase for each circuit in the next step."
         }
       },
       "three_phase": {
-        "title": "Three-phase power protection",
-        "description": "Configure one grid power sensor and one positive symmetric limit for each phase you want to protect. Leave both fields empty for unused phases. The sensors use the global import (+) / export (-) convention and must be distinct W/kW sensor entities.",
+        "title": "Three-phase current protection",
+        "description": "Configure one signed RMS current sensor and one fuse-size limit in amperes for each phase you want to protect. Leave both fields empty for unused phases. Sensors must be distinct Home Assistant sensor entities with A or mA units; positive means grid import and negative means grid export.",
         "data": {
-          "phase_1_power_sensor": "L1 grid power sensor",
-          "phase_2_power_sensor": "L2 grid power sensor",
-          "phase_3_power_sensor": "L3 grid power sensor",
-          "phase_1_max_power": "L1 maximum power (W)",
-          "phase_2_max_power": "L2 maximum power (W)",
-          "phase_3_max_power": "L3 maximum power (W)"
+          "phase_1_current_sensor": "L1 grid current sensor",
+          "phase_2_current_sensor": "L2 grid current sensor",
+          "phase_3_current_sensor": "L3 grid current sensor",
+          "phase_1_fuse_size": "L1 fuse size (A)",
+          "phase_2_fuse_size": "L2 fuse size (A)",
+          "phase_3_fuse_size": "L3 fuse size (A)"
         },
         "data_description": {
-          "phase_1_power_sensor": "Real-time active power on physical phase L1. Positive import, negative export; W and kW are accepted.",
-          "phase_2_power_sensor": "Real-time active power on physical phase L2. Positive import, negative export; W and kW are accepted.",
-          "phase_3_power_sensor": "Real-time active power on physical phase L3. Positive import, negative export; W and kW are accepted.",
-          "phase_1_max_power": "Positive symmetric active-power limit for L1. Leave margin for latency and transient peaks.",
-          "phase_2_max_power": "Positive symmetric active-power limit for L2. Leave margin for latency and transient peaks.",
-          "phase_3_max_power": "Positive symmetric active-power limit for L3. Leave margin for latency and transient peaks."
+          "phase_1_current_sensor": "Real-time signed RMS current on physical phase L1. Positive import, negative export; A and mA are accepted.",
+          "phase_2_current_sensor": "Real-time signed RMS current on physical phase L2. Positive import, negative export; A and mA are accepted.",
+          "phase_3_current_sensor": "Real-time signed RMS current on physical phase L3. Positive import, negative export; A and mA are accepted.",
+          "phase_1_fuse_size": "Fuse rating/current limit for L1 in amperes. Enter a value below the nameplate rating to leave margin for latency and transient peaks.",
+          "phase_2_fuse_size": "Fuse rating/current limit for L2 in amperes. Enter a value below the nameplate rating to leave margin for latency and transient peaks.",
+          "phase_3_fuse_size": "Fuse rating/current limit for L3 in amperes. Enter a value below the nameplate rating to leave margin for latency and transient peaks."
         }
       },
       "phase_assignments": {
@@ -1176,12 +1176,12 @@
       "invalid_unit": "Solar forecast sensor must have 'kWh' or 'Wh' as unit.",
       "solar_production_sensor_not_found": "Solar production sensor does not exist. Verify the sensor is available.",
       "solar_production_invalid_unit": "Solar production sensor must have 'W' or 'kW' as unit.",
-      "phase_sensors_must_differ": "Each phase must use a different power sensor.",
-      "phase_sensor_not_found": "The phase power sensor does not exist or is unavailable.",
-      "phase_sensor_invalid_domain": "The phase power source must be a sensor entity.",
-      "phase_sensor_invalid_unit": "The phase power sensor must have 'W' or 'kW' as unit.",
-      "phase_limit_must_be_positive": "The phase maximum power must be a positive finite value in watts.",
-      "phase_sensor_and_limit_required": "Set both the phase sensor and its maximum power, or leave both fields empty.",
+      "phase_sensors_must_differ": "Each phase must use a different current sensor.",
+      "phase_sensor_not_found": "The phase current sensor does not exist or is unavailable.",
+      "phase_sensor_invalid_domain": "The phase current source must be a sensor entity.",
+      "phase_sensor_invalid_unit": "The phase current sensor must have 'A' or 'mA' as unit.",
+      "phase_limit_must_be_positive": "The phase fuse size must be a positive finite value in amperes.",
+      "phase_sensor_and_limit_required": "Set both the phase current sensor and its fuse size, or leave both fields empty.",
       "battery_phase_required": "Select the physical phase for this battery.",
       "incomplete_window": "Each extra charging window needs both a start and an end time. Fill both, or leave both empty to skip it.",
       "overlapping_slots": "This time slot overlaps with an existing one for the same battery. Adjust the times, days, or battery scope.",

@@ -32,7 +32,7 @@
           "solar_production_sensor": "Solarproduktionssensor (optional)",
           "meter_inverted": "Zählervorzeichen invertiert",
           "max_contracted_power": "Maximale Vertragsleistung (W)",
-          "three_phase_enabled": "Dreiphasigen Leistungsschutz aktivieren"
+          "three_phase_enabled": "Dreiphasigen Stromschutz aktivieren"
         },
         "data_description": {
           "consumption_sensor": "Echtzeitsensor für importierte (+) oder exportierte (-) Netzleistung. Aktualisierungen alle 1-2 Sekunden werden empfohlen. Langsamere Sensoren werden akzeptiert, verzögerte Messwerte verringern jedoch die Regelqualität; dem letzten Messwert wird bis zu 65 Sekunden lang gefolgt.",
@@ -40,24 +40,27 @@
           "solar_production_sensor": "Echtzeit-PV-Produktionsleistungssensor (W/kW) von einem externen Wechselrichter, der nicht über die MPPT-Eingänge der Batterie geführt wird. Wird verwendet, um den Solar-Knoten im Energiefluss-Diagramm des Dashboards anzuzeigen. Leer lassen, wenn deine Module direkt den MPPT der Batterie speisen.",
           "meter_inverted": "Aktivieren Sie diese Option, wenn Ihr Zähler die umgekehrte Konvention verwendet: positiv = Export, negativ = Import. Die Einheit (W/kW) wird automatisch erkannt.",
           "max_contracted_power": "Gesamt-Vertragsleistung in Watt. Das System überschreitet dieses Limit beim Laden nicht, um ein Auslösen der Sicherung zu vermeiden",
-          "three_phase_enabled": "Optionale Sicherheitsgrenze für dreiphasige Anlagen; Sensoren und physische Batteriephase werden im nächsten Schritt konfiguriert."
+          "three_phase_enabled": "Optionale Strom-Sicherheitsgrenze für dreiphasige Anlagen; Sensoren und physische Batteriephase werden im nächsten Schritt konfiguriert."
         }
       },
       "three_phase": {
-        "title": "Dreiphasiger Leistungsschutz",
-        "description": "Konfigurieren Sie einen Netzleistungssensor und ein positives symmetrisches Limit für jede Phase, die Sie schützen möchten. Lassen Sie beide Felder für nicht verwendete Phasen leer. Die Sensoren müssen unterschiedliche W/kW-Sensoren sein.",
+        "title": "Dreiphasiger Stromschutz",
+        "description": "Konfigurieren Sie für jede zu schützende Phase einen signierten Echtzeit-RMS-Stromsensor und eine Sicherungsgröße/Stromgrenze in Ampere. Lassen Sie beide Felder für nicht verwendete Phasen leer. Die Sensoren müssen unterschiedliche Home-Assistant-Sensor-Entitäten mit der Einheit A oder mA sein; positiv bedeutet Import, negativ Export.",
         "data": {
-          "phase_1_power_sensor": "Netzleistungssensor L1",
-          "phase_2_power_sensor": "Netzleistungssensor L2",
-          "phase_3_power_sensor": "Netzleistungssensor L3",
-          "phase_1_max_power": "Maximale Leistung L1 (W)",
-          "phase_2_max_power": "Maximale Leistung L2 (W)",
-          "phase_3_max_power": "Maximale Leistung L3 (W)"
+          "phase_1_current_sensor": "Netzstromsensor L1",
+          "phase_2_current_sensor": "Netzstromsensor L2",
+          "phase_3_current_sensor": "Netzstromsensor L3",
+          "phase_1_fuse_size": "Sicherungsgröße L1 (A)",
+          "phase_2_fuse_size": "Sicherungsgröße L2 (A)",
+          "phase_3_fuse_size": "Sicherungsgröße L3 (A)"
         },
         "data_description": {
-          "phase_1_power_sensor": "Echtzeit-Wirkleistung der physischen Phase L1.",
-          "phase_2_power_sensor": "Echtzeit-Wirkleistung der physischen Phase L2.",
-          "phase_3_power_sensor": "Echtzeit-Wirkleistung der physischen Phase L3."
+          "phase_1_current_sensor": "Signierter Echtzeit-RMS-Strom der physischen Phase L1. A und mA werden akzeptiert.",
+          "phase_2_current_sensor": "Signierter Echtzeit-RMS-Strom der physischen Phase L2. A und mA werden akzeptiert.",
+          "phase_3_current_sensor": "Signierter Echtzeit-RMS-Strom der physischen Phase L3. A und mA werden akzeptiert.",
+          "phase_1_fuse_size": "Sicherungsgröße/Stromgrenze für L1 in Ampere. Geben Sie einen Wert unterhalb des Nennwerts ein, um Spielraum für Verzögerungen und Spitzen zu lassen.",
+          "phase_2_fuse_size": "Sicherungsgröße/Stromgrenze für L2 in Ampere. Geben Sie einen Wert unterhalb des Nennwerts ein, um Spielraum für Verzögerungen und Spitzen zu lassen.",
+          "phase_3_fuse_size": "Sicherungsgröße/Stromgrenze für L3 in Ampere. Geben Sie einen Wert unterhalb des Nennwerts ein, um Spielraum für Verzögerungen und Spitzen zu lassen."
         }
       },
       "phase_assignments": {
@@ -623,12 +626,12 @@
       "invalid_unit": "Solarprognose-Sensor muss 'kWh' oder 'Wh' als Einheit haben.",
       "solar_production_sensor_not_found": "Solarproduktions-Sensor existiert nicht. Überprüfen Sie, dass der Sensor verfügbar ist.",
       "solar_production_invalid_unit": "Solarproduktions-Sensor muss 'W' oder 'kW' als Einheit haben.",
-      "phase_sensors_must_differ": "Jede Phase muss einen anderen Leistungssensor verwenden.",
-      "phase_sensor_not_found": "Der Phasenleistungssensor existiert nicht oder ist nicht verfügbar.",
-      "phase_sensor_invalid_domain": "Die Phasenleistungsquelle muss eine Sensor-Entität sein.",
-      "phase_sensor_invalid_unit": "Der Phasenleistungssensor muss 'W' oder 'kW' als Einheit haben.",
-      "phase_limit_must_be_positive": "Die maximale Phasenleistung muss ein endlicher positiver Wattwert sein.",
-      "phase_sensor_and_limit_required": "Geben Sie sowohl den Phasensensor als auch dessen maximale Leistung an oder lassen Sie beide Felder leer.",
+      "phase_sensors_must_differ": "Jede Phase muss einen anderen Stromsensor verwenden.",
+      "phase_sensor_not_found": "Der Phasenstromsensor existiert nicht oder ist nicht verfügbar.",
+      "phase_sensor_invalid_domain": "Die Phasenstromquelle muss eine Sensor-Entität sein.",
+      "phase_sensor_invalid_unit": "Der Phasenstromsensor muss 'A' oder 'mA' als Einheit haben.",
+      "phase_limit_must_be_positive": "Die Sicherungsgröße der Phase muss ein endlicher positiver Wert in Ampere sein.",
+      "phase_sensor_and_limit_required": "Geben Sie sowohl den Phasenstromsensor als auch die Sicherungsgröße an oder lassen Sie beide Felder leer.",
       "battery_phase_required": "Wählen Sie die physische Phase dieser Batterie aus.",
       "incomplete_window": "Jedes zusätzliche Ladefenster benötigt eine Start- und eine Endzeit. Füllen Sie beide aus oder lassen Sie beide leer, um es zu überspringen.",
       "overlapping_slots": "Dieses Zeitfenster überschneidet sich mit einem bestehenden für dieselbe Batterie. Passen Sie Zeiten, Tage oder die Batterie an.",
@@ -653,15 +656,23 @@
   "options": {
     "step": {
       "three_phase": {
-        "title": "Dreiphasiger Leistungsschutz",
-        "description": "Konfigurieren Sie den Sensor und das Limit für jede Phase, die Sie schützen möchten. Lassen Sie beide Felder für nicht verwendete Phasen leer.",
+        "title": "Dreiphasiger Stromschutz",
+        "description": "Konfigurieren Sie für jede zu schützende Phase einen signierten Echtzeit-RMS-Stromsensor und eine Sicherungsgröße/Stromgrenze in Ampere. Lassen Sie beide Felder für nicht verwendete Phasen leer. Die Sensoren müssen unterschiedliche Home-Assistant-Sensor-Entitäten mit der Einheit A oder mA sein; positiv bedeutet Import, negativ Export.",
         "data": {
-          "phase_1_power_sensor": "Netzleistungssensor L1",
-          "phase_2_power_sensor": "Netzleistungssensor L2",
-          "phase_3_power_sensor": "Netzleistungssensor L3",
-          "phase_1_max_power": "Maximale Leistung L1 (W)",
-          "phase_2_max_power": "Maximale Leistung L2 (W)",
-          "phase_3_max_power": "Maximale Leistung L3 (W)"
+          "phase_1_current_sensor": "Netzstromsensor L1",
+          "phase_2_current_sensor": "Netzstromsensor L2",
+          "phase_3_current_sensor": "Netzstromsensor L3",
+          "phase_1_fuse_size": "Sicherungsgröße L1 (A)",
+          "phase_2_fuse_size": "Sicherungsgröße L2 (A)",
+          "phase_3_fuse_size": "Sicherungsgröße L3 (A)"
+        },
+        "data_description": {
+          "phase_1_current_sensor": "Signierter Echtzeit-RMS-Strom der physischen Phase L1. A und mA werden akzeptiert.",
+          "phase_2_current_sensor": "Signierter Echtzeit-RMS-Strom der physischen Phase L2. A und mA werden akzeptiert.",
+          "phase_3_current_sensor": "Signierter Echtzeit-RMS-Strom der physischen Phase L3. A und mA werden akzeptiert.",
+          "phase_1_fuse_size": "Sicherungsgröße/Stromgrenze für L1 in Ampere. Geben Sie einen Wert unterhalb des Nennwerts ein, um Spielraum für Verzögerungen und Spitzen zu lassen.",
+          "phase_2_fuse_size": "Sicherungsgröße/Stromgrenze für L2 in Ampere. Geben Sie einen Wert unterhalb des Nennwerts ein, um Spielraum für Verzögerungen und Spitzen zu lassen.",
+          "phase_3_fuse_size": "Sicherungsgröße/Stromgrenze für L3 in Ampere. Geben Sie einen Wert unterhalb des Nennwerts ein, um Spielraum für Verzögerungen und Spitzen zu lassen."
         }
       },
       "phase_assignments": {
@@ -695,7 +706,7 @@
           "solar_production_sensor": "Solarproduktionssensor (optional)",
           "meter_inverted": "Zählervorzeichen invertiert",
           "max_contracted_power": "Maximale Vertragsleistung (W)",
-          "three_phase_enabled": "Dreiphasigen Leistungsschutz aktivieren"
+          "three_phase_enabled": "Dreiphasigen Stromschutz aktivieren"
         },
         "data_description": {
           "consumption_sensor": "Echtzeitsensor für importierte (+) oder exportierte (-) Netzleistung. Aktualisierungen alle 1-2 Sekunden werden empfohlen. Langsamere Sensoren werden akzeptiert, verzögerte Messwerte verringern jedoch die Regelqualität; dem letzten Messwert wird bis zu 65 Sekunden lang gefolgt.",
@@ -703,7 +714,7 @@
           "solar_production_sensor": "Echtzeit-PV-Produktionsleistungssensor (W/kW) von einem externen Wechselrichter, der nicht über die MPPT-Eingänge der Batterie geführt wird. Wird verwendet, um den Solar-Knoten im Energiefluss-Diagramm des Dashboards anzuzeigen. Leer lassen, wenn deine Module direkt den MPPT der Batterie speisen.",
           "meter_inverted": "Aktivieren Sie diese Option, wenn Ihr Zähler die umgekehrte Konvention verwendet: positiv = Export, negativ = Import. Die Einheit (W/kW) wird automatisch erkannt.",
           "max_contracted_power": "Gesamt-Vertragsleistung in Watt. Das System überschreitet dieses Limit beim Laden nicht, um ein Auslösen der Sicherung zu vermeiden",
-          "three_phase_enabled": "Optionale Sicherheitsgrenze für dreiphasige Anlagen; Sensoren und physische Batteriephase werden im nächsten Schritt konfiguriert."
+          "three_phase_enabled": "Optionale Strom-Sicherheitsgrenze für dreiphasige Anlagen; Sensoren und physische Batteriephase werden im nächsten Schritt konfiguriert."
         }
       },
       "batteries": {
@@ -1178,12 +1189,12 @@
       "invalid_unit": "Solarprognose-Sensor muss 'kWh' oder 'Wh' als Einheit haben.",
       "solar_production_sensor_not_found": "Solarproduktions-Sensor existiert nicht. Überprüfen Sie, dass der Sensor verfügbar ist.",
       "solar_production_invalid_unit": "Solarproduktions-Sensor muss 'W' oder 'kW' als Einheit haben.",
-      "phase_sensors_must_differ": "Jede Phase muss einen anderen Leistungssensor verwenden.",
-      "phase_sensor_not_found": "Der Phasenleistungssensor existiert nicht oder ist nicht verfügbar.",
-      "phase_sensor_invalid_domain": "Die Phasenleistungsquelle muss eine Sensor-Entität sein.",
-      "phase_sensor_invalid_unit": "Der Phasenleistungssensor muss 'W' oder 'kW' als Einheit haben.",
-      "phase_limit_must_be_positive": "Die maximale Phasenleistung muss ein endlicher positiver Wattwert sein.",
-      "phase_sensor_and_limit_required": "Geben Sie sowohl den Phasensensor als auch dessen maximale Leistung an oder lassen Sie beide Felder leer.",
+      "phase_sensors_must_differ": "Jede Phase muss einen anderen Stromsensor verwenden.",
+      "phase_sensor_not_found": "Der Phasenstromsensor existiert nicht oder ist nicht verfügbar.",
+      "phase_sensor_invalid_domain": "Die Phasenstromquelle muss eine Sensor-Entität sein.",
+      "phase_sensor_invalid_unit": "Der Phasenstromsensor muss 'A' oder 'mA' als Einheit haben.",
+      "phase_limit_must_be_positive": "Die Sicherungsgröße der Phase muss ein endlicher positiver Wert in Ampere sein.",
+      "phase_sensor_and_limit_required": "Geben Sie sowohl den Phasenstromsensor als auch die Sicherungsgröße an oder lassen Sie beide Felder leer.",
       "battery_phase_required": "Wählen Sie die physische Phase dieser Batterie aus.",
       "incomplete_window": "Jedes zusätzliche Ladefenster benötigt eine Start- und eine Endzeit. Füllen Sie beide aus oder lassen Sie beide leer, um es zu überspringen.",
       "overlapping_slots": "Dieses Zeitfenster überschneidet sich mit einem bestehenden für dieselbe Batterie. Passen Sie Zeiten, Tage oder die Batterie an.",

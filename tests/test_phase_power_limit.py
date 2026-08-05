@@ -5,12 +5,12 @@ from types import SimpleNamespace
 
 from custom_components.omnibattery.const import (
     CONF_METER_INVERTED,
-    CONF_PHASE_1_MAX_POWER,
-    CONF_PHASE_1_POWER_SENSOR,
-    CONF_PHASE_2_MAX_POWER,
-    CONF_PHASE_2_POWER_SENSOR,
-    CONF_PHASE_3_MAX_POWER,
-    CONF_PHASE_3_POWER_SENSOR,
+    CONF_PHASE_1_FUSE_SIZE,
+    CONF_PHASE_1_CURRENT_SENSOR,
+    CONF_PHASE_2_FUSE_SIZE,
+    CONF_PHASE_2_CURRENT_SENSOR,
+    CONF_PHASE_3_FUSE_SIZE,
+    CONF_PHASE_3_CURRENT_SENSOR,
     CONF_SLOT_ENABLED,
     CONF_SLOT_MODE,
     CONF_TIME_SLOTS,
@@ -26,7 +26,7 @@ from custom_components.omnibattery.control import (
 from custom_components.omnibattery.control.phase_power_limit import (
     PhasePowerLimiter,
     calculate_phase_budgets,
-    normalize_power_sensor_state,
+    normalize_current_sensor_state,
 )
 from custom_components.omnibattery.config_flow import (
     _phase_protection_schema,
@@ -72,7 +72,7 @@ class FakeController:
         return total
 
 
-def _state(value, unit="W", now=None, age_s=0):
+def _state(value, unit="A", now=None, age_s=0):
     now = now or datetime.now(timezone.utc)
     return SimpleNamespace(
         state=str(value),
@@ -87,19 +87,19 @@ def _limiter(states, coordinators, *, now=None, configured_phases=None):
         data={
             CONF_THREE_PHASE_ENABLED: True,
             CONF_METER_INVERTED: False,
-            CONF_PHASE_1_POWER_SENSOR: "sensor.l1",
-            CONF_PHASE_2_POWER_SENSOR: "sensor.l2",
-            CONF_PHASE_3_POWER_SENSOR: "sensor.l3",
-            CONF_PHASE_1_MAX_POWER: 5750,
-            CONF_PHASE_2_MAX_POWER: 5750,
-            CONF_PHASE_3_MAX_POWER: 5750,
+            CONF_PHASE_1_CURRENT_SENSOR: "sensor.l1",
+            CONF_PHASE_2_CURRENT_SENSOR: "sensor.l2",
+            CONF_PHASE_3_CURRENT_SENSOR: "sensor.l3",
+            CONF_PHASE_1_FUSE_SIZE: 25,
+            CONF_PHASE_2_FUSE_SIZE: 25,
+            CONF_PHASE_3_FUSE_SIZE: 25,
         }
     )
     if configured_phases is not None:
         phase_fields = {
-            PHASE_L1: (CONF_PHASE_1_POWER_SENSOR, CONF_PHASE_1_MAX_POWER),
-            PHASE_L2: (CONF_PHASE_2_POWER_SENSOR, CONF_PHASE_2_MAX_POWER),
-            PHASE_L3: (CONF_PHASE_3_POWER_SENSOR, CONF_PHASE_3_MAX_POWER),
+            PHASE_L1: (CONF_PHASE_1_CURRENT_SENSOR, CONF_PHASE_1_FUSE_SIZE),
+            PHASE_L2: (CONF_PHASE_2_CURRENT_SENSOR, CONF_PHASE_2_FUSE_SIZE),
+            PHASE_L3: (CONF_PHASE_3_CURRENT_SENSOR, CONF_PHASE_3_FUSE_SIZE),
         }
         for phase, (sensor_key, limit_key) in phase_fields.items():
             if phase not in configured_phases:
@@ -186,35 +186,35 @@ def test_manual_warning_stays_cleared_when_three_phase_protection_is_disabled(
 
 
 def test_phase_budget_uses_controller_battery_sign():
-    no_battery = calculate_phase_budgets(5000, 0, 5750)
-    assert no_battery["charge_budget_w"] == 750
+    no_battery = calculate_phase_budgets(20, 0, 25)
+    assert no_battery["charge_budget_a"] == 5
 
-    budgets = calculate_phase_budgets(5000, 1000, 5750)
+    budgets = calculate_phase_budgets(20, 5, 25)
 
     assert budgets == {
-        "base_w": 4000,
-        "charge_budget_w": 1750,
-        "discharge_budget_w": 9750,
+        "base_a": 15,
+        "charge_budget_a": 10,
+        "discharge_budget_a": 40,
     }
 
-    export = calculate_phase_budgets(-5200, -1000, 5750)
-    assert export["base_w"] == -4200
-    assert export["discharge_budget_w"] == 1550
+    export = calculate_phase_budgets(-20, -5, 25)
+    assert export["base_a"] == -15
+    assert export["discharge_budget_a"] == 10
 
 
-def test_sensor_normalization_handles_kw_inversion_and_staleness():
+def test_sensor_normalization_handles_ma_inversion_and_staleness():
     now = datetime(2026, 8, 3, tzinfo=timezone.utc)
 
-    assert normalize_power_sensor_state(
-        _state(1.5, "kW", now), now=now
-    ).value_w == 1500
-    assert normalize_power_sensor_state(
-        _state(1500, "W", now), meter_inverted=True, now=now
-    ).value_w == -1500
-    stale = normalize_power_sensor_state(
-        _state(1500, "W", now, age_s=66), now=now
+    assert normalize_current_sensor_state(
+        _state(1.5, "mA", now), now=now
+    ).value_a == 0.0015
+    assert normalize_current_sensor_state(
+        _state(1500, "A", now), meter_inverted=True, now=now
+    ).value_a == -1500
+    stale = normalize_current_sensor_state(
+        _state(1500, "A", now, age_s=66), now=now
     )
-    assert stale.value_w is None
+    assert stale.value_a is None
     assert stale.reason == "sensor_stale"
 
 
@@ -224,8 +224,8 @@ def test_allocation_caps_phase_and_moves_overflow_to_healthy_phase():
     b2 = FakeCoordinator("L2 battery", PHASE_L2)
     limiter = _limiter(
         {
-            "sensor.l1": _state(5000, now=now),
-            "sensor.l2": _state(1000, now=now),
+            "sensor.l1": _state(20, now=now),
+            "sensor.l2": _state(5, now=now),
             "sensor.l3": _state(0, now=now),
         },
         [b1, b2],
@@ -233,8 +233,8 @@ def test_allocation_caps_phase_and_moves_overflow_to_healthy_phase():
 
     allocation = limiter.limit_allocation({b1: 2000, b2: 2000}, True, [b1, b2])
 
-    assert allocation[b1] == 750
-    assert allocation[b2] == 3250
+    assert allocation[b1] == 1035
+    assert allocation[b2] == 2965
     assert sum(allocation.values()) == 4000
 
     # If L1 telemetry is unavailable, its battery is held at zero while L2
@@ -275,7 +275,7 @@ def test_overflow_activates_fallback_only_after_selected_phase_is_capped():
     fallback = FakeCoordinator("Fallback L2", PHASE_L2)
     limiter = _limiter(
         {
-            "sensor.l1": _state(5000, now=now),
+            "sensor.l1": _state(20, now=now),
             "sensor.l2": _state(0, now=now),
             "sensor.l3": _state(0, now=now),
         },
@@ -288,7 +288,7 @@ def test_overflow_activates_fallback_only_after_selected_phase_is_capped():
         [selected, fallback],
     )
 
-    assert allocation == {selected: 750, fallback: 1250}
+    assert allocation == {selected: 1035, fallback: 965}
 
 
 def test_overflow_can_use_an_unconfigured_phase_without_a_phase_cap():
@@ -297,7 +297,7 @@ def test_overflow_can_use_an_unconfigured_phase_without_a_phase_cap():
     fallback = FakeCoordinator("Fallback L2", PHASE_L2)
     limiter = _limiter(
         {
-            "sensor.l1": _state(5000, now=now),
+            "sensor.l1": _state(20, now=now),
             "sensor.l2": _state(0, now=now),
             "sensor.l3": _state(0, now=now),
         },
@@ -311,7 +311,7 @@ def test_overflow_can_use_an_unconfigured_phase_without_a_phase_cap():
         [selected, fallback],
     )
 
-    assert allocation == {selected: 750, fallback: 1250}
+    assert allocation == {selected: 1035, fallback: 965}
 
 
 def test_allocation_preserves_normal_proportional_split_below_phase_cap():
@@ -380,14 +380,14 @@ def test_direct_command_guard_blocks_unassigned_and_caps_valid_phase():
     unassigned = FakeCoordinator("Unassigned", "")
     limiter = _limiter(
         {
-            "sensor.l1": _state(5000, now=now),
+            "sensor.l1": _state(20, now=now),
             "sensor.l2": _state(0, now=now),
             "sensor.l3": _state(0, now=now),
         },
         [b1, unassigned],
     )
 
-    assert limiter.limit_single_command(b1, 2000, 0) == (750, 0)
+    assert limiter.limit_single_command(b1, 2000, 0) == (1035, 0)
     assert limiter.limit_single_command(unassigned, 1000, 0) == (0, 0)
 
 
@@ -395,62 +395,62 @@ def test_config_validation_rejects_duplicate_sensors_and_bad_units():
     hass = SimpleNamespace(
         states=FakeStates(
             {
-                "sensor.l1": _state(100, "W"),
-                "sensor.l2": _state(100, "kW"),
-                "sensor.l3": _state(100, "W"),
+                "sensor.l1": _state(10, "A"),
+                "sensor.l2": _state(10, "mA"),
+                "sensor.l3": _state(10, "A"),
             }
         )
     )
     valid = {
-        CONF_PHASE_1_POWER_SENSOR: "sensor.l1",
-        CONF_PHASE_2_POWER_SENSOR: "sensor.l2",
-        CONF_PHASE_3_POWER_SENSOR: "sensor.l3",
-        CONF_PHASE_1_MAX_POWER: 5750,
-        CONF_PHASE_2_MAX_POWER: 5750,
-        CONF_PHASE_3_MAX_POWER: 5750,
+        CONF_PHASE_1_CURRENT_SENSOR: "sensor.l1",
+        CONF_PHASE_2_CURRENT_SENSOR: "sensor.l2",
+        CONF_PHASE_3_CURRENT_SENSOR: "sensor.l3",
+        CONF_PHASE_1_FUSE_SIZE: 25,
+        CONF_PHASE_2_FUSE_SIZE: 25,
+        CONF_PHASE_3_FUSE_SIZE: 25,
     }
     assert _validate_phase_protection(hass, valid) == {}
 
     two_phase = {
         key: valid[key]
         for key in (
-            CONF_PHASE_1_POWER_SENSOR,
-            CONF_PHASE_1_MAX_POWER,
-            CONF_PHASE_2_POWER_SENSOR,
-            CONF_PHASE_2_MAX_POWER,
+            CONF_PHASE_1_CURRENT_SENSOR,
+            CONF_PHASE_1_FUSE_SIZE,
+            CONF_PHASE_2_CURRENT_SENSOR,
+            CONF_PHASE_2_FUSE_SIZE,
         )
     }
     assert _validate_phase_protection(hass, two_phase) == {}
 
-    invalid = {**valid, CONF_PHASE_2_POWER_SENSOR: "sensor.l1", CONF_PHASE_3_MAX_POWER: 0}
+    invalid = {**valid, CONF_PHASE_2_CURRENT_SENSOR: "sensor.l1", CONF_PHASE_3_FUSE_SIZE: 0}
     errors = _validate_phase_protection(hass, invalid)
-    assert errors[CONF_PHASE_1_POWER_SENSOR] == "phase_sensors_must_differ"
-    assert errors[CONF_PHASE_2_POWER_SENSOR] == "phase_sensors_must_differ"
-    assert errors[CONF_PHASE_3_MAX_POWER] == "phase_limit_must_be_positive"
+    assert errors[CONF_PHASE_1_CURRENT_SENSOR] == "phase_sensors_must_differ"
+    assert errors[CONF_PHASE_2_CURRENT_SENSOR] == "phase_sensors_must_differ"
+    assert errors[CONF_PHASE_3_FUSE_SIZE] == "phase_limit_must_be_positive"
 
     missing = {**valid}
     for key in (
-        CONF_PHASE_1_POWER_SENSOR,
-        CONF_PHASE_1_MAX_POWER,
-        CONF_PHASE_2_POWER_SENSOR,
-        CONF_PHASE_2_MAX_POWER,
+        CONF_PHASE_1_CURRENT_SENSOR,
+        CONF_PHASE_1_FUSE_SIZE,
+        CONF_PHASE_2_CURRENT_SENSOR,
+        CONF_PHASE_2_FUSE_SIZE,
     ):
         missing.pop(key)
     missing_errors = _validate_phase_protection(hass, missing)
     assert missing_errors == {}
 
     partial = {
-        CONF_PHASE_1_POWER_SENSOR: "sensor.l1",
-        CONF_PHASE_1_MAX_POWER: None,
+        CONF_PHASE_1_CURRENT_SENSOR: "sensor.l1",
+        CONF_PHASE_1_FUSE_SIZE: None,
     }
     partial_errors = _validate_phase_protection(hass, partial)
-    assert partial_errors[CONF_PHASE_1_MAX_POWER] == "phase_sensor_and_limit_required"
+    assert partial_errors[CONF_PHASE_1_FUSE_SIZE] == "phase_sensor_and_limit_required"
 
     orphan_limit_errors = _validate_phase_protection(
         hass,
-        {CONF_PHASE_1_MAX_POWER: 5750},
+        {CONF_PHASE_1_FUSE_SIZE: 25},
     )
-    assert orphan_limit_errors[CONF_PHASE_1_POWER_SENSOR] == (
+    assert orphan_limit_errors[CONF_PHASE_1_CURRENT_SENSOR] == (
         "phase_sensor_and_limit_required"
     )
 
@@ -458,10 +458,10 @@ def test_config_validation_rejects_duplicate_sensors_and_bad_units():
 def test_phase_form_accepts_a_single_configured_phase():
     assert _phase_protection_schema()(
         {
-            CONF_PHASE_1_POWER_SENSOR: "sensor.l1",
-            CONF_PHASE_1_MAX_POWER: 5750,
+            CONF_PHASE_1_CURRENT_SENSOR: "sensor.l1",
+            CONF_PHASE_1_FUSE_SIZE: 25,
         }
     ) == {
-        CONF_PHASE_1_POWER_SENSOR: "sensor.l1",
-        CONF_PHASE_1_MAX_POWER: 5750.0,
+        CONF_PHASE_1_CURRENT_SENSOR: "sensor.l1",
+        CONF_PHASE_1_FUSE_SIZE: 25.0,
     }

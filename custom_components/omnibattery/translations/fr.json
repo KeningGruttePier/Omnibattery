@@ -32,7 +32,7 @@
           "solar_production_sensor": "Capteur de production solaire (optionnel)",
           "meter_inverted": "Signe du compteur inversé",
           "max_contracted_power": "Puissance maximale souscrite (W)",
-          "three_phase_enabled": "Activer la protection de puissance triphasée"
+          "three_phase_enabled": "Activer la protection de courant triphasée"
         },
         "data_description": {
           "consumption_sensor": "Capteur temps réel de puissance importée (+) ou exportée (-) vers le réseau. Des mises à jour toutes les 1-2 secondes sont recommandées. Les capteurs plus lents sont acceptés, mais les mesures retardées réduisent la qualité de régulation ; la dernière mesure est suivie pendant 65 secondes au maximum.",
@@ -40,24 +40,27 @@
           "solar_production_sensor": "Capteur de puissance de production photovoltaïque en temps réel (W/kW) d'un onduleur externe non raccordé aux entrées MPPT de la batterie. Utilisé pour afficher le nœud Solaire dans le diagramme de flux d'énergie du tableau de bord. Laissez vide si vos panneaux alimentent directement le MPPT de la batterie.",
           "meter_inverted": "Activez cette option si votre compteur utilise la convention opposée : positif = exportation, négatif = importation. L'unité (W/kW) est détectée automatiquement.",
           "max_contracted_power": "Puissance totale souscrite en watts. Le système ne dépassera pas cette limite lors de la charge pour éviter de déclencher le disjoncteur",
-          "three_phase_enabled": "Enveloppe de sécurité optionnelle pour les installations triphasées ; configurez les capteurs et la phase physique de chaque batterie à l'étape suivante."
+          "three_phase_enabled": "Enveloppe de sécurité de courant optionnelle pour les installations triphasées ; configurez les capteurs et la phase physique de chaque batterie à l'étape suivante."
         }
       },
       "three_phase": {
-        "title": "Protection de puissance triphasée",
-        "description": "Configurez un capteur réseau et une limite symétrique positive pour chaque phase à protéger. Laissez les deux champs vides pour les phases non utilisées. Les capteurs doivent être des entités sensor W/kW distinctes.",
+        "title": "Protection de courant triphasée",
+        "description": "Configurez pour chaque phase à protéger un capteur de courant RMS signé en temps réel et une taille/limite de fusible en ampères. Laissez les deux champs vides pour les phases non utilisées. Les capteurs doivent être des entités sensor distinctes avec une unité A ou mA ; positif signifie importation et négatif exportation.",
         "data": {
-          "phase_1_power_sensor": "Capteur de puissance réseau L1",
-          "phase_2_power_sensor": "Capteur de puissance réseau L2",
-          "phase_3_power_sensor": "Capteur de puissance réseau L3",
-          "phase_1_max_power": "Puissance maximale L1 (W)",
-          "phase_2_max_power": "Puissance maximale L2 (W)",
-          "phase_3_max_power": "Puissance maximale L3 (W)"
+          "phase_1_current_sensor": "Capteur de courant réseau L1",
+          "phase_2_current_sensor": "Capteur de courant réseau L2",
+          "phase_3_current_sensor": "Capteur de courant réseau L3",
+          "phase_1_fuse_size": "Taille du fusible L1 (A)",
+          "phase_2_fuse_size": "Taille du fusible L2 (A)",
+          "phase_3_fuse_size": "Taille du fusible L3 (A)"
         },
         "data_description": {
-          "phase_1_power_sensor": "Puissance active en temps réel de la phase physique L1.",
-          "phase_2_power_sensor": "Puissance active en temps réel de la phase physique L2.",
-          "phase_3_power_sensor": "Puissance active en temps réel de la phase physique L3."
+          "phase_1_current_sensor": "Courant RMS signé en temps réel de la phase physique L1. Les unités A et mA sont acceptées.",
+          "phase_2_current_sensor": "Courant RMS signé en temps réel de la phase physique L2. Les unités A et mA sont acceptées.",
+          "phase_3_current_sensor": "Courant RMS signé en temps réel de la phase physique L3. Les unités A et mA sont acceptées.",
+          "phase_1_fuse_size": "Taille/limite du fusible de L1 en ampères. Saisissez une valeur inférieure au nominal pour laisser une marge aux latences et aux pointes transitoires.",
+          "phase_2_fuse_size": "Taille/limite du fusible de L2 en ampères. Saisissez une valeur inférieure au nominal pour laisser une marge aux latences et aux pointes transitoires.",
+          "phase_3_fuse_size": "Taille/limite du fusible de L3 en ampères. Saisissez une valeur inférieure au nominal pour laisser une marge aux latences et aux pointes transitoires."
         }
       },
       "phase_assignments": {
@@ -623,12 +626,12 @@
       "invalid_unit": "Le capteur de prévision solaire doit avoir 'kWh' ou 'Wh' comme unité.",
       "solar_production_sensor_not_found": "Le capteur de production solaire n'existe pas. Vérifiez que le capteur est disponible.",
       "solar_production_invalid_unit": "Le capteur de production solaire doit avoir 'W' ou 'kW' comme unité.",
-      "phase_sensors_must_differ": "Chaque phase doit utiliser un capteur de puissance différent.",
-      "phase_sensor_not_found": "Le capteur de puissance de phase n'existe pas ou n'est pas disponible.",
-      "phase_sensor_invalid_domain": "La source de puissance de phase doit être une entité sensor.",
-      "phase_sensor_invalid_unit": "Le capteur de puissance de phase doit avoir 'W' ou 'kW' comme unité.",
-      "phase_limit_must_be_positive": "La puissance maximale de phase doit être une valeur positive et finie en watts.",
-      "phase_sensor_and_limit_required": "Renseignez à la fois le capteur de phase et sa puissance maximale, ou laissez les deux champs vides.",
+      "phase_sensors_must_differ": "Chaque phase doit utiliser un capteur de courant différent.",
+      "phase_sensor_not_found": "Le capteur de courant de phase n'existe pas ou n'est pas disponible.",
+      "phase_sensor_invalid_domain": "La source de courant de phase doit être une entité sensor.",
+      "phase_sensor_invalid_unit": "Le capteur de courant de phase doit avoir 'A' ou 'mA' comme unité.",
+      "phase_limit_must_be_positive": "La taille du fusible de phase doit être une valeur positive et finie en ampères.",
+      "phase_sensor_and_limit_required": "Renseignez à la fois le capteur de courant de phase et la taille du fusible, ou laissez les deux champs vides.",
       "battery_phase_required": "Sélectionnez la phase physique de cette batterie.",
       "incomplete_window": "Chaque fenêtre de charge supplémentaire nécessite une heure de début et de fin. Remplissez les deux, ou laissez les deux vides pour l'ignorer.",
       "overlapping_slots": "Ce créneau chevauche un autre créneau pour la même batterie. Ajustez les horaires, jours ou batterie cible.",
@@ -653,15 +656,23 @@
   "options": {
     "step": {
       "three_phase": {
-        "title": "Protection de puissance triphasée",
-        "description": "Configurez le capteur et la limite de chaque phase à protéger. Laissez les deux champs vides pour les phases non utilisées.",
+        "title": "Protection de courant triphasée",
+        "description": "Configurez pour chaque phase à protéger un capteur de courant RMS signé en temps réel et une taille/limite de fusible en ampères. Laissez les deux champs vides pour les phases non utilisées. Les capteurs doivent être des entités sensor distinctes avec une unité A ou mA ; positif signifie importation et négatif exportation.",
         "data": {
-          "phase_1_power_sensor": "Capteur de puissance réseau L1",
-          "phase_2_power_sensor": "Capteur de puissance réseau L2",
-          "phase_3_power_sensor": "Capteur de puissance réseau L3",
-          "phase_1_max_power": "Puissance maximale L1 (W)",
-          "phase_2_max_power": "Puissance maximale L2 (W)",
-          "phase_3_max_power": "Puissance maximale L3 (W)"
+          "phase_1_current_sensor": "Capteur de courant réseau L1",
+          "phase_2_current_sensor": "Capteur de courant réseau L2",
+          "phase_3_current_sensor": "Capteur de courant réseau L3",
+          "phase_1_fuse_size": "Taille du fusible L1 (A)",
+          "phase_2_fuse_size": "Taille du fusible L2 (A)",
+          "phase_3_fuse_size": "Taille du fusible L3 (A)"
+        },
+        "data_description": {
+          "phase_1_current_sensor": "Courant RMS signé en temps réel de la phase physique L1. Les unités A et mA sont acceptées.",
+          "phase_2_current_sensor": "Courant RMS signé en temps réel de la phase physique L2. Les unités A et mA sont acceptées.",
+          "phase_3_current_sensor": "Courant RMS signé en temps réel de la phase physique L3. Les unités A et mA sont acceptées.",
+          "phase_1_fuse_size": "Taille/limite du fusible de L1 en ampères. Saisissez une valeur inférieure au nominal pour laisser une marge aux latences et aux pointes transitoires.",
+          "phase_2_fuse_size": "Taille/limite du fusible de L2 en ampères. Saisissez une valeur inférieure au nominal pour laisser une marge aux latences et aux pointes transitoires.",
+          "phase_3_fuse_size": "Taille/limite du fusible de L3 en ampères. Saisissez une valeur inférieure au nominal pour laisser une marge aux latences et aux pointes transitoires."
         }
       },
       "phase_assignments": {
@@ -695,7 +706,7 @@
           "solar_production_sensor": "Capteur de production solaire (optionnel)",
           "meter_inverted": "Signe du compteur inversé",
           "max_contracted_power": "Puissance maximale souscrite (W)",
-          "three_phase_enabled": "Activer la protection de puissance triphasée"
+          "three_phase_enabled": "Activer la protection de courant triphasée"
         },
         "data_description": {
           "consumption_sensor": "Capteur temps réel de puissance importée (+) ou exportée (-) vers le réseau. Des mises à jour toutes les 1-2 secondes sont recommandées. Les capteurs plus lents sont acceptés, mais les mesures retardées réduisent la qualité de régulation ; la dernière mesure est suivie pendant 65 secondes au maximum.",
@@ -703,7 +714,7 @@
           "solar_production_sensor": "Capteur de puissance de production photovoltaïque en temps réel (W/kW) d'un onduleur externe non raccordé aux entrées MPPT de la batterie. Utilisé pour afficher le nœud Solaire dans le diagramme de flux d'énergie du tableau de bord. Laissez vide si vos panneaux alimentent directement le MPPT de la batterie.",
           "meter_inverted": "Activez cette option si votre compteur utilise la convention opposée : positif = exportation, négatif = importation. L'unité (W/kW) est détectée automatiquement.",
           "max_contracted_power": "Puissance totale souscrite en watts. Le système ne dépassera pas cette limite lors de la charge pour éviter de déclencher le disjoncteur",
-          "three_phase_enabled": "Enveloppe de sécurité optionnelle pour les installations triphasées ; configurez les capteurs et la phase physique de chaque batterie à l'étape suivante."
+          "three_phase_enabled": "Enveloppe de sécurité de courant optionnelle pour les installations triphasées ; configurez les capteurs et la phase physique de chaque batterie à l'étape suivante."
         }
       },
       "batteries": {
@@ -1178,12 +1189,12 @@
       "invalid_unit": "Le capteur de prévision solaire doit avoir 'kWh' ou 'Wh' comme unité.",
       "solar_production_sensor_not_found": "Le capteur de production solaire n'existe pas. Vérifiez que le capteur est disponible.",
       "solar_production_invalid_unit": "Le capteur de production solaire doit avoir 'W' ou 'kW' comme unité.",
-      "phase_sensors_must_differ": "Chaque phase doit utiliser un capteur de puissance différent.",
-      "phase_sensor_not_found": "Le capteur de puissance de phase n'existe pas ou n'est pas disponible.",
-      "phase_sensor_invalid_domain": "La source de puissance de phase doit être une entité sensor.",
-      "phase_sensor_invalid_unit": "Le capteur de puissance de phase doit avoir 'W' ou 'kW' comme unité.",
-      "phase_limit_must_be_positive": "La puissance maximale de phase doit être une valeur positive et finie en watts.",
-      "phase_sensor_and_limit_required": "Renseignez à la fois le capteur de phase et sa puissance maximale, ou laissez les deux champs vides.",
+      "phase_sensors_must_differ": "Chaque phase doit utiliser un capteur de courant différent.",
+      "phase_sensor_not_found": "Le capteur de courant de phase n'existe pas ou n'est pas disponible.",
+      "phase_sensor_invalid_domain": "La source de courant de phase doit être une entité sensor.",
+      "phase_sensor_invalid_unit": "Le capteur de courant de phase doit avoir 'A' ou 'mA' comme unité.",
+      "phase_limit_must_be_positive": "La taille du fusible de phase doit être une valeur positive et finie en ampères.",
+      "phase_sensor_and_limit_required": "Renseignez à la fois le capteur de courant de phase et la taille du fusible, ou laissez les deux champs vides.",
       "battery_phase_required": "Sélectionnez la phase physique de cette batterie.",
       "incomplete_window": "Chaque fenêtre de charge supplémentaire nécessite une heure de début et de fin. Remplissez les deux, ou laissez les deux vides pour l'ignorer.",
       "overlapping_slots": "Ce créneau chevauche un autre créneau pour la même batterie. Ajustez les horaires, jours ou batterie cible.",

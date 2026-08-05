@@ -114,9 +114,9 @@ async def test_diagnostics_dump_structure_and_redaction():
             "consumption_sensor": "sensor.grid",
             "solar_forecast_sensor": "sensor.solcast",
             "average_price_sensor": "sensor.average_price",
-            "phase_1_power_sensor": "sensor.phase_1",
-            "phase_2_power_sensor": "sensor.phase_2",
-            "phase_3_power_sensor": "sensor.phase_3",
+            "phase_1_current_sensor": "sensor.phase_1",
+            "phase_2_current_sensor": "sensor.phase_2",
+            "phase_3_current_sensor": "sensor.phase_3",
             "brand": "sessy",
         },
         options={},
@@ -133,9 +133,9 @@ async def test_diagnostics_dump_structure_and_redaction():
     assert result["entry"]["data"]["consumption_sensor"] == "sensor.grid"
     assert result["entry"]["data"]["solar_forecast_sensor"] == "sensor.solcast"
     assert result["entry"]["data"]["average_price_sensor"] == "sensor.average_price"
-    assert result["entry"]["data"]["phase_1_power_sensor"] == "sensor.phase_1"
-    assert result["entry"]["data"]["phase_2_power_sensor"] == "sensor.phase_2"
-    assert result["entry"]["data"]["phase_3_power_sensor"] == "sensor.phase_3"
+    assert result["entry"]["data"]["phase_1_current_sensor"] == "sensor.phase_1"
+    assert result["entry"]["data"]["phase_2_current_sensor"] == "sensor.phase_2"
+    assert result["entry"]["data"]["phase_3_current_sensor"] == "sensor.phase_3"
     assert result["entry"]["data"]["brand"] == "sessy"  # non-sensitive kept
 
     battery = result["batteries"][0]

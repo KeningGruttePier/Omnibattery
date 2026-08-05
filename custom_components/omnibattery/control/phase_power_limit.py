@@ -1,9 +1,9 @@
-"""Per-phase AC power safety limits for three-phase installations.
+"""Per-phase AC current safety limits for three-phase installations.
 
-The global controller intentionally knows nothing about the phase meters.  This
+The global controller intentionally knows nothing about the phase meters. This
 module is a safety envelope around automatic battery assignments: it reconstructs
-the phase load from the live grid reading and the measured AC battery power, then
-limits the next battery order in either direction.
+the non-battery phase current from the live RMS current reading and the measured
+AC battery power, then limits the next battery order in either direction.
 """
 from __future__ import annotations
 
@@ -19,22 +19,24 @@ from homeassistant.util import dt as dt_util
 from ..const import (
     CONF_BATTERY_PHASE,
     CONF_METER_INVERTED,
-    CONF_PHASE_1_MAX_POWER,
-    CONF_PHASE_1_POWER_SENSOR,
-    CONF_PHASE_2_MAX_POWER,
-    CONF_PHASE_2_POWER_SENSOR,
-    CONF_PHASE_3_MAX_POWER,
-    CONF_PHASE_3_POWER_SENSOR,
+    CONF_PHASE_1_CURRENT_SENSOR,
+    CONF_PHASE_1_FUSE_SIZE,
+    CONF_PHASE_2_CURRENT_SENSOR,
+    CONF_PHASE_2_FUSE_SIZE,
+    CONF_PHASE_3_CURRENT_SENSOR,
+    CONF_PHASE_3_FUSE_SIZE,
     CONF_SLOT_ENABLED,
     CONF_SLOT_MODE,
-    CONF_TIME_SLOTS,
     CONF_THREE_PHASE_ENABLED,
+    CONF_TIME_SLOTS,
     DEFAULT_THREE_PHASE_ENABLED,
     MAX_SENSOR_STALE_S,
+    PHASE_BATTERY_POWER_FACTOR,
     PHASE_CONFIG,
     PHASE_L1,
     PHASE_L2,
     PHASE_L3,
+    PHASE_NOMINAL_VOLTAGE_V,
     PHASE_VALUES,
     SLOT_MODE_MANUAL,
 )
@@ -42,14 +44,14 @@ from ..const import (
 _LOGGER = logging.getLogger(__name__)
 
 PHASE_SENSOR_KEYS = {
-    PHASE_L1: CONF_PHASE_1_POWER_SENSOR,
-    PHASE_L2: CONF_PHASE_2_POWER_SENSOR,
-    PHASE_L3: CONF_PHASE_3_POWER_SENSOR,
+    PHASE_L1: CONF_PHASE_1_CURRENT_SENSOR,
+    PHASE_L2: CONF_PHASE_2_CURRENT_SENSOR,
+    PHASE_L3: CONF_PHASE_3_CURRENT_SENSOR,
 }
 PHASE_LIMIT_KEYS = {
-    PHASE_L1: CONF_PHASE_1_MAX_POWER,
-    PHASE_L2: CONF_PHASE_2_MAX_POWER,
-    PHASE_L3: CONF_PHASE_3_MAX_POWER,
+    PHASE_L1: CONF_PHASE_1_FUSE_SIZE,
+    PHASE_L2: CONF_PHASE_2_FUSE_SIZE,
+    PHASE_L3: CONF_PHASE_3_FUSE_SIZE,
 }
 PHASE_LABELS = {PHASE_L1: "L1", PHASE_L2: "L2", PHASE_L3: "L3"}
 ROUNDING_W = 5
@@ -57,9 +59,9 @@ ROUNDING_W = 5
 
 @dataclass(frozen=True)
 class PhaseSensorReading:
-    """Normalized phase meter reading and its safety status."""
+    """Normalized phase current reading and its safety status."""
 
-    value_w: float | None
+    value_a: float | None
     reason: str | None = None
     age_s: float | None = None
 
@@ -73,14 +75,14 @@ def _state_timestamp(state: Any) -> datetime | None:
     )
 
 
-def normalize_power_sensor_state(
+def normalize_current_sensor_state(
     state: Any,
     *,
     meter_inverted: bool = False,
     now: datetime | None = None,
     max_age_s: float = MAX_SENSOR_STALE_S,
 ) -> PhaseSensorReading:
-    """Normalize a W/kW sensor using the integration's grid-meter convention.
+    """Normalize an A/mA sensor using the integration's grid-meter convention.
 
     Positive values mean import and negative values mean export.  A missing
     timestamp is accepted for duck-typed unit tests and old HA state objects;
@@ -102,9 +104,9 @@ def normalize_power_sensor_state(
 
     attributes = getattr(state, "attributes", {}) or {}
     unit = attributes.get("unit_of_measurement")
-    if unit == "kW":
-        value *= 1000.0
-    elif unit != "W":
+    if unit == "mA":
+        value /= 1000.0
+    elif unit != "A":
         return PhaseSensorReading(None, "sensor_invalid_unit")
 
     timestamp = _state_timestamp(state)
@@ -124,23 +126,42 @@ def normalize_power_sensor_state(
 
 
 def calculate_phase_budgets(
-    grid_w: float,
-    battery_power_w: float,
-    limit_w: float,
+    grid_a: float,
+    battery_current_a: float,
+    limit_a: float,
 ) -> dict[str, float]:
-    """Return base load and safe charge/discharge budgets for one phase.
+    """Return base current and safe charge/discharge budgets for one phase.
 
-    ``battery_power_w`` follows the controller convention: positive is charge
-    and negative is discharge.  The grid reading already includes that battery
-    power, hence the explicit base-load reconstruction.
+    ``battery_current_a`` follows the controller convention: positive is charge
+    and negative is discharge. The grid reading already includes that battery
+    current, hence the explicit base-current reconstruction.
     """
-    base_w = float(grid_w) - float(battery_power_w)
-    limit = max(0.0, float(limit_w))
+    base_a = float(grid_a) - float(battery_current_a)
+    limit = max(0.0, float(limit_a))
     return {
-        "base_w": base_w,
-        "charge_budget_w": max(0.0, limit - float(grid_w) + float(battery_power_w)),
-        "discharge_budget_w": max(0.0, limit + float(grid_w) - float(battery_power_w)),
+        "base_a": base_a,
+        "charge_budget_a": max(0.0, limit - base_a),
+        "discharge_budget_a": max(0.0, limit + base_a),
     }
+
+
+def _battery_current_from_power(power_w: float) -> float:
+    """Estimate signed battery AC current from its active-power telemetry.
+
+    Battery commands and telemetry are in active watts, while the phase safety
+    sensor measures RMS current. The fixed nominal-voltage/power-factor pair is
+    deliberately conservative and keeps the user-facing configuration focused
+    on the actual fuse rating.
+    """
+    watts_per_amp = PHASE_NOMINAL_VOLTAGE_V * PHASE_BATTERY_POWER_FACTOR
+    if watts_per_amp <= 0:
+        return 0.0
+    return float(power_w) / watts_per_amp
+
+
+def _current_budget_to_power(budget_a: float) -> float:
+    """Convert an available RMS-current budget to a conservative watt cap."""
+    return max(0.0, float(budget_a)) * PHASE_NOMINAL_VOLTAGE_V * PHASE_BATTERY_POWER_FACTOR
 
 
 def _round_down(value: float, granularity: int = ROUNDING_W) -> int:
@@ -151,7 +172,7 @@ def _round_down(value: float, granularity: int = ROUNDING_W) -> int:
 
 
 class PhasePowerLimiter:
-    """Read phase telemetry and constrain aggregate automatic assignments."""
+    """Read phase current telemetry and constrain automatic assignments."""
 
     def __init__(
         self,
@@ -255,9 +276,9 @@ class PhasePowerLimiter:
             return 0.0
 
     def _read_phase(self, phase: str) -> tuple[PhaseSensorReading, float]:
-        sensor_id, limit = self._phase_settings.get(phase, (None, 0.0))
+        sensor_id, _ = self._phase_settings.get(phase, (None, 0.0))
         state = self.hass.states.get(sensor_id) if sensor_id else None
-        reading = normalize_power_sensor_state(
+        reading = normalize_current_sensor_state(
             state,
             meter_inverted=self.meter_inverted,
             max_age_s=self.max_age_s,
@@ -276,9 +297,11 @@ class PhasePowerLimiter:
             "phase": phase,
             "sensor": sensor_id,
             "configured": bool(sensor_id) and limit > 0,
-            "reading_w": None,
-            "limit_w": limit if limit > 0 else None,
-            "base_w": None,
+            "reading_a": None,
+            "limit_a": limit if limit > 0 else None,
+            "base_a": None,
+            "charge_budget_a": 0.0,
+            "discharge_budget_a": 0.0,
             "charge_budget_w": 0.0,
             "discharge_budget_w": 0.0,
             "assigned_power_w": 0.0,
@@ -301,19 +324,32 @@ class PhasePowerLimiter:
             return snapshot
 
         reading, battery_power = self._read_phase(phase)
-        if reading.value_w is None:
+        if reading.value_a is None:
             snapshot.update({"degraded": True, "reason": reading.reason})
             self._log_state_change(snapshot)
             self._snapshots[phase] = snapshot
             return snapshot
 
-        budgets = calculate_phase_budgets(reading.value_w, battery_power, limit)
+        budgets = calculate_phase_budgets(
+            reading.value_a,
+            _battery_current_from_power(battery_power),
+            limit,
+        )
         snapshot.update(
             {
-                "reading_w": reading.value_w,
-                "base_w": budgets["base_w"],
-                "charge_budget_w": _round_down(budgets["charge_budget_w"], self.rounding_w),
-                "discharge_budget_w": _round_down(budgets["discharge_budget_w"], self.rounding_w),
+                "reading_a": reading.value_a,
+                "limit_a": limit,
+                "base_a": budgets["base_a"],
+                "charge_budget_a": budgets["charge_budget_a"],
+                "discharge_budget_a": budgets["discharge_budget_a"],
+                "charge_budget_w": _round_down(
+                    _current_budget_to_power(budgets["charge_budget_a"]),
+                    self.rounding_w,
+                ),
+                "discharge_budget_w": _round_down(
+                    _current_budget_to_power(budgets["discharge_budget_a"]),
+                    self.rounding_w,
+                ),
             }
         )
         self._snapshots[phase] = snapshot
@@ -538,9 +574,12 @@ class PhasePowerLimiter:
         is_charging = charge_power > 0
         requested = charge_power if is_charging else discharge_power
         planned = self._planned.get(coordinator)
-        if planned is not None and planned[0] == is_charging:
-            if abs(float(planned[1]) - float(requested)) < self.rounding_w:
-                return (planned[1], 0) if is_charging else (0, planned[1])
+        if (
+            planned is not None
+            and planned[0] == is_charging
+            and abs(float(planned[1]) - float(requested)) < self.rounding_w
+        ):
+            return (planned[1], 0) if is_charging else (0, planned[1])
 
         phase = self._battery_phase(coordinator)
         if phase not in PHASE_VALUES:
@@ -588,9 +627,11 @@ class PhasePowerLimiter:
             phase,
             {
                 "phase": phase,
-                "reading_w": None,
-                "limit_w": None,
-                "base_w": None,
+                "reading_a": None,
+                "limit_a": None,
+                "base_a": None,
+                "charge_budget_a": 0.0,
+                "discharge_budget_a": 0.0,
                 "charge_budget_w": 0.0,
                 "discharge_budget_w": 0.0,
                 "assigned_power_w": 0.0,
@@ -616,7 +657,7 @@ class PhasePowerLimiter:
         self._last_log_signature[phase] = signature
         if snapshot.get("degraded"):
             _LOGGER.warning(
-                "Three-phase protection %s degraded: sensor=%s reason=%s; "
+                "Three-phase current protection %s degraded: sensor=%s reason=%s; "
                 "automatic assignments on this phase are limited to 0 W",
                 PHASE_LABELS.get(phase, phase),
                 snapshot.get("sensor"),
@@ -624,10 +665,10 @@ class PhasePowerLimiter:
             )
         elif previous and previous[0]:
             _LOGGER.info(
-                "Three-phase protection %s recovered: reading=%.0fW limit=%.0fW",
+                "Three-phase current protection %s recovered: reading=%.1fA limit=%.1fA",
                 PHASE_LABELS.get(phase, phase),
-                snapshot.get("reading_w") or 0,
-                snapshot.get("limit_w") or 0,
+                snapshot.get("reading_a") or 0,
+                snapshot.get("limit_a") or 0,
             )
 
     def _log_limit(
@@ -638,8 +679,8 @@ class PhasePowerLimiter:
     ) -> None:
         phase = snapshot.get("phase", "?")
         signature = (
-            round(float(snapshot.get("reading_w") or 0) / 50),
-            round(float(snapshot.get("limit_w") or 0) / 50),
+            round(float(snapshot.get("reading_a") or 0) * 2),
+            round(float(snapshot.get("limit_a") or 0) * 2),
             round(float(requested) / 50),
             round(float(allowed) / 50),
         )
@@ -648,11 +689,11 @@ class PhasePowerLimiter:
             return
         self._last_log_signature[log_key] = signature
         _LOGGER.info(
-            "Three-phase protection %s limit active: reading=%.0fW limit=%.0fW "
+            "Three-phase current protection %s limit active: reading=%.1fA limit=%.1fA "
             "request=%.0fW result=%.0fW",
             PHASE_LABELS.get(phase, phase),
-            snapshot.get("reading_w") or 0,
-            snapshot.get("limit_w") or 0,
+            snapshot.get("reading_a") or 0,
+            snapshot.get("limit_a") or 0,
             requested,
             allowed,
         )
@@ -667,9 +708,14 @@ class PhasePowerLimiter:
                 PHASE_SENSOR_KEYS[phase]: self._phase_settings.get(phase, (None, 0.0))[0]
                 for phase in PHASE_VALUES
             },
-            "limits_w": {
+            "fuse_sizes_a": {
                 PHASE_LIMIT_KEYS[phase]: self._phase_settings.get(phase, (None, 0.0))[1]
                 for phase in PHASE_VALUES
+            },
+            "current_conversion": {
+                "nominal_voltage_v": PHASE_NOMINAL_VOLTAGE_V,
+                "battery_power_factor": PHASE_BATTERY_POWER_FACTOR,
+                "watts_per_amp": PHASE_NOMINAL_VOLTAGE_V * PHASE_BATTERY_POWER_FACTOR,
             },
             "phases": phases,
             "manual_mode_warning": self._manual_warning_created,

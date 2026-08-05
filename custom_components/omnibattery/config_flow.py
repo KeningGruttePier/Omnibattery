@@ -54,12 +54,12 @@ from .const import (
     CONF_SOLAR_PRODUCTION_SENSOR,
     CONF_MAX_CONTRACTED_POWER,
     CONF_THREE_PHASE_ENABLED,
-    CONF_PHASE_1_POWER_SENSOR,
-    CONF_PHASE_2_POWER_SENSOR,
-    CONF_PHASE_3_POWER_SENSOR,
-    CONF_PHASE_1_MAX_POWER,
-    CONF_PHASE_2_MAX_POWER,
-    CONF_PHASE_3_MAX_POWER,
+    CONF_PHASE_1_CURRENT_SENSOR,
+    CONF_PHASE_2_CURRENT_SENSOR,
+    CONF_PHASE_3_CURRENT_SENSOR,
+    CONF_PHASE_1_FUSE_SIZE,
+    CONF_PHASE_2_FUSE_SIZE,
+    CONF_PHASE_3_FUSE_SIZE,
     CONF_BATTERY_PHASE,
     PHASE_L1,
     PHASE_L2,
@@ -158,7 +158,7 @@ def _parse_optional_float(value: Any) -> float | None:
 
 
 def _phase_sensor_schema_field(key: str, default: str | None = None):
-    """Return an optional phase sensor field, with an optional current value."""
+    """Return an optional phase current sensor field with its saved value."""
     field = vol.Optional(key, default=default) if default else vol.Optional(key)
     return field, EntitySelector(EntitySelectorConfig(domain="sensor"))
 
@@ -168,25 +168,25 @@ def _phase_protection_schema(defaults: dict[str, Any] | None = None) -> vol.Sche
     defaults = defaults or {}
     schema: dict = {}
     for key in (
-        CONF_PHASE_1_POWER_SENSOR,
-        CONF_PHASE_2_POWER_SENSOR,
-        CONF_PHASE_3_POWER_SENSOR,
+        CONF_PHASE_1_CURRENT_SENSOR,
+        CONF_PHASE_2_CURRENT_SENSOR,
+        CONF_PHASE_3_CURRENT_SENSOR,
     ):
         field, selector = _phase_sensor_schema_field(key, defaults.get(key))
         schema[field] = selector
     for key in (
-        CONF_PHASE_1_MAX_POWER,
-        CONF_PHASE_2_MAX_POWER,
-        CONF_PHASE_3_MAX_POWER,
+        CONF_PHASE_1_FUSE_SIZE,
+        CONF_PHASE_2_FUSE_SIZE,
+        CONF_PHASE_3_FUSE_SIZE,
     ):
         default = defaults.get(key)
         field = vol.Optional(key, default=default) if default is not None else vol.Optional(key)
         schema[field] = NumberSelector(
             NumberSelectorConfig(
                 min=1,
-                max=30000,
-                step=50,
-                unit_of_measurement="W",
+                max=250,
+                step=1,
+                unit_of_measurement="A",
                 mode=NumberSelectorMode.BOX,
             )
         )
@@ -212,20 +212,20 @@ def _battery_phase_schema(default: str | None = None):
 
 
 def _validate_phase_protection(hass, user_input: dict[str, Any]) -> dict[str, str]:
-    """Validate configured phase pairs and positive safety limits."""
+    """Validate configured phase current sensors and fuse-size limits."""
     errors: dict[str, str] = {}
     phase_fields = (
         (
-            CONF_PHASE_1_POWER_SENSOR,
-            CONF_PHASE_1_MAX_POWER,
+            CONF_PHASE_1_CURRENT_SENSOR,
+            CONF_PHASE_1_FUSE_SIZE,
         ),
         (
-            CONF_PHASE_2_POWER_SENSOR,
-            CONF_PHASE_2_MAX_POWER,
+            CONF_PHASE_2_CURRENT_SENSOR,
+            CONF_PHASE_2_FUSE_SIZE,
         ),
         (
-            CONF_PHASE_3_POWER_SENSOR,
-            CONF_PHASE_3_MAX_POWER,
+            CONF_PHASE_3_CURRENT_SENSOR,
+            CONF_PHASE_3_FUSE_SIZE,
         ),
     )
     sensor_keys = tuple(sensor_key for sensor_key, _ in phase_fields)
@@ -259,7 +259,7 @@ def _validate_phase_protection(hass, user_input: dict[str, Any]) -> dict[str, st
             errors[sensor_key] = "phase_sensor_invalid_domain"
             continue
         unit = state.attributes.get("unit_of_measurement")
-        if unit not in ("W", "kW"):
+        if unit not in ("A", "mA"):
             errors[sensor_key] = "phase_sensor_invalid_unit"
 
         try:
@@ -879,12 +879,12 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
                     {
                         key: user_input.get(key)
                         for key in (
-                            CONF_PHASE_1_POWER_SENSOR,
-                            CONF_PHASE_2_POWER_SENSOR,
-                            CONF_PHASE_3_POWER_SENSOR,
-                            CONF_PHASE_1_MAX_POWER,
-                            CONF_PHASE_2_MAX_POWER,
-                            CONF_PHASE_3_MAX_POWER,
+                            CONF_PHASE_1_CURRENT_SENSOR,
+                            CONF_PHASE_2_CURRENT_SENSOR,
+                            CONF_PHASE_3_CURRENT_SENSOR,
+                            CONF_PHASE_1_FUSE_SIZE,
+                            CONF_PHASE_2_FUSE_SIZE,
+                            CONF_PHASE_3_FUSE_SIZE,
                         )
                     }
                 )
@@ -2630,12 +2630,12 @@ class OptionsFlowHandler(OptionsFlow):
         defaults = {
             key: current.get(key)
             for key in (
-                CONF_PHASE_1_POWER_SENSOR,
-                CONF_PHASE_2_POWER_SENSOR,
-                CONF_PHASE_3_POWER_SENSOR,
-                CONF_PHASE_1_MAX_POWER,
-                CONF_PHASE_2_MAX_POWER,
-                CONF_PHASE_3_MAX_POWER,
+                CONF_PHASE_1_CURRENT_SENSOR,
+                CONF_PHASE_2_CURRENT_SENSOR,
+                CONF_PHASE_3_CURRENT_SENSOR,
+                CONF_PHASE_1_FUSE_SIZE,
+                CONF_PHASE_2_FUSE_SIZE,
+                CONF_PHASE_3_FUSE_SIZE,
             )
         }
         if user_input is not None:
@@ -2645,12 +2645,12 @@ class OptionsFlowHandler(OptionsFlow):
                     {
                         key: user_input.get(key)
                         for key in (
-                            CONF_PHASE_1_POWER_SENSOR,
-                            CONF_PHASE_2_POWER_SENSOR,
-                            CONF_PHASE_3_POWER_SENSOR,
-                            CONF_PHASE_1_MAX_POWER,
-                            CONF_PHASE_2_MAX_POWER,
-                            CONF_PHASE_3_MAX_POWER,
+                            CONF_PHASE_1_CURRENT_SENSOR,
+                            CONF_PHASE_2_CURRENT_SENSOR,
+                            CONF_PHASE_3_CURRENT_SENSOR,
+                            CONF_PHASE_1_FUSE_SIZE,
+                            CONF_PHASE_2_FUSE_SIZE,
+                            CONF_PHASE_3_FUSE_SIZE,
                         )
                     }
                 )

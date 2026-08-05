@@ -80,16 +80,16 @@ CONF_SOLAR_PRODUCTION_SENSOR = "solar_production_sensor"
 CONF_HOUSEHOLD_CONSUMPTION_SENSOR = "household_consumption_sensor"  # legacy; migrated out in v6
 CONF_MAX_CONTRACTED_POWER = "max_contracted_power"
 
-# Optional three-phase power protection.  The main consumption sensor remains
-# the only control input; these sensors are safety limits for the phase where a
-# battery is physically installed.
+# Optional three-phase current protection.  The main consumption sensor remains
+# the only control input; these current sensors are safety limits for the phase
+# where a battery is physically installed.
 CONF_THREE_PHASE_ENABLED = "three_phase_enabled"
-CONF_PHASE_1_POWER_SENSOR = "phase_1_power_sensor"
-CONF_PHASE_2_POWER_SENSOR = "phase_2_power_sensor"
-CONF_PHASE_3_POWER_SENSOR = "phase_3_power_sensor"
-CONF_PHASE_1_MAX_POWER = "phase_1_max_power"
-CONF_PHASE_2_MAX_POWER = "phase_2_max_power"
-CONF_PHASE_3_MAX_POWER = "phase_3_max_power"
+CONF_PHASE_1_CURRENT_SENSOR = "phase_1_current_sensor"
+CONF_PHASE_2_CURRENT_SENSOR = "phase_2_current_sensor"
+CONF_PHASE_3_CURRENT_SENSOR = "phase_3_current_sensor"
+CONF_PHASE_1_FUSE_SIZE = "phase_1_fuse_size"
+CONF_PHASE_2_FUSE_SIZE = "phase_2_fuse_size"
+CONF_PHASE_3_FUSE_SIZE = "phase_3_fuse_size"
 CONF_BATTERY_PHASE = "battery_phase"
 
 PHASE_L1 = "l1"
@@ -97,12 +97,18 @@ PHASE_L2 = "l2"
 PHASE_L3 = "l3"
 PHASE_VALUES = (PHASE_L1, PHASE_L2, PHASE_L3)
 PHASE_CONFIG = {
-    PHASE_L1: (CONF_PHASE_1_POWER_SENSOR, CONF_PHASE_1_MAX_POWER),
-    PHASE_L2: (CONF_PHASE_2_POWER_SENSOR, CONF_PHASE_2_MAX_POWER),
-    PHASE_L3: (CONF_PHASE_3_POWER_SENSOR, CONF_PHASE_3_MAX_POWER),
+    PHASE_L1: (CONF_PHASE_1_CURRENT_SENSOR, CONF_PHASE_1_FUSE_SIZE),
+    PHASE_L2: (CONF_PHASE_2_CURRENT_SENSOR, CONF_PHASE_2_FUSE_SIZE),
+    PHASE_L3: (CONF_PHASE_3_CURRENT_SENSOR, CONF_PHASE_3_FUSE_SIZE),
 }
 DEFAULT_THREE_PHASE_ENABLED = False
-DEFAULT_PHASE_MAX_POWER = 5750
+DEFAULT_PHASE_FUSE_SIZE_A = 25
+
+# Battery set-points are expressed in active watts, while phase protection is
+# measured in RMS amperes.  Use a conservative fixed conversion for the
+# single-phase AC connection; the user-facing fuse limit remains in amperes.
+PHASE_NOMINAL_VOLTAGE_V = 230.0
+PHASE_BATTERY_POWER_FACTOR = 0.90
 
 # Time slots (operation slots) — v3 schema keys
 CONF_TIME_SLOTS = "no_discharge_time_slots"  # legacy key, kept for compat

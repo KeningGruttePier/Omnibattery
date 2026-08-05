@@ -43,9 +43,9 @@ from .const import (
     CONF_SOLAR_PRODUCTION_SENSOR,
     CONF_MAX_CONTRACTED_POWER,
     CONF_THREE_PHASE_ENABLED,
-    CONF_PHASE_1_POWER_SENSOR,
-    CONF_PHASE_2_POWER_SENSOR,
-    CONF_PHASE_3_POWER_SENSOR,
+    CONF_PHASE_1_CURRENT_SENSOR,
+    CONF_PHASE_2_CURRENT_SENSOR,
+    CONF_PHASE_3_CURRENT_SENSOR,
     CONF_BATTERY_PHASE,
     DEFAULT_THREE_PHASE_ENABLED,
     DEFAULT_BASE_CONSUMPTION_KWH,
@@ -6855,9 +6855,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         dict.fromkeys(
             entry.data.get(key)
             for key in (
-                CONF_PHASE_1_POWER_SENSOR,
-                CONF_PHASE_2_POWER_SENSOR,
-                CONF_PHASE_3_POWER_SENSOR,
+                CONF_PHASE_1_CURRENT_SENSOR,
+                CONF_PHASE_2_CURRENT_SENSOR,
+                CONF_PHASE_3_CURRENT_SENSOR,
             )
             if entry.data.get(CONF_THREE_PHASE_ENABLED, DEFAULT_THREE_PHASE_ENABLED)
             and entry.data.get(key)
