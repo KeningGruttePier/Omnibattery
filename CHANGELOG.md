@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.3.0b3] - 2026-08-05
+
+### Changed
+- **Three-phase protection now uses current sensors and fuse sizes**: configure signed RMS current sensors in `A`/`mA` and the fuse-size/current limit in amperes. Battery commands remain in watts internally and are translated through a conservative 230 V / 0.90 power-factor estimate. This beta schema change intentionally has no migration; re-enter existing phase protection settings after upgrading.
+- **Smart Pre-discharge / Anti-curtailment now accounts for solar reserves and opportunistic charging**: it selects the most valuable eligible discharge blocks while preserving SOC, power and operation blockers, adapts to actual solar production, and allows negative-price grid charging only within the remaining space after the solar reserve. The legacy export-power setting is replaced with self-consumption, automatic and custom-limit modes with migration support, and diagnostics now expose the reserve, available opportunity space and charge-limiting reasons.
+
 ## [1.3.0b2] - 2026-08-04
 
 ### Fixed
@@ -9,7 +15,6 @@
 
 ### Changed
 - **Three-phase protection accepts partial phase layouts**: each phase sensor and limit is an optional pair. Leaving both fields empty disables phase protection for that phase, so its batteries continue under normal controller and per-battery limits; incomplete or invalid configured pairs remain fail-safe.
-- **Three-phase protection now uses current sensors and fuse sizes**: configure signed RMS current sensors in `A`/`mA` and the fuse-size/current limit in amperes. Battery commands remain in watts internally and are translated through a conservative 230 V / 0.90 power-factor estimate. This beta schema change intentionally has no migration; re-enter existing phase protection settings after upgrading.
 
 ## [1.3.0b1] - 2026-08-03
 
