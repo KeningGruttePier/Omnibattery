@@ -55,6 +55,25 @@ def _session(status=None, energy=None, network=None, ota=None):
     return session
 
 
+def _connect_session(auth_status=200):
+    session = MagicMock()
+    session.closed = False
+    session.get.side_effect = [
+        _Context(_Response(auth_status, {"strategy": "POWER_STRATEGY_NOM"})),
+        _Context(_Response(200, {
+            "sessy": {
+                "state_of_charge": 0.6,
+                "power": 0,
+                "power_setpoint": 0,
+            },
+            "renewable_energy_phase1": {"power": 0},
+            "renewable_energy_phase2": {"power": 0},
+            "renewable_energy_phase3": {"power": 0},
+        })),
+    ]
+    return session
+
+
 @pytest.mark.asyncio
 async def test_telemetry_maps_sessy_sign_and_units():
     snapshot = await SessyLocalDriver("sessy.local", session=_session()).read_telemetry()
@@ -76,6 +95,64 @@ def test_sessy_uses_dongle_credentials_for_http_basic_auth():
         "Authorization": "Basic U0VTU1kxMjM0OnNlY3JldA=="
     }
     assert driver.model_label == "Sessy"
+
+
+@pytest.mark.asyncio
+async def test_connect_validates_authenticated_strategy_endpoint(caplog):
+    session = _connect_session(auth_status=401)
+    driver = SessyLocalDriver(
+        "sessy.local",
+        username="SESSY1234",
+        password="secret",
+        session=session,
+    )
+
+    assert await driver.connect() is False
+    assert session.get.call_args_list[0].args[0].endswith(
+        "/api/v1/power/active_strategy"
+    )
+    assert "Reconfigure the battery" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_connect_checks_telemetry_after_authentication():
+    session = _connect_session()
+    driver = SessyLocalDriver(
+        "sessy.local",
+        username="SESSY1234",
+        password="secret",
+        session=session,
+    )
+
+    assert await driver.connect() is True
+    assert [call.args[0].rsplit("/api", 1)[-1] for call in session.get.call_args_list] == [
+        "/v1/power/active_strategy",
+        "/v1/power/status",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_repeated_auth_failures_emit_one_actionable_warning(caplog):
+    session = MagicMock()
+    session.closed = False
+    session.get.side_effect = [
+        _Context(_Response(401)),
+        _Context(_Response(401)),
+    ]
+    driver = SessyLocalDriver(
+        "sessy.local",
+        username="SESSY1234",
+        password="secret",
+        session=session,
+    )
+
+    await driver._get_json("/api/v1/energy/status")
+    await driver._get_json("/api/v1/network/status")
+
+    assert sum(
+        "Sessy local API authentication failed" in record.message
+        for record in caplog.records
+    ) == 1
 
 
 def test_sessy_device_info_exposes_local_ui_and_firmware():

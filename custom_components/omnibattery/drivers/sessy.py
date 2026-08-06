@@ -22,6 +22,7 @@ _PROBE_TIMEOUT = aiohttp.ClientTimeout(total=5)
 _HTTP_ATTEMPTS = 2
 _HTTP_RETRY_DELAY_S = 0.05
 _API_STRATEGY = "POWER_STRATEGY_API"
+_API_AUTH_CHECK = "/api/v1/power/active_strategy"
 _MAX_CHARGE_POWER_W = 2200
 _MAX_DISCHARGE_POWER_W = 1700
 
@@ -72,6 +73,7 @@ class SessyLocalDriver(BatteryDriver):
         self._owns_session = False
         self._connected = False
         self._shutting_down = False
+        self._auth_failure_logged = False
         max_charge_power_w = max(0, min(int(max_charge_power_w), _MAX_CHARGE_POWER_W))
         max_discharge_power_w = max(0, min(int(max_discharge_power_w), _MAX_DISCHARGE_POWER_W))
         self._capabilities = DriverCapabilities(False, False, False, max_charge_power_w,
@@ -116,6 +118,17 @@ class SessyLocalDriver(BatteryDriver):
 
     async def connect(self) -> bool:
         self._ensure_session()
+        # ``power/status`` is readable on some firmware without credentials.
+        # It is therefore not sufficient to validate a driver that must also
+        # write the strategy and setpoint.  Check the authenticated strategy
+        # endpoint first, then verify that telemetry is available.
+        if self._headers is None:
+            self._log_auth_failure("credentials are not configured")
+            self._connected = False
+            return False
+        if await self._get_json(_API_AUTH_CHECK) is None:
+            self._connected = False
+            return False
         self._connected = await self._get_status() is not None
         return self._connected
 
@@ -126,6 +139,17 @@ class SessyLocalDriver(BatteryDriver):
             self._session = None
 
     def set_shutting_down(self, value: bool) -> None: self._shutting_down = value
+
+    def _log_auth_failure(self, detail: str) -> None:
+        """Log one actionable authentication warning per driver instance."""
+        if self._shutting_down or self._auth_failure_logged:
+            return
+        self._auth_failure_logged = True
+        _LOGGER.warning(
+            "Sessy local API authentication failed (%s). Reconfigure the "
+            "battery with the username and password printed on its dongle.",
+            detail,
+        )
 
     async def read_telemetry(self, keys: Optional[list[str]] = None) -> TelemetrySnapshot:
         requested = set(keys) if keys is not None else set(
@@ -236,6 +260,9 @@ class SessyLocalDriver(BatteryDriver):
                     self._base_url + path, timeout=_HTTP_TIMEOUT
                 ) as response:
                     if response.status != 200:
+                        if response.status == 401:
+                            self._log_auth_failure(f"GET {path} returned HTTP 401")
+                            return None
                         if not self._shutting_down:
                             _LOGGER.warning(
                                 "Sessy GET %s returned HTTP %s",
@@ -266,6 +293,9 @@ class SessyLocalDriver(BatteryDriver):
                     # also prevents an unread response from poisoning the pool.
                     await response.read()
                     if response.status != 200:
+                        if response.status == 401:
+                            self._log_auth_failure(f"POST {path} returned HTTP 401")
+                            return False
                         if not self._shutting_down:
                             _LOGGER.warning(
                                 "Sessy POST %s returned HTTP %s",
