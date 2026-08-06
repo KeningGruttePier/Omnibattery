@@ -559,10 +559,31 @@ def _scope_value_in_options(scope: str, opts: list[dict]) -> bool:
     return any(o["value"] == scope for o in opts)
 
 
-def _battery_hardware_max(bcfg: dict) -> int:
-    """Return the battery's hardware max power (W) from MAX_POWER_BY_VERSION."""
-    version = bcfg.get(CONF_BATTERY_VERSION, DEFAULT_VERSION)
-    return int(MAX_POWER_BY_VERSION.get(version, 2500))
+def _battery_hardware_max(bcfg: dict, power_key: str | None = None) -> int:
+    """Return the battery's hardware max power (W) for slot selectors.
+
+    Marstek batteries identify their hardware envelope through
+    ``battery_version``. Other drivers persist their discovered/configured
+    charge and discharge ceilings instead, so falling back to the Marstek v2
+    value would incorrectly cap their time-slot overrides at 2500 W.
+    """
+    version = bcfg.get(CONF_BATTERY_VERSION)
+    if version in MAX_POWER_BY_VERSION:
+        return int(MAX_POWER_BY_VERSION[version])
+
+    configured_limits: list[int] = []
+    keys = (power_key,) if power_key else ("max_charge_power", "max_discharge_power")
+    for key in keys:
+        try:
+            value = int(bcfg.get(key) or 0)
+        except (TypeError, ValueError):
+            continue
+        if value > 0:
+            configured_limits.append(value)
+    if configured_limits:
+        return max(configured_limits)
+
+    return int(MAX_POWER_BY_VERSION.get(DEFAULT_VERSION, 2500))
 
 
 def _max_system_hardware_power(battery_configs: list[dict]) -> int:
@@ -681,7 +702,8 @@ def _build_slot_step_b_schema(
         bcfg = battery_configs[idx]
         b_key = f"battery_{idx + 1}"
         b_prior = prior.get(b_key) or {}
-        hw_max = _battery_hardware_max(bcfg)
+        charge_max = _battery_hardware_max(bcfg, "max_charge_power")
+        discharge_max = _battery_hardware_max(bcfg, "max_discharge_power")
         if needs_soc:
             soc_min_def = b_prior.get("soc_min") or int(bcfg.get("min_soc") or DEFAULT_SLOT_SOC_MIN_FLOOR)
             soc_max_def = b_prior.get("soc_max") or int(bcfg.get("max_soc") or DEFAULT_SLOT_SOC_MAX_CEILING)
@@ -700,20 +722,20 @@ def _build_slot_step_b_schema(
                 step=1, mode=NumberSelectorMode.SLIDER,
             ))
         if needs_power:
-            charge_def = b_prior.get("max_charge_power_w") or int(bcfg.get("max_charge_power") or hw_max)
-            discharge_def = b_prior.get("max_discharge_power_w") or int(bcfg.get("max_discharge_power") or hw_max)
+            charge_def = b_prior.get("max_charge_power_w") or int(bcfg.get("max_charge_power") or charge_max)
+            discharge_def = b_prior.get("max_discharge_power_w") or int(bcfg.get("max_discharge_power") or discharge_max)
             fields[vol.Required(
                 _slot_field_key(idx, "max_charge_power_w"),
-                default=_clamp(charge_def, 100, hw_max),
+                default=_clamp(charge_def, 100, charge_max),
             )] = NumberSelector(NumberSelectorConfig(
-                min=100, max=hw_max, step=50, unit_of_measurement="W",
+                min=100, max=charge_max, step=50, unit_of_measurement="W",
                 mode=NumberSelectorMode.SLIDER,
             ))
             fields[vol.Required(
                 _slot_field_key(idx, "max_discharge_power_w"),
-                default=_clamp(discharge_def, 100, hw_max),
+                default=_clamp(discharge_def, 100, discharge_max),
             )] = NumberSelector(NumberSelectorConfig(
-                min=100, max=hw_max, step=50, unit_of_measurement="W",
+                min=100, max=discharge_max, step=50, unit_of_measurement="W",
                 mode=NumberSelectorMode.SLIDER,
             ))
     return vol.Schema(fields)

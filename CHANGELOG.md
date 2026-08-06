@@ -1,13 +1,16 @@
 # Changelog
 
+## [1.3.0b4] - 2026-08-06
+
+### Fixed
+- **Sessy authentication failures could look like a healthy connection**: the initial probe now validates the protected strategy endpoint instead of relying only on the readable power-status endpoint, and repeated `401` responses are collapsed into one actionable credential warning.
+- **Time-slot power overrides could be capped at 2500 W for non-Marstek batteries** (#241): slot selectors now use each battery's configured charge and discharge ceilings, including Anker/SOLIX limits above 2500 W.
+
 ## [1.3.0b3] - 2026-08-05
 
 ### Changed
 - **Three-phase protection now uses current sensors and fuse sizes**: configure signed RMS current sensors in `A`/`mA` and the fuse-size/current limit in amperes. Battery commands remain in watts internally and are translated through a conservative 230 V / 0.90 power-factor estimate. This beta schema change intentionally has no migration; re-enter existing phase protection settings after upgrading.
 - **Smart Pre-discharge / Anti-curtailment now accounts for solar reserves and opportunistic charging**: it selects the most valuable eligible discharge blocks while preserving SOC, power and operation blockers, adapts to actual solar production, and allows negative-price grid charging only within the remaining space after the solar reserve. The legacy export-power setting is replaced with self-consumption, automatic and custom-limit modes with migration support, and diagnostics now expose the reserve, available opportunity space and charge-limiting reasons.
-
-### Fixed
-- **Sessy authentication failures could look like a healthy connection**: the initial probe now validates the protected strategy endpoint instead of relying only on the readable power-status endpoint, and repeated `401` responses are collapsed into one actionable credential warning.
 
 ## [1.3.0b2] - 2026-08-04
 
