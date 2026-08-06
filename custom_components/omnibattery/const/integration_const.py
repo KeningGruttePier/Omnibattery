@@ -233,6 +233,9 @@ NORMAL_BALANCE_RECAL_SOC_THRESHOLD = 99        # %: below this, make one best-ef
 NORMAL_BALANCE_RECAL_CUTOFF_POWER_W = 10       # W: charge collapsed (BMS terminated)
 NORMAL_BALANCE_RECAL_CUTOFF_CYCLES = 5         # consecutive cycles to confirm the BMS cutoff
 NORMAL_BALANCE_RECAL_INVERTER_STANDBY = 1      # inverter_state raw value for Standby
+# After a cutoff above the pause voltage, allow one extra 200 W charge when the
+# cell has relaxed to this voltage.  The retry is deliberately one-shot.
+NORMAL_BALANCE_RECAL_RETRY_CELL_VOLTAGE = 3.58
 
 # BMS low-SOC discharge cutoff (low-SOC counterpart to NORMAL_BALANCE_RECAL_*).
 # Below this SOC the BMS may refuse to discharge on its own (protective cutoff,

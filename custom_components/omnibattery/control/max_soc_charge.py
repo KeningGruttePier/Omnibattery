@@ -9,6 +9,8 @@ drive active cell balancing. It manages the final stretch of a normal max-SOC
   top voltage is reached.
 - SOC recalibration: keep charging past the top-voltage threshold when the BMS reports a low SOC
   at full cell voltage (coulomb-counter drift) until the BMS itself cuts off.
+- After a cutoff above 3.60 V, wait for the cell to relax to 3.58 V and make one
+  additional 200 W charge attempt before latching the recalibration session.
 - Passive cell-delta measurement at the top, reported to the balance monitor.
 
 The latched state (the ``_normal_balance_*`` dicts and
@@ -32,6 +34,7 @@ from ..const import (
     NORMAL_BALANCE_RECAL_CUTOFF_CYCLES,
     NORMAL_BALANCE_RECAL_CUTOFF_POWER_W,
     NORMAL_BALANCE_RECAL_INVERTER_STANDBY,
+    NORMAL_BALANCE_RECAL_RETRY_CELL_VOLTAGE,
     NORMAL_BALANCE_RECAL_SOC_THRESHOLD,
     NORMAL_BALANCE_TAPER_CELL_VOLTAGE,
     NORMAL_BALANCE_TAPER_EXIT_CELL_VOLTAGE,
@@ -65,6 +68,9 @@ class MaxSocChargeManager:
         c._normal_balance_recal_override.clear()
         c._normal_balance_recal_cutoff_count.clear()
         c._normal_balance_recal_latched.clear()
+        c._normal_balance_recal_retry_pending.clear()
+        c._normal_balance_recal_retry_active.clear()
+        c._normal_balance_recal_first_cutoff_voltage.clear()
 
     @staticmethod
     def _cell_delta_v(data: dict) -> float | None:
@@ -145,30 +151,112 @@ class MaxSocChargeManager:
         voltage, so the BMS-cutoff counter keeps advancing as the cell relaxes
         after a cut). A low reported SOC at full cell voltage may mean the BMS
         coulomb counter has drifted, so keep charging (at the tapered power)
-        until the BMS itself cuts off, then
-        latch off and give the BMS one opportunity to recalibrate its SOC. Some
-        firmware keeps the previous SOC after cutoff; the latch clears when the
-        battery leaves the top zone (see refresh_blocks).
+        until the BMS itself cuts off. If that first cutoff happens above 3.60 V
+        while SOC is still below 100%, wait for the cell to relax to 3.58 V and
+        make one additional 200 W attempt. Some firmware keeps the previous SOC
+        after cutoff; the latch clears when the battery leaves the top zone (see
+        refresh_blocks).
         """
         c = self._controller
+
+        data = coordinator.data or {}
+
+        # A first cutoff above the pause voltage can leave the top cell too high
+        # for the BMS to accept another command immediately.  Keep the battery
+        # idle until it relaxes to 3.58 V, then open exactly one retry window.
+        # This branch intentionally uses <100% rather than the initial <99%
+        # trigger: a cutoff at 99% still qualifies for the one extra attempt.
+        retry_pending = c._normal_balance_recal_retry_pending.get(coordinator, False)
+        retry_active = c._normal_balance_recal_retry_active.get(coordinator, False)
+        if retry_pending:
+            if soc is None or soc >= 100:
+                c._normal_balance_recal_retry_pending.pop(coordinator, None)
+                return False
+            if vmax_f > NORMAL_BALANCE_RECAL_RETRY_CELL_VOLTAGE:
+                return False
+            c._normal_balance_recal_retry_pending.pop(coordinator, None)
+            c._normal_balance_recal_retry_active[coordinator] = True
+            c._normal_balance_recal_cutoff_count.pop(coordinator, None)
+            retry_active = True
+            _LOGGER.info(
+                "%s: SOC recalibration cutoff confirmed above %.2f V; cell relaxed to %.2f V — "
+                "starting one %d W retry",
+                coordinator.name,
+                NORMAL_BALANCE_PAUSE_CELL_VOLTAGE,
+                NORMAL_BALANCE_RECAL_RETRY_CELL_VOLTAGE,
+                NORMAL_BALANCE_CHARGE_POWER_W,
+            )
+
+        if retry_active:
+            if soc is None or soc >= 100:
+                c._normal_balance_recal_retry_active.pop(coordinator, None)
+                c._normal_balance_recal_cutoff_count.pop(coordinator, None)
+                return False
+
+            if self._bms_cut_signature(coordinator, data):
+                count = c._normal_balance_recal_cutoff_count.get(coordinator, 0) + 1
+                c._normal_balance_recal_cutoff_count[coordinator] = count
+                if count >= NORMAL_BALANCE_RECAL_CUTOFF_CYCLES:
+                    c._normal_balance_recal_retry_active.pop(coordinator, None)
+                    c._normal_balance_recal_cutoff_count.pop(coordinator, None)
+                    _LOGGER.info(
+                        "%s: One-shot SOC recalibration retry ended after BMS cutoff at "
+                        "vmax=%.3f V, SOC=%s%%",
+                        coordinator.name,
+                        vmax_f,
+                        soc,
+                    )
+                    return False
+            else:
+                power = data.get("battery_power")
+                try:
+                    accepting = (
+                        power is not None
+                        and float(power) > NORMAL_BALANCE_RECAL_CUTOFF_POWER_W
+                    )
+                except (TypeError, ValueError):
+                    accepting = False
+                if accepting:
+                    # The retry is still in progress; only a new refusal can end it.
+                    c._normal_balance_recal_cutoff_count.pop(coordinator, None)
+            return True
+
         if soc is None or soc >= NORMAL_BALANCE_RECAL_SOC_THRESHOLD:
             c._normal_balance_recal_cutoff_count.pop(coordinator, None)
+            c._normal_balance_recal_first_cutoff_voltage.pop(coordinator, None)
             return False
         if c._normal_balance_recal_latched.get(coordinator):
             return False
 
-        data = coordinator.data or {}
         if self._bms_cut_signature(coordinator, data):
             count = c._normal_balance_recal_cutoff_count.get(coordinator, 0) + 1
             c._normal_balance_recal_cutoff_count[coordinator] = count
+            previous_vmax = c._normal_balance_recal_first_cutoff_voltage.get(coordinator)
+            c._normal_balance_recal_first_cutoff_voltage[coordinator] = (
+                vmax_f if previous_vmax is None else max(previous_vmax, vmax_f)
+            )
             if count >= NORMAL_BALANCE_RECAL_CUTOFF_CYCLES:
                 c._normal_balance_recal_latched[coordinator] = True
                 c._normal_balance_recal_cutoff_count.pop(coordinator, None)
-                _LOGGER.info(
-                    "%s: BMS cutoff during SOC recalibration at vmax=%.3f V, SOC=%s%% — "
-                    "holding; SOC recalibration remains firmware-dependent",
-                    coordinator.name, vmax_f, soc,
-                )
+                cutoff_vmax = c._normal_balance_recal_first_cutoff_voltage[coordinator]
+                if cutoff_vmax > NORMAL_BALANCE_PAUSE_CELL_VOLTAGE and soc < 100:
+                    c._normal_balance_recal_retry_pending[coordinator] = True
+                    _LOGGER.info(
+                        "%s: BMS cutoff during SOC recalibration at vmax=%.3f V, SOC=%s%% — "
+                        "waiting for %.2f V before one retry",
+                        coordinator.name,
+                        cutoff_vmax,
+                        soc,
+                        NORMAL_BALANCE_RECAL_RETRY_CELL_VOLTAGE,
+                    )
+                else:
+                    _LOGGER.info(
+                        "%s: BMS cutoff during SOC recalibration at vmax=%.3f V, SOC=%s%% — "
+                        "holding; no retry required",
+                        coordinator.name,
+                        cutoff_vmax,
+                        soc,
+                    )
                 return False
         else:
             power = data.get("battery_power")
@@ -182,6 +270,7 @@ class MaxSocChargeManager:
             if accepting:
                 # The battery is accepting charge, so it is genuinely not full.
                 c._normal_balance_recal_cutoff_count.pop(coordinator, None)
+                c._normal_balance_recal_first_cutoff_voltage.pop(coordinator, None)
             # When idle or not commanded, freeze the counter: neither increment
             # nor reset it. A confirmed cutoff stops the command, and resetting
             # here would erase the evidence that is about to latch the cutoff.
@@ -193,6 +282,9 @@ class MaxSocChargeManager:
         c._normal_balance_recal_override.pop(coordinator, None)
         c._normal_balance_recal_cutoff_count.pop(coordinator, None)
         c._normal_balance_recal_latched.pop(coordinator, None)
+        c._normal_balance_recal_retry_pending.pop(coordinator, None)
+        c._normal_balance_recal_retry_active.pop(coordinator, None)
+        c._normal_balance_recal_first_cutoff_voltage.pop(coordinator, None)
 
     def refresh_blocks(self) -> None:
         """Update normal high-SOC charge protection blockers.
@@ -257,6 +349,8 @@ class MaxSocChargeManager:
                     or c._normal_balance_recal_override.get(coordinator, False)
                     or coordinator in c._normal_balance_recal_cutoff_count
                     or c._normal_balance_recal_latched.get(coordinator, False)
+                    or c._normal_balance_recal_retry_pending.get(coordinator, False)
+                    or c._normal_balance_recal_retry_active.get(coordinator, False)
                 )
             )
             if not weekly_active and recal_started:
@@ -309,6 +403,15 @@ class MaxSocChargeManager:
                 "active_balance_phase": c._normal_active_balance_phases.get(coordinator),
                 "soc_recal_active": c._normal_balance_recal_override.get(coordinator, False),
                 "soc_recal_bms_cutoff": c._normal_balance_recal_latched.get(coordinator, False),
+                "soc_recal_retry_pending": c._normal_balance_recal_retry_pending.get(
+                    coordinator, False
+                ),
+                "soc_recal_retry_active": c._normal_balance_recal_retry_active.get(
+                    coordinator, False
+                ),
+                "soc_recal_first_cutoff_voltage": c._normal_balance_recal_first_cutoff_voltage.get(
+                    coordinator
+                ),
                 "charge_limit_w": c._battery_power_limit(coordinator, True),
             }
         return status

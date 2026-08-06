@@ -6,6 +6,9 @@
 - **Sessy authentication failures could look like a healthy connection**: the initial probe now validates the protected strategy endpoint instead of relying only on the readable power-status endpoint, and repeated `401` responses are collapsed into one actionable credential warning.
 - **Time-slot power overrides could be capped at 2500 W for non-Marstek batteries** (#241): slot selectors now use each battery's configured charge and discharge ceilings, including Anker/SOLIX limits above 2500 W.
 
+### Changed
+- **Marstek SOC recalibration now makes one controlled retry after a high-voltage BMS cutoff**: when the first cutoff occurs above 3.60 V while reported SOC is still below 100%, the battery waits for the cell to relax to 3.58 V, then charges once at 200 W until the BMS cuts again. The retry is one-shot and is cancelled if SOC reaches 100%.
+
 ## [1.3.0b3] - 2026-08-05
 
 ### Changed

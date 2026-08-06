@@ -88,8 +88,9 @@ El override se activa automáticamente cuando se cumple **todo** lo siguiente:
 Es autolimitado:
 
 - la carga continúa solo a 200 W (la potencia suave de reducción), no a plena potencia;
-- el corte del BMS se detecta cuando la potencia de la batería cae a ≤ 10 W y el inversor reporta Standby durante 5 ciclos consecutivos (~10 s). En ese momento el override se enclava y se reanuda la histéresis normal; el SOC puede recalibrarse o no, según el firmware;
-- si el SOC marca 99 % o más, la condición ya no se cumple, así que el override no se vuelve a disparar;
+- el corte del BMS se detecta cuando la potencia de la batería cae a ≤ 10 W y el inversor reporta Standby durante 5 ciclos consecutivos (~10 s). Si ese primer corte ocurrió por encima de 3.60 V y el SOC aún es menor del 100 %, la batería queda en espera hasta relajarse a 3.58 V y se hace un único reintento a 200 W; cuando la BMS vuelve a cortar, el override se enclava definitivamente;
+- si el SOC alcanza el 100 % durante la espera o el reintento, no se realiza otro intento;
+- si el SOC marca 99 % o más antes del primer corte, la condición inicial ya no se cumple, así que el override no se dispara;
 - el enclavamiento solo se rearma cuando la batería sale de la zona alta (`max_cell_voltage` por debajo de 3.48 V), para que una carga completa posterior pueda recalibrar de nuevo si hace falta.
 
 Llegar al punto de pausa de 3.60 V normalmente solo ocurre en una carga al 100 %, así que esto rara vez afecta al ciclado diario con un `max_soc` más bajo. **No** se ejecuta durante la [carga semanal completa](weekly-full-charge.md) — allí la pausa de 3.60 V se suprime por completo y el corte del BMS por sí solo finaliza el ciclo (ver esa página). Tampoco se ejecuta mientras el [modo de balanceo activo](#modo-de-balanceo-activo) controla la batería — ese modo tiene prioridad.
@@ -219,6 +220,9 @@ El sensor **Integration Status** expone un atributo `normal_balance_protection` 
 | `active_balance_phase` | Fase actual de medición al 100 %, si existe |
 | `soc_recal_active` | Si la carga se mantiene más allá de la pausa de 3.60 V para intentar recalibrar un SOC reportado bajo |
 | `soc_recal_bms_cutoff` | Si se ha alcanzado el corte del BMS durante la recalibración (override enclavado) |
+| `soc_recal_retry_pending` | Si se está esperando a que la celda se relaje a 3.58 V para el único reintento |
+| `soc_recal_retry_active` | Si el único reintento a 200 W está en curso |
+| `soc_recal_first_cutoff_voltage` | Tensión máxima observada durante el primer corte de BMS |
 | `charge_limit_w` | Límite efectivo de carga por batería antes del reparto |
 
 El modo de balanceo activo también expone su fase actual, delta medido, potencia ordenada y voltaje de reintento en los diagnósticos del estado de integración.

@@ -560,6 +560,9 @@ class ChargeDischargeController:
         self._normal_balance_recal_override: dict[MarstekVenusDataUpdateCoordinator, bool] = {}
         self._normal_balance_recal_cutoff_count: dict[MarstekVenusDataUpdateCoordinator, int] = {}
         self._normal_balance_recal_latched: dict[MarstekVenusDataUpdateCoordinator, bool] = {}
+        self._normal_balance_recal_retry_pending: dict[MarstekVenusDataUpdateCoordinator, bool] = {}
+        self._normal_balance_recal_retry_active: dict[MarstekVenusDataUpdateCoordinator, bool] = {}
+        self._normal_balance_recal_first_cutoff_voltage: dict[MarstekVenusDataUpdateCoordinator, float] = {}
         self._active_balance_mgr = ActiveBalanceModeManager(hass, self)
         self._max_soc_mgr = MaxSocChargeManager(hass, self)
         self._temp_limit_mgr = TemperatureChargeLimitManager(hass, self)
@@ -2324,7 +2327,16 @@ class ChargeDischargeController:
                 # BMS cutoff detection: counter is maintained by tick_bms_cutoff() which
                 # runs unconditionally at the top of handle_registers() each cycle.
                 # is_battery_full() is a read-only query shared with handle_registers().
-                if self._weekly_charge_mgr.is_battery_full(coordinator):
+                # A normal SOC-recalibration retry is the deliberate exception: the
+                # weekly manager still remembers the first cutoff, but this one-shot
+                # 200 W command must be allowed through until the second cutoff.
+                normal_recal_active = self._normal_balance_recal_override.get(
+                    coordinator, False
+                )
+                if (
+                    self._weekly_charge_mgr.is_battery_full(coordinator)
+                    and not normal_recal_active
+                ):
                     if coordinator.enable_charge_hysteresis and not coordinator._hysteresis_active:
                         coordinator._hysteresis_active = True
                         if coordinator._hysteresis_base_soc is None:

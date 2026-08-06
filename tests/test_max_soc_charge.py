@@ -24,6 +24,7 @@ from custom_components.omnibattery.const import (
     CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED,
     NORMAL_BALANCE_CHARGE_POWER_W,
     NORMAL_BALANCE_RECAL_CUTOFF_CYCLES,
+    NORMAL_BALANCE_RECAL_RETRY_CELL_VOLTAGE,
 )
 from custom_components.omnibattery.control.max_soc_charge import (
     MaxSocChargeManager,
@@ -72,6 +73,9 @@ tracks the manager's runtime state."""
         _normal_balance_recal_override={},
         _normal_balance_recal_cutoff_count={},
         _normal_balance_recal_latched={},
+        _normal_balance_recal_retry_pending={},
+        _normal_balance_recal_retry_active={},
+        _normal_balance_recal_first_cutoff_voltage={},
         _is_active_balance_mode_running=lambda coordinator: False,
         _weekly_charge_mgr=object(),
         _weekly_full_charge_unlocked=lambda: False,
@@ -290,6 +294,56 @@ def test_recal_override_latches_after_cutoff_cycles():
     assert ctrl._normal_balance_recal_latched.get(c) is True
     # Stays latched on subsequent calls.
     assert m._compute_recal_override(c, 3.55, 95) is False
+
+
+def test_high_voltage_cutoff_arms_one_retry_after_relaxation():
+    c = _recal_coord(power=5, inv=1, commanded=200)
+    ctrl = _controller([c])
+    m = _mgr(ctrl)
+
+    for cycle in range(NORMAL_BALANCE_RECAL_CUTOFF_CYCLES):
+        result = m._compute_recal_override(c, 3.64, 95)
+        if cycle < NORMAL_BALANCE_RECAL_CUTOFF_CYCLES - 1:
+            assert result is True
+        else:
+            assert result is False
+
+    assert ctrl._normal_balance_recal_latched[c] is True
+    assert ctrl._normal_balance_recal_retry_pending[c] is True
+    assert ctrl._normal_balance_recal_retry_active.get(c, False) is False
+
+    # The battery is idle while the top cell relaxes; the retry must not start early.
+    c.commanded_charge_power = 0
+    assert m._compute_recal_override(c, 3.59, 95) is False
+    assert ctrl._normal_balance_recal_retry_pending[c] is True
+
+    # At 3.58 V the one-shot 200 W retry becomes active.
+    assert m._compute_recal_override(c, NORMAL_BALANCE_RECAL_RETRY_CELL_VOLTAGE, 95) is True
+    assert ctrl._normal_balance_recal_retry_pending.get(c, False) is False
+    assert ctrl._normal_balance_recal_retry_active[c] is True
+
+
+def test_recal_retry_stops_after_its_second_bms_cutoff():
+    c = _recal_coord(power=5, inv=1, commanded=200)
+    ctrl = _controller([c])
+    m = _mgr(ctrl)
+
+    for _ in range(NORMAL_BALANCE_RECAL_CUTOFF_CYCLES):
+        m._compute_recal_override(c, 3.64, 95)
+
+    c.commanded_charge_power = 0  # waiting for relaxation
+    assert m._compute_recal_override(c, 3.58, 95) is True
+    c.commanded_charge_power = 200  # the retry is now being commanded
+
+    for _ in range(NORMAL_BALANCE_RECAL_CUTOFF_CYCLES - 1):
+        assert m._compute_recal_override(c, 3.58, 95) is True
+    assert m._compute_recal_override(c, 3.58, 95) is False
+
+    assert ctrl._normal_balance_recal_retry_pending.get(c, False) is False
+    assert ctrl._normal_balance_recal_retry_active.get(c, False) is False
+    assert ctrl._normal_balance_recal_latched[c] is True
+    # The latched first cutoff prevents a third attempt in the same top session.
+    assert m._compute_recal_override(c, 3.58, 95) is False
 
 
 def test_recal_override_cutoff_counter_resets_when_charge_resumes():
