@@ -9,7 +9,7 @@ drive active cell balancing. It manages the final stretch of a normal max-SOC
   top voltage is reached.
 - SOC recalibration: keep charging past the top-voltage threshold when the BMS reports a low SOC
   at full cell voltage (coulomb-counter drift) until the BMS itself cuts off.
-- After a cutoff above 3.60 V, wait for the cell to relax to 3.58 V and make one
+- After a cutoff above 3.60 V, wait for the cell to relax to 3.57 V and make one
   additional 200 W charge attempt before latching the recalibration session.
 - Passive cell-delta measurement at the top, reported to the balance monitor.
 
@@ -152,7 +152,7 @@ class MaxSocChargeManager:
         after a cut). A low reported SOC at full cell voltage may mean the BMS
         coulomb counter has drifted, so keep charging (at the tapered power)
         until the BMS itself cuts off. If that first cutoff happens above 3.60 V
-        while SOC is still below 100%, wait for the cell to relax to 3.58 V and
+        while SOC is still below 100%, wait for the cell to relax to 3.57 V and
         make one additional 200 W attempt. Some firmware keeps the previous SOC
         after cutoff; the latch clears when the battery leaves the top zone (see
         refresh_blocks).
@@ -163,7 +163,7 @@ class MaxSocChargeManager:
 
         # A first cutoff above the pause voltage can leave the top cell too high
         # for the BMS to accept another command immediately.  Keep the battery
-        # idle until it relaxes to 3.58 V, then open exactly one retry window.
+        # idle until it relaxes to 3.57 V, then open exactly one retry window.
         # This branch intentionally uses <100% rather than the initial <99%
         # trigger: a cutoff at 99% still qualifies for the one extra attempt.
         retry_pending = c._normal_balance_recal_retry_pending.get(coordinator, False)

@@ -317,7 +317,7 @@ def test_high_voltage_cutoff_arms_one_retry_after_relaxation():
     assert m._compute_recal_override(c, 3.59, 95) is False
     assert ctrl._normal_balance_recal_retry_pending[c] is True
 
-    # At 3.58 V the one-shot 200 W retry becomes active.
+    # At 3.57 V the one-shot 200 W retry becomes active.
     assert m._compute_recal_override(c, NORMAL_BALANCE_RECAL_RETRY_CELL_VOLTAGE, 95) is True
     assert ctrl._normal_balance_recal_retry_pending.get(c, False) is False
     assert ctrl._normal_balance_recal_retry_active[c] is True
@@ -332,18 +332,18 @@ def test_recal_retry_stops_after_its_second_bms_cutoff():
         m._compute_recal_override(c, 3.64, 95)
 
     c.commanded_charge_power = 0  # waiting for relaxation
-    assert m._compute_recal_override(c, 3.58, 95) is True
+    assert m._compute_recal_override(c, NORMAL_BALANCE_RECAL_RETRY_CELL_VOLTAGE, 95) is True
     c.commanded_charge_power = 200  # the retry is now being commanded
 
     for _ in range(NORMAL_BALANCE_RECAL_CUTOFF_CYCLES - 1):
-        assert m._compute_recal_override(c, 3.58, 95) is True
-    assert m._compute_recal_override(c, 3.58, 95) is False
+        assert m._compute_recal_override(c, NORMAL_BALANCE_RECAL_RETRY_CELL_VOLTAGE, 95) is True
+    assert m._compute_recal_override(c, NORMAL_BALANCE_RECAL_RETRY_CELL_VOLTAGE, 95) is False
 
     assert ctrl._normal_balance_recal_retry_pending.get(c, False) is False
     assert ctrl._normal_balance_recal_retry_active.get(c, False) is False
     assert ctrl._normal_balance_recal_latched[c] is True
     # The latched first cutoff prevents a third attempt in the same top session.
-    assert m._compute_recal_override(c, 3.58, 95) is False
+    assert m._compute_recal_override(c, NORMAL_BALANCE_RECAL_RETRY_CELL_VOLTAGE, 95) is False
 
 
 def test_recal_override_cutoff_counter_resets_when_charge_resumes():

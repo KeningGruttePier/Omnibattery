@@ -103,7 +103,7 @@ The override triggers automatically whenever **all** of these are true:
 It is self-limiting:
 
 - charging continues at 200 W only (the gentle taper power), not full power;
-- a BMS cutoff is detected when battery power collapses to ≤ 10 W and the inverter reports Standby for 5 consecutive cycles (~10 s). If that first cutoff happened above 3.60 V while SOC is still below 100%, the battery waits for the cell to relax to 3.58 V and makes one 200 W retry; when the BMS cuts again, the override latches off permanently;
+- a BMS cutoff is detected when battery power collapses to ≤ 10 W and the inverter reports Standby for 5 consecutive cycles (~10 s). If that first cutoff happened above 3.60 V while SOC is still below 100%, the battery waits for the cell to relax to 3.57 V and makes one 200 W retry; when the BMS cuts again, the override latches off permanently;
 - if SOC reaches 100% during the wait or retry, no further attempt is made;
 - if the SOC reads 99% or more before the first cutoff, the initial condition no longer matches, so the override does not fire;
 - the latch only re-arms after the battery leaves the top zone (`max_cell_voltage` below 3.48 V), so a later full charge can recalibrate again if needed.
@@ -259,7 +259,7 @@ The **Integration Status** sensor exposes a `normal_balance_protection` attribut
 | `active_balance_phase` | Current 100% top-measurement phase, if any |
 | `soc_recal_active` | Whether the charge is being kept past 3.60 V to attempt recalibration of a low reported SOC |
 | `soc_recal_bms_cutoff` | Whether the BMS cutoff has been reached during recalibration (override latched off) |
-| `soc_recal_retry_pending` | Whether the battery is waiting for 3.58 V before the one-shot retry |
+| `soc_recal_retry_pending` | Whether the battery is waiting for 3.57 V before the one-shot retry |
 | `soc_recal_retry_active` | Whether the one-shot 200 W retry is in progress |
 | `soc_recal_first_cutoff_voltage` | Highest voltage observed during the first BMS cutoff |
 | `charge_limit_w` | Effective per-battery charge limit before allocation |
