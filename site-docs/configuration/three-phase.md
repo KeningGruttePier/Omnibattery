@@ -19,11 +19,13 @@ For each phase, Omnibattery reconstructs the non-battery current and calculates 
 
 ```text
 base_current = phase_current - battery_current_on_phase
-charge_budget_current = min(fuse_size, max(0, fuse_size - base_current))
-discharge_budget_current = min(fuse_size, max(0, fuse_size + base_current))
+battery_current_min = max(-fuse_size, -fuse_size - base_current)
+battery_current_max = min(+fuse_size, +fuse_size - base_current)
+charge_budget_current = max(0, battery_current_max)
+discharge_budget_current = max(0, -battery_current_min)
 ```
 
-The current sensor must be signed: positive means import and negative means export. Battery telemetry and commands use the controller convention (`+` charge, `−` discharge) and remain in active watts. Internally, battery watts are converted to current and the available current budget is converted back to a conservative watt cap using 230 V nominal voltage and a 0.90 power factor. The normal load-sharing selection and proportional allocation run first. The result is then rounded down in 5 W increments and capped independently on each phase. Only power rejected by that cap is moved to batteries on healthy phases with remaining capacity, following the normal SOC/energy priority order.
+The current sensor must be signed: positive means import and negative means export. Battery telemetry and commands use the controller convention (`+` charge, `−` discharge) and remain in active watts. Internally, the meter constraint and the absolute battery-command constraint are intersected as a signed interval before converting the directional budgets back to watts. Battery watts are converted to current and the available current budget is converted back to a conservative watt cap using 230 V nominal voltage and a 0.90 power factor. The normal load-sharing selection and proportional allocation run first. The result is then rounded down in 5 W increments and capped independently on each phase. Only power rejected by that cap is moved to batteries on healthy phases with remaining capacity, following the normal SOC/energy priority order.
 
 The configured phase limit is an absolute per-phase cap for automatic battery assignments in either direction. The reconstructed base current can reduce the available budget, but it cannot increase the battery current above the configured limit. A phase meter can still exceed the limit because of an external load, measurement/actuator latency or a manual command; the automatic guard cannot remove an external load.
 

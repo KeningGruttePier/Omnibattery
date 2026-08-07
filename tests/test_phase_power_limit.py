@@ -213,6 +213,10 @@ def test_phase_budgets_never_exceed_configured_current_limit():
     assert budgets["charge_budget_a"] == pytest.approx(2.9046376811594206)
     assert budgets["discharge_budget_a"] == 9
 
+    export_base = calculate_phase_budgets(-6, 0, 9)
+    assert export_base["charge_budget_a"] == 9
+    assert export_base["discharge_budget_a"] == 3
+
 
 def test_direct_discharge_command_is_capped_by_phase_current_limit():
     now = datetime.now(timezone.utc)

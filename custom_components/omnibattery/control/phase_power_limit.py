@@ -141,10 +141,18 @@ def calculate_phase_budgets(
     """
     base_a = float(grid_a) - float(battery_current_a)
     limit = max(0.0, float(limit_a))
+
+    # The phase meter must stay inside [-limit, +limit]. Battery current uses
+    # the controller sign (+charge/-discharge), so the meter constraint gives
+    # the signed battery interval [(-limit - base), (limit - base)]. Apply the
+    # same absolute limit to the battery command itself and intersect both
+    # intervals before exposing directional magnitudes to the distributor.
+    battery_min_a = max(-limit, -limit - base_a)
+    battery_max_a = min(limit, limit - base_a)
     return {
         "base_a": base_a,
-        "charge_budget_a": min(limit, max(0.0, limit - base_a)),
-        "discharge_budget_a": min(limit, max(0.0, limit + base_a)),
+        "charge_budget_a": max(0.0, battery_max_a),
+        "discharge_budget_a": max(0.0, -battery_min_a),
     }
 
 

@@ -19,11 +19,13 @@ Para cada fase, Omnibattery reconstruye la corriente sin batería y calcula ambo
 
 ```text
 corriente_base = corriente_de_fase - corriente_de_baterías_de_la_fase
-presupuesto_carga_corriente = min(tamaño_fusible, max(0, tamaño_fusible - corriente_base))
-presupuesto_descarga_corriente = min(tamaño_fusible, max(0, tamaño_fusible + corriente_base))
+corriente_batería_mínima = max(-tamaño_fusible, -tamaño_fusible - corriente_base)
+corriente_batería_máxima = min(+tamaño_fusible, +tamaño_fusible - corriente_base)
+presupuesto_carga_corriente = max(0, corriente_batería_máxima)
+presupuesto_descarga_corriente = max(0, -corriente_batería_mínima)
 ```
 
-El sensor de corriente debe incluir el signo: positivo significa importación y negativo exportación. La telemetría y los comandos de las baterías usan la convención del controlador (`+` carga, `−` descarga) y siguen expresándose en vatios activos. Internamente, los vatios de batería se convierten a corriente y el presupuesto disponible se convierte de nuevo a un límite conservador en vatios usando 230 V nominales y un factor de potencia de 0,90. Primero se ejecutan la selección y el reparto proporcional normales. El resultado se redondea después hacia abajo en pasos de 5 W y se limita de forma independiente por fase. Solo la potencia rechazada por ese límite se mueve a baterías de fases sanas con capacidad disponible, siguiendo la prioridad normal por SOC y energía.
+El sensor de corriente debe incluir el signo: positivo significa importación y negativo exportación. La telemetría y los comandos de las baterías usan la convención del controlador (`+` carga, `−` descarga) y siguen expresándose en vatios activos. Internamente, la restricción del contador y la restricción absoluta de la orden de batería se intersectan como un intervalo con signo antes de convertir los presupuestos direccionales a vatios. Los vatios de batería se convierten a corriente y el presupuesto disponible se convierte de nuevo a un límite conservador en vatios usando 230 V nominales y un factor de potencia de 0,90. Primero se ejecutan la selección y el reparto proporcional normales. El resultado se redondea después hacia abajo en pasos de 5 W y se limita de forma independiente por fase. Solo la potencia rechazada por ese límite se mueve a baterías de fases sanas con capacidad disponible, siguiendo la prioridad normal por SOC y energía.
 
 El límite configurado es un tope absoluto por fase para las órdenes automáticas de batería en ambos sentidos. La corriente base reconstruida puede reducir el presupuesto disponible, pero nunca aumentarlo por encima del límite configurado. El contador de una fase aún puede superar el límite por una carga externa, latencia de medida/actuación o una orden manual; la protección automática no puede eliminar una carga externa.
 
