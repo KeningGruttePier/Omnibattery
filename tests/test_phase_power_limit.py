@@ -496,3 +496,28 @@ def test_phase_form_accepts_a_single_configured_phase():
         CONF_PHASE_1_CURRENT_SENSOR: "sensor.l1",
         CONF_PHASE_1_FUSE_SIZE: 25.0,
     }
+
+
+def test_phase_form_allows_clearing_a_saved_phase_pair():
+    defaults = {
+        CONF_PHASE_1_CURRENT_SENSOR: "sensor.l1",
+        CONF_PHASE_1_FUSE_SIZE: 25,
+        CONF_PHASE_2_CURRENT_SENSOR: "sensor.l2",
+        CONF_PHASE_2_FUSE_SIZE: 25,
+        CONF_PHASE_3_CURRENT_SENSOR: "sensor.l3",
+        CONF_PHASE_3_FUSE_SIZE: 25,
+    }
+
+    assert _phase_protection_schema(defaults)(
+        {
+            CONF_PHASE_1_CURRENT_SENSOR: "sensor.l1",
+            CONF_PHASE_1_FUSE_SIZE: 25,
+            CONF_PHASE_2_CURRENT_SENSOR: "sensor.l2",
+            CONF_PHASE_2_FUSE_SIZE: 25,
+        }
+    ) == {
+        CONF_PHASE_1_CURRENT_SENSOR: "sensor.l1",
+        CONF_PHASE_1_FUSE_SIZE: 25.0,
+        CONF_PHASE_2_CURRENT_SENSOR: "sensor.l2",
+        CONF_PHASE_2_FUSE_SIZE: 25.0,
+    }

@@ -224,8 +224,12 @@ def _predischarge_export_limit_selector(default: float):
 
 
 def _phase_sensor_schema_field(key: str, default: str | None = None):
-    """Return an optional phase current sensor field with its saved value."""
-    field = vol.Optional(key, default=default) if default else vol.Optional(key)
+    """Return an optional phase current sensor field with its saved suggestion."""
+    field = (
+        vol.Optional(key, description={"suggested_value": default})
+        if default
+        else vol.Optional(key)
+    )
     return field, EntitySelector(EntitySelectorConfig(domain="sensor"))
 
 
@@ -246,7 +250,11 @@ def _phase_protection_schema(defaults: dict[str, Any] | None = None) -> vol.Sche
         CONF_PHASE_3_FUSE_SIZE,
     ):
         default = defaults.get(key)
-        field = vol.Optional(key, default=default) if default is not None else vol.Optional(key)
+        field = (
+            vol.Optional(key, description={"suggested_value": default})
+            if default is not None
+            else vol.Optional(key)
+        )
         schema[field] = NumberSelector(
             NumberSelectorConfig(
                 min=1,

@@ -5,6 +5,7 @@
 ### Fixed
 - **Sessy authentication failures could look like a healthy connection**: the initial probe now validates the protected strategy endpoint instead of relying only on the readable power-status endpoint, and repeated `401` responses are collapsed into one actionable credential warning.
 - **Time-slot power overrides could be capped at 2500 W for non-Marstek batteries** (#241): slot selectors now use each battery's configured charge and discharge ceilings, including Anker/SOLIX limits above 2500 W.
+- **Three-phase protection could not be reduced from three phases to one or two** (#240): saved phase values are now form suggestions instead of schema defaults, so clearing a phase pair removes it while disabling protection still preserves the saved configuration.
 - **Three-phase current protection could exceed its configured phase limit**: the signed meter interval `[-limit, +limit]` is now intersected with the absolute battery-command interval `[-limit, +limit]`; base current can reduce the safe command interval but never enlarge it above the configured setting.
 - **Three-phase current sensor updates could spam debug logs**: per-event sensor-change messages were removed while the immediate safety review remains scheduled.
 
