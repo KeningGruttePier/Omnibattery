@@ -628,10 +628,16 @@ class MarstekVenusDataUpdateCoordinator(DataUpdateCoordinator):
             if now >= self._suspension_reset_time:
                 _LOGGER.info("[%s] Connection suspension expired - attempting fresh reconnection", self.name)
                 self._suspension_reset_time = None
-                self._consecutive_failures = 0
+                # Do NOT clear _consecutive_failures here: async_reconnect_fresh()
+                # already clears it when it succeeds, and clearing it up front
+                # makes a battery that never comes back look healthy. The counter
+                # is what non_responsive_battery_names, the non_responsive_batteries
+                # sensor and diagnostics all gate on, and unreachable entities keep
+                # their last read value rather than going unavailable.
                 reconnected = await self.async_reconnect_fresh()
                 if not reconnected:
                     # Suspend again for another 2 minutes
+                    self._consecutive_failures += 1
                     self._suspension_reset_time = now + timedelta(minutes=2)
                     _LOGGER.warning("[%s] Reconnection failed, suspending for another 2 minutes", self.name)
                     return self.data or {}
