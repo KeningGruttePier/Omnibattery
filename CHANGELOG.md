@@ -8,6 +8,7 @@
 - **Three-phase protection could not be reduced from three phases to one or two** (#240): saved phase values are now form suggestions instead of schema defaults, so clearing a phase pair removes it while disabling protection still preserves the saved configuration.
 - **Three-phase current protection could exceed its configured phase limit**: the signed meter interval `[-limit, +limit]` is now intersected with the absolute battery-command interval `[-limit, +limit]`; base current can reduce the safe command interval but never enlarge it above the configured setting.
 - **Three-phase current sensor updates could spam debug logs**: per-event sensor-change messages were removed while the immediate safety review remains scheduled.
+- **Unreachable batteries could disappear from the non-responsive sensor after suspension retries** (#245): failed fresh reconnection attempts now preserve and increment the connection-failure counter instead of resetting it before the attempt, so unreachable batteries remain visible in diagnostics and alerts. Thanks to @wilsto.
 
 ### Changed
 - **Marstek SOC recalibration now makes one controlled retry after a high-voltage BMS cutoff**: when the first cutoff occurs above 3.60 V while reported SOC is still below 100%, the battery waits for the cell to relax to 3.57 V, then charges once at 200 W until the BMS cuts again. The retry is one-shot and is cancelled if SOC reaches 100%.
