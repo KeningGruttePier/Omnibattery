@@ -6925,12 +6925,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     unsub_phase_reported = None
     if phase_sensors:
         @callback
-        def _on_phase_sensor_changed(event):
+        def _on_phase_sensor_changed(_event):
             controller._phase_safety_pending = True
-            _LOGGER.debug(
-                "Phase safety sensor changed (%s); scheduling immediate review",
-                event.data.get("entity_id"),
-            )
             controller.schedule_control_cycle(dt_util.utcnow())
 
         unsub_phase = _call_once(
