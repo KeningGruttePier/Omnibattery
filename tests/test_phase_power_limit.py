@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
+import pytest
+
 from custom_components.omnibattery.const import (
     CONF_METER_INVERTED,
     CONF_PHASE_1_FUSE_SIZE,
@@ -188,18 +190,43 @@ def test_manual_warning_stays_cleared_when_three_phase_protection_is_disabled(
 def test_phase_budget_uses_controller_battery_sign():
     no_battery = calculate_phase_budgets(20, 0, 25)
     assert no_battery["charge_budget_a"] == 5
+    assert no_battery["discharge_budget_a"] == 25
 
     budgets = calculate_phase_budgets(20, 5, 25)
 
     assert budgets == {
         "base_a": 15,
         "charge_budget_a": 10,
-        "discharge_budget_a": 40,
+        "discharge_budget_a": 25,
     }
 
     export = calculate_phase_budgets(-20, -5, 25)
     assert export["base_a"] == -15
+    assert export["charge_budget_a"] == 25
     assert export["discharge_budget_a"] == 10
+
+
+def test_phase_budgets_never_exceed_configured_current_limit():
+    budgets = calculate_phase_budgets(2.82, -3.275362318840579, 9)
+
+    assert budgets["base_a"] == pytest.approx(6.095362318840579)
+    assert budgets["charge_budget_a"] == pytest.approx(2.9046376811594206)
+    assert budgets["discharge_budget_a"] == 9
+
+
+def test_direct_discharge_command_is_capped_by_phase_current_limit():
+    now = datetime.now(timezone.utc)
+    battery = FakeCoordinator("L1 battery", PHASE_L1, max_power=6000)
+    limiter = _limiter(
+        {
+            "sensor.l1": _state(0, now=now),
+            "sensor.l2": _state(0, now=now),
+            "sensor.l3": _state(0, now=now),
+        },
+        [battery],
+    )
+
+    assert limiter.limit_single_command(battery, 0, 6000) == (0, 5175)
 
 
 def test_sensor_normalization_handles_ma_inversion_and_staleness():

@@ -134,14 +134,17 @@ def calculate_phase_budgets(
 
     ``battery_current_a`` follows the controller convention: positive is charge
     and negative is discharge. The grid reading already includes that battery
-    current, hence the explicit base-current reconstruction.
+    current, hence the explicit base-current reconstruction. The configured
+    phase limit is also an absolute cap on the battery current equivalent in
+    either direction; the base-current calculation can reduce that cap but
+    must never enlarge it.
     """
     base_a = float(grid_a) - float(battery_current_a)
     limit = max(0.0, float(limit_a))
     return {
         "base_a": base_a,
-        "charge_budget_a": max(0.0, limit - base_a),
-        "discharge_budget_a": max(0.0, limit + base_a),
+        "charge_budget_a": min(limit, max(0.0, limit - base_a)),
+        "discharge_budget_a": min(limit, max(0.0, limit + base_a)),
     }
 
 
