@@ -14,6 +14,8 @@ The blueprint uses only Home Assistant entities; it does not access Modbus. It v
 
 Turn the request helper ON to start or resume after a restart and OFF to cancel. The only helper you create is this persistent `input_boolean`; the blueprint does not require a new switch or sensor. Every exit attempts to write 0 W in both directions, restore the normal SOC maximum and release Battery Manual Mode. If any safety confirmation fails, the switch is deliberately left ON so the battery can be inspected before another automation is allowed to control it.
 
+After each settled 60-second measurement the blueprint fires the public `omnibattery_balance_measurement_ready` event with the selected device and a measurement ID. Omnibattery resolves the device, reads the cell voltages from its own coordinator and records the result in the existing `Cell Delta` history with `source: blueprint`. The event is read-only and does not grant the integration control of the battery.
+
 ## Central status webhook reporter
 
 [Import blueprint](https://raw.githubusercontent.com/ffunes/Omnibattery/main/blueprints/central_status_webhook_reporter_blueprint.yaml)

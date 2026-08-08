@@ -199,6 +199,10 @@ CONF_ENABLE_BALANCE_MONITOR = "enable_balance_monitor"
 # Cell Balance Monitor
 BALANCE_STORAGE_KEY = "balance_history"
 BALANCE_STORAGE_VERSION = 1
+# Public event emitted by the extracted active-balance blueprint after a
+# settled WAIT_MEASURE interval. The integration reads its own coordinator
+# telemetry when handling this event; the blueprint does not provide voltages.
+EVENT_BLUEPRINT_BALANCE_MEASUREMENT_READY = "omnibattery_balance_measurement_ready"
 # Marstek cells ship from the factory with a sizeable top-of-charge imbalance
 # (commonly ~170-180 mV). At 3.55 V the LiFePO4 curve is very steep, so this
 # factory spread is normal — not a fault. The status thresholds below are

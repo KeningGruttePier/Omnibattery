@@ -225,7 +225,7 @@ The **Integration Status** sensor exposes a `normal_balance_protection` attribut
 | `soc_recal_first_cutoff_voltage` | Highest voltage observed during the first BMS cutoff |
 | `charge_limit_w` | Effective per-battery charge limit before allocation |
 
-The blueprint's phase, retry voltage and cleanup result are reported in its persistent notifications; they are not integration status attributes.
+The blueprint's phase, retry voltage and cleanup result are reported in its persistent notifications; they are not integration status attributes. Each settled rest measurement is also recorded in the existing `Cell Delta` history with `source: blueprint`, using the integration's own coordinator telemetry.
 
 !!! info
     Cell voltage registers (`max_cell_voltage`, `min_cell_voltage`) are read from all supported battery versions (v2, v3, vA, vD).

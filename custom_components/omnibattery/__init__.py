@@ -7422,6 +7422,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await balance_monitor.async_restore_coordinator(coordinator)
     controller._balance_monitor = balance_monitor
 
+    from .tracking.blueprint_measurement import (
+        async_register_blueprint_balance_measurement_listener,
+    )
+    unsub_blueprint_measurement = _call_once(
+        async_register_blueprint_balance_measurement_listener(
+            hass,
+            coordinators,
+            balance_monitor,
+        )
+    )
+    entry.async_on_unload(unsub_blueprint_measurement)
+
     hass.data[DOMAIN][entry.entry_id] = {
         "coordinators": coordinators,
         "controller": controller,
@@ -7431,6 +7443,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "unsub_consumption_reported": unsub_consumption_reported,
         "unsub_phase": unsub_phase,
         "unsub_phase_reported": unsub_phase_reported,
+        "unsub_blueprint_measurement": unsub_blueprint_measurement,
         "balance_monitor": balance_monitor,
     }
 
@@ -7539,6 +7552,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if unsub := data.get("unsub_phase"):
             unsub()
         if unsub := data.get("unsub_phase_reported"):
+            unsub()
+        if unsub := data.get("unsub_blueprint_measurement"):
             unsub()
 
         # 2. Set shutdown flag on all coordinators to suppress expected errors

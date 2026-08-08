@@ -14,6 +14,8 @@ El blueprint solo utiliza entidades de Home Assistant; no accede directamente a 
 
 Activa el helper de solicitud para iniciar o reanudar tras un reinicio y desactívalo para cancelar. El único helper que debes crear es este `input_boolean`; el blueprint no necesita crear otro switch ni sensor. En cada salida intenta escribir 0 W en ambas direcciones, restaurar el SOC máximo normal y liberar Battery Manual Mode. Si falla alguna confirmación de seguridad, el interruptor se deja deliberadamente activado para inspeccionar la batería antes de permitir otro control automático.
 
+Después de cada medición estable tras 60 segundos de reposo, el blueprint emite el evento público `omnibattery_balance_measurement_ready` con el dispositivo seleccionado y un identificador de medida. Omnibattery resuelve el dispositivo, lee las tensiones desde su propio coordinador y guarda el resultado en el histórico existente de `Cell Delta` con `source: blueprint`. El evento es de solo lectura y no devuelve a la integración la propiedad de la batería.
+
 ## Reporte de estado a webhook central
 
 [Importar blueprint](https://raw.githubusercontent.com/ffunes/Omnibattery/main/blueprints/central_status_webhook_reporter_blueprint.yaml)

@@ -633,6 +633,7 @@ action:
       run_error: ""
       retry_voltage: "{{ top_zone_voltage_v | float(3.49) }}"
       started_at: "{{ as_timestamp(now()) }}"
+      measurement_index: 0
       initial_delta_v: >-
         {{ (states(max_cell_voltage) | float(0) - states(min_cell_voltage) | float(0)) | round(4) }}
       last_delta_v: >-
@@ -925,6 +926,20 @@ action:
                             - variables:
                                 last_delta_v: >-
                                   {{ (states(max_cell_voltage) | float(0) - states(min_cell_voltage) | float(0)) | round(4) }}
+                            - choose:
+                                - conditions:
+                                    - condition: template
+                                      value_template: >-
+                                        {{ is_state(run_request, 'on')
+                                           and is_state(battery_manual_mode, 'on') }}
+                                  sequence:
+                                    - variables:
+                                        measurement_index: "{{ measurement_index | int(0) + 1 }}"
+                                    - event: omnibattery_balance_measurement_ready
+                                      event_data:
+                                        device_id: "{{ battery_device }}"
+                                        phase: "WAIT_MEASURE"
+                                        measurement_id: "{{ started_at }}:{{ measurement_index }}"
                             - choose:
                                 - conditions:
                                     - condition: template

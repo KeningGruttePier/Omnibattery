@@ -212,7 +212,7 @@ El sensor **Integration Status** expone un atributo `normal_balance_protection` 
 | `soc_recal_first_cutoff_voltage` | Tensión máxima observada durante el primer corte de BMS |
 | `charge_limit_w` | Límite efectivo de carga por batería antes del reparto |
 
-La fase, el voltaje de reintento y el resultado de limpieza del blueprint se informan en sus notificaciones persistentes; no son atributos del estado de la integración.
+La fase, el voltaje de reintento y el resultado de limpieza del blueprint se informan en sus notificaciones persistentes; no son atributos del estado de la integración. Cada medida estable tras el reposo también se registra en el histórico existente de `Cell Delta` con `source: blueprint`, usando la telemetría del propio coordinador de la integración.
 
 !!! info
     Los registros de tensión de celda (`max_cell_voltage`, `min_cell_voltage`) se leen en todas las versiones de batería compatibles (v2, v3, vA, vD).

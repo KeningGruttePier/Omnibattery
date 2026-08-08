@@ -47,6 +47,17 @@ def _service_actions(node):
             yield from _service_actions(value)
 
 
+def _event_actions(node):
+    if isinstance(node, dict):
+        if "event" in node:
+            yield node
+        for value in node.values():
+            yield from _event_actions(value)
+    elif isinstance(node, list):
+        for value in node:
+            yield from _event_actions(value)
+
+
 def _force_mode_options(definitions: list[dict]) -> dict:
     return next(item["options"] for item in definitions if item["key"] == "force_mode")
 
@@ -116,6 +127,7 @@ def test_blueprint_has_one_battery_contract_and_plan_defaults():
     assert "switch.turn_off" in raw
     assert "device_entities(battery_device)" in raw
     assert "charging_cutoff_capacity" in raw
+    assert "omnibattery_balance_measurement_ready" in raw
     assert "entity_id: !input battery_" not in raw
     assert 'option: "{{ force_mode_idle }}"' not in raw
     assert 'option: "None"' in raw
@@ -158,6 +170,21 @@ def test_blueprint_writes_setpoints_before_force_mode_and_cleans_up_in_order():
         "{{ set_charge_power }}",
         "{{ set_discharge_power }}",
     ]
+
+
+def test_blueprint_publishes_each_settled_measurement_to_omnibattery():
+    blueprint, raw = _load_blueprint()
+    events = list(_event_actions(blueprint["action"]))
+
+    assert events == [{
+        "event": "omnibattery_balance_measurement_ready",
+        "event_data": {
+            "device_id": "{{ battery_device }}",
+            "phase": "WAIT_MEASURE",
+            "measurement_id": "{{ started_at }}:{{ measurement_index }}",
+        },
+    }]
+    assert "measurement_index: 0" in raw
 
 
 def _migration_hass():
