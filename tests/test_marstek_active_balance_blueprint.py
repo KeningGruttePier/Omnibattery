@@ -152,6 +152,18 @@ def test_blueprint_restores_the_emoji_balance_notifications():
     assert "⏱️ Duration:" in raw
 
 
+def test_blueprint_waits_for_manual_release_without_duplicate_cancel_notice():
+    blueprint, raw = _load_blueprint()
+    recovery_sequence = blueprint["action"][0]["choose"][1]["sequence"]
+
+    assert not any(
+        action.get("service") == "persistent_notification.create"
+        for action in _service_actions(recovery_sequence)
+    )
+    assert raw.count('wait_template: "{{ is_state(battery_manual_mode, \'off\') }}"') == 2
+    assert raw.count('timeout: "00:00:15"') >= 6
+
+
 def test_blueprint_matches_home_assistant_schema():
     """Keep the device selector and optional overrides importable by HA."""
     data = yaml_util.load_yaml_dict(BLUEPRINT)

@@ -464,8 +464,12 @@ action:
                 data:
                   option: "{{ force_mode_idle_alias }}"
                 continue_on_error: true
-          - delay:
-              seconds: 2
+          - wait_template: >-
+              {{ states(set_charge_power) | float(-1) <= 0
+                 and states(set_discharge_power) | float(-1) <= 0
+                 and states(force_mode) in [force_mode_idle, 'None', 'stop', 'none', 'standby'] }}
+            timeout: "00:00:15"
+            continue_on_timeout: true
           - variables:
               off_cleanup_idle_ok: >-
                 {{ states(set_charge_power) | float(-1) <= 0
@@ -482,8 +486,10 @@ action:
                     data:
                       value: "{{ soc_maximo_normal | float(100) }}"
                     continue_on_error: true
-                  - delay:
-                      seconds: 2
+                  - wait_template: >-
+                      {{ states(max_soc) | float(-1) == soc_maximo_normal | float(100) }}
+                    timeout: "00:00:15"
+                    continue_on_timeout: true
                   - variables:
                       off_cleanup_soc_ok: >-
                         {{ states(max_soc) | float(-1) == soc_maximo_normal | float(100) }}
@@ -496,15 +502,12 @@ action:
                             target:
                               entity_id: "{{ battery_manual_mode }}"
                             continue_on_error: true
-          - service: persistent_notification.create
-            data:
-              title: "⚠️ Active balancing cancelled - {{ battery_name }}"
-              message: >-
-                The persistent balance request was cancelled. The automation
-                attempted 0 W, restored the normal SOC maximum, and released
-                Battery Manual Mode. If the switch is still ON, inspect the
-                force mode and both setpoints before releasing it manually.
-              notification_id: "omnibattery_marstek_active_balance_cancelled_{{ run_request | replace('.', '_') }}"
+                          - wait_template: "{{ is_state(battery_manual_mode, 'off') }}"
+                            timeout: "00:00:15"
+                            continue_on_timeout: true
+          # The active run publishes the result notification. This recovery
+          # branch only handles a request-off trigger that arrives after the
+          # run has already exited, so it must not publish a second notice.
           - stop: "The balance request was cancelled."
 
   # Validate before taking ownership or writing a power command.
@@ -1115,8 +1118,12 @@ action:
         data:
           option: "{{ force_mode_idle_alias }}"
         continue_on_error: true
-  - delay:
-      seconds: 2
+  - wait_template: >-
+      {{ states(set_charge_power) | float(-1) <= 0
+         and states(set_discharge_power) | float(-1) <= 0
+         and states(force_mode) in [force_mode_idle, 'None', 'stop', 'none', 'standby'] }}
+    timeout: "00:00:15"
+    continue_on_timeout: true
   - variables:
       cleanup_idle_ok: >-
         {{ states(set_charge_power) | float(-1) <= 0
@@ -1133,8 +1140,10 @@ action:
             data:
               value: "{{ soc_maximo_normal | float(100) }}"
             continue_on_error: true
-          - delay:
-              seconds: 2
+          - wait_template: >-
+              {{ states(max_soc) | float(-1) == soc_maximo_normal | float(100) }}
+            timeout: "00:00:15"
+            continue_on_timeout: true
           - variables:
               cleanup_soc_ok: >-
                 {{ states(max_soc) | float(-1) == soc_maximo_normal | float(100) }}
@@ -1147,8 +1156,9 @@ action:
                     target:
                       entity_id: "{{ battery_manual_mode }}"
                     continue_on_error: true
-                  - delay:
-                      seconds: 2
+                  - wait_template: "{{ is_state(battery_manual_mode, 'off') }}"
+                    timeout: "00:00:15"
+                    continue_on_timeout: true
 
   - variables:
       cleanup_ok: >-
