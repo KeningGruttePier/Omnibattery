@@ -629,11 +629,7 @@ class PricingManager:
         tracker = getattr(controller, "_non_responsive", None)
         if tracker is not None and tracker.is_excluded(coordinator):
             return False
-        for method_name in (
-            "_is_active_balance_mode_running",
-            "_is_backup_function_active",
-            "_is_manual_slot_owned",
-        ):
+        for method_name in ("_is_backup_function_active", "_is_manual_slot_owned"):
             method = getattr(controller, method_name, None)
             if method is not None and method(coordinator):
                 return False
@@ -1085,7 +1081,6 @@ class PricingManager:
                 and coordinator.is_available
                 and not getattr(coordinator, "battery_manual_mode_enabled", False)
                 and not self._controller._non_responsive.is_excluded(coordinator)
-                and not self._controller._is_active_balance_mode_running(coordinator)
                 and not self._controller._is_backup_function_active(coordinator)
                 and not coordinator.rs485_user_disabled
                 and not self._controller._is_manual_slot_owned(coordinator)
@@ -2633,8 +2628,6 @@ class PricingManager:
         if write_idle:
             for coordinator in getattr(controller, "coordinators", []):
                 if getattr(coordinator, "battery_manual_mode_enabled", False):
-                    continue
-                if controller._is_active_balance_mode_running(coordinator):
                     continue
                 await controller._set_battery_power(coordinator, 0, 0)
         _LOGGER.info("Dynamic pricing: stopped active slot (%s)", reason)

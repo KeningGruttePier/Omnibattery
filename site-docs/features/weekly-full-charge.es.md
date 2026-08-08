@@ -13,6 +13,8 @@ Carga las baterías al **100 % una vez por semana** para que el pack llegue a la
 
 La carga semanal completa usa el mismo perfil de voltaje que una batería configurada normalmente con `max_soc = 100`. La función semanal solo eleva el objetivo a 100 %; no usa un algoritmo de balanceo distinto.
 
+Para realizar un balanceo activo deliberado, usa el [blueprint de balanceo activo para una batería Marstek](../blueprints.es.md#balanceo-activo-de-una-batería-marstek). Ejecuta una batería cada vez mediante su interruptor Battery Manual Mode y es independiente de esta función semanal.
+
 El sensor **Carga semanal completa** expone diagnósticos por batería en su atributo `batteries`: SOC en vivo y contador de ciclos de corte del BMS durante la carga, y una instantánea al completar (`soc_at_completion`, `max_cell_voltage_at_completion`, `completion_reason`, `bms_cutoff_cycles`).
 
 !!! note "SOC desviado"

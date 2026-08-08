@@ -74,7 +74,6 @@ def _main_controller(state_holder, pd_calls):
         _charge_delay_mgr=SimpleNamespace(handle_daily_reset_and_eval=lambda: None),
         _refresh_operation_blockers=lambda: None,
         _try_apply_manual_slot=_async_noop,
-        _handle_active_balance_mode=_async_noop,
         _phase_safety_pending=False,
         _max_soc_mgr=SimpleNamespace(handle_measurement=_max_soc_measurement),
         predictive_charging_enabled=False,
@@ -144,7 +143,6 @@ def _main_controller(state_holder, pd_calls):
         ),
         _log_power_command_plan=lambda **_kwargs: None,
         _set_battery_power=_async_noop,
-        _is_active_balance_mode_running=lambda _coordinator: False,
         _update_pd_quality_metrics=lambda *_args, **_kwargs: None,
         _pd_limited=False,
         _active_discharge_batteries=[],
@@ -292,7 +290,6 @@ def _predictive_controller(state_holder, writes):
         ),
         coordinators=[coordinator],
         _phase_power_limiter=SimpleNamespace(enabled=False),
-        _is_active_balance_mode_running=lambda _coordinator: False,
         _set_battery_power=lambda coordinator, charge, discharge: _record_write(
             writes, coordinator, charge, discharge
         ),

@@ -79,7 +79,6 @@ def _build(coords, *, active_charge=None, active_discharge=None,
             available if available is not None else coords
         ),
         _log_power_command_plan=lambda **k: None,
-        _is_active_balance_mode_running=lambda coordinator: False,
         _phase_power_limiter=phase_limiter,
     )
     if set_calls is not None:

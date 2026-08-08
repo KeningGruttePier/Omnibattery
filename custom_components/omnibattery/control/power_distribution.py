@@ -468,8 +468,6 @@ class PowerDistribution:
             if self._is_battery_manual_owned(coordinator):
                 continue
             if coordinator not in allocated_batteries:
-                if self._controller._is_active_balance_mode_running(coordinator):
-                    continue
                 await self._controller._set_battery_power(coordinator, 0, 0)
 
         return True

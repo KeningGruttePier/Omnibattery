@@ -327,7 +327,7 @@ SELECT_DEFINITIONS_V3 = [
         "enabled_by_default": True,
         "scan_interval": "high",
         "data_type": "uint16",
-        "options": {"stop": 0, "charge": 1, "discharge": 2},
+        "options": {"None": 0, "Charge": 1, "Discharge": 2},
     },
     {
         "name": "User Work Mode",

@@ -9,8 +9,8 @@ Owns:
 - Mid-charge abort handling when day or feature flag changes
 
 Weekly uses the same 100% top-voltage taper/measurement flow as a user-selected
-max_soc=100. Active cell balancing remains the job of the per-battery Active
-Balance Mode.
+max_soc=100. Active balancing, when desired, is provided by the optional
+Home Assistant blueprint.
 """
 from __future__ import annotations
 
@@ -319,8 +319,6 @@ class WeeklyFullChargeManager:
             for coordinator in ctrl.coordinators:
                 if getattr(coordinator, "battery_manual_mode_enabled", False):
                     continue
-                if ctrl._is_active_balance_mode_running(coordinator):
-                    continue
                 if ctrl._is_backup_function_active(coordinator):
                     continue
                 if not coordinator.capabilities.hardware_soc_cutoff:
@@ -382,8 +380,6 @@ class WeeklyFullChargeManager:
             for coordinator in ctrl.coordinators:
                 if getattr(coordinator, "battery_manual_mode_enabled", False):
                     continue
-                if ctrl._is_active_balance_mode_running(coordinator):
-                    continue
                 if ctrl._is_backup_function_active(coordinator):
                     _LOGGER.debug("%s: Skipping weekly full charge - backup function is active", coordinator.name)
                     continue
@@ -429,7 +425,6 @@ class WeeklyFullChargeManager:
             for c in ctrl.coordinators
             if c.data
             and not getattr(c, "battery_manual_mode_enabled", False)
-            and not ctrl._is_active_balance_mode_running(c)
         ]
         all_batteries_full = bool(batteries_with_data) and all(
             self.is_battery_full(c)
@@ -445,7 +440,6 @@ class WeeklyFullChargeManager:
             for c in ctrl.coordinators
             if c.data
             and not getattr(c, "battery_manual_mode_enabled", False)
-            and not ctrl._is_active_balance_mode_running(c)
         }
 
         if all_batteries_full and not ctrl.weekly_full_charge_complete:
@@ -461,8 +455,6 @@ class WeeklyFullChargeManager:
         completion_batteries: dict = {}
         for coordinator in ctrl.coordinators:
             if getattr(coordinator, "battery_manual_mode_enabled", False):
-                continue
-            if ctrl._is_active_balance_mode_running(coordinator):
                 continue
             data = coordinator.data or {}
             soc = data.get("battery_soc")
@@ -485,8 +477,6 @@ class WeeklyFullChargeManager:
         # Restore register 44000 to original max_soc values (v2 only).
         for coordinator in ctrl.coordinators:
             if getattr(coordinator, "battery_manual_mode_enabled", False):
-                continue
-            if ctrl._is_active_balance_mode_running(coordinator):
                 continue
             if ctrl._is_backup_function_active(coordinator):
                 _LOGGER.debug("%s: Skipping cutoff restore - backup function is active", coordinator.name)
@@ -516,8 +506,6 @@ class WeeklyFullChargeManager:
         for coordinator in ctrl.coordinators:
             if getattr(coordinator, "battery_manual_mode_enabled", False):
                 continue
-            if ctrl._is_active_balance_mode_running(coordinator):
-                continue
             if coordinator in measured:
                 continue
             if not coordinator.data:
@@ -545,8 +533,6 @@ class WeeklyFullChargeManager:
         # Re-enable hysteresis for batteries that have it configured.
         for coordinator in ctrl.coordinators:
             if getattr(coordinator, "battery_manual_mode_enabled", False):
-                continue
-            if ctrl._is_active_balance_mode_running(coordinator):
                 continue
             if coordinator.enable_charge_hysteresis:
                 coordinator._hysteresis_active = True

@@ -1339,9 +1339,6 @@
       "full_charge_voltage_taper": {
         "name": "100%-Laadbegrenzing op Spanning"
       },
-      "active_balance_mode": {
-        "name": "Actieve Celbalansmodus"
-      },
       "automation_charging_active": {
         "name": "Laden op Externe Prijs"
       },
@@ -1450,7 +1447,6 @@
           "manual": "Handmatige Modus",
           "grid_charging": "Laden vanuit Net",
           "weekly_full_charge": "Wekelijkse Volledige Lading",
-          "active_balance_mode": "Actieve Celbalansmodus",
           "charge_delayed": "Lading Vertraagd",
           "waiting_for_solar": "Wachten op Zon",
           "charging_to_setpoint": "Laden naar Instelpunt",

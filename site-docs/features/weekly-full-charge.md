@@ -7,11 +7,10 @@ Charges batteries to **100% once a week** so the pack reaches the LFP top-balanc
 | Profile | Description | Switch | Default |
 | --- | --- | --- | --- | 
 | **100% charge voltage taper** | Slows charging near top voltage window to allow some minor cell balancing | `full_charge_voltage_taper` | On |
-| **Active cell balancing** | Full cell balancing - repeated slow charge/discharge near top voltage window until `cell_delta_V` drops below 0.03 V or switched off | `active_balance_mode` | Off |
 
 The 100% charge voltage taper uses the same voltage profile as a normal battery configured with `max_soc = 100`. The weekly feature only raises the target to 100%; it does not use a separate balancing algorithm.
 
-Active cell balancing repeatedly cycles slow charge or discharge near the top voltage window until the measured top-voltage delta is at or below 0.03 V, or until the user turns the switch off.
+For deliberate active cell balancing, use the optional [Marstek active-balance blueprint](../blueprints.md#active-cell-balancing-for-one-marstek-battery). It runs one battery at a time through the per-battery Battery Manual Mode switch and is independent of this weekly feature.
 
 !!! warning "Cell balancing"
     Active cell balancing is **very slow**. Reducing the top-of-charge cell delta by roughly 5 mV typically takes around 24 hours of cumulative time at the top of the balance window.

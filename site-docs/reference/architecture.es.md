@@ -56,7 +56,6 @@ subpaquetes por responsabilidad.
 | `control/charge_delay.py` | — | Retraso de carga solar |
 | `control/max_soc_charge.py` | — | Reducción por voltaje al 100 % / protección de tope de carga |
 | `control/weekly_full_charge.py` | `WeeklyFullChargeManager` | Estado de carga semanal completa, persistencia y orquestación de escritura de registros |
-| `control/active_balance_mode.py` | — | Medición de balance activo de celdas |
 | `tracking/consumption_tracker.py` | `ConsumptionTracker` | Historial de consumo, acumuladores de energía diaria, detección de tiempos solares, backfill del recorder, captura diaria |
 | `tracking/balance_monitor.py` | `CellBalanceMonitor` | Medición del spread de tensión de celdas tras la carga completa e historial de salud |
 | `tracking/non_responsive_tracker.py` | `NonResponsiveTracker` | Detección de baterías sin respuesta y ventanas de exclusión de 5 minutos |

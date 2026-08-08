@@ -2,7 +2,7 @@
 
 Despite the legacy ``_normal_balance_*`` attribute names this module does NOT
 drive active cell balancing. It manages the final stretch of a normal max-SOC
-(100%) charge while active balance mode is not running:
+(100%) charge:
 
 - Charge-power taper near the top cell voltage (CV-like ramp-down).
 - SOC hysteresis, owned by the main controller, stops future charging once the
@@ -13,10 +13,9 @@ drive active cell balancing. It manages the final stretch of a normal max-SOC
   additional 200 W charge attempt before latching the recalibration session.
 - Passive cell-delta measurement at the top, reported to the balance monitor.
 
-The latched state (the ``_normal_balance_*`` dicts and
-``_normal_active_balance_phases``) stays on the controller because switch.py,
-weekly_full_charge.py and the main control loop read and mutate it; this module
-reads/writes it by reference via ``self._controller``.
+The latched state (the ``_normal_balance_*`` dicts) stays on the controller
+because weekly_full_charge.py and the main control loop read and mutate it;
+this module reads/writes it by reference via ``self._controller``.
 """
 from __future__ import annotations
 
@@ -62,7 +61,7 @@ class MaxSocChargeManager:
 
         c._normal_balance_date = today
         c._normal_balance_voltage_tapered.clear()
-        c._normal_active_balance_phases.clear()
+        c._normal_balance_phases.clear()
         c._normal_balance_measure_started.clear()
         c._normal_balance_last_delta_v.clear()
         c._normal_balance_recal_override.clear()
@@ -96,15 +95,10 @@ class MaxSocChargeManager:
         )
 
     def _taper_applies(self, coordinator) -> bool:
-        """Return True when taper is enabled for this coordinator, excluding active balance ownership."""
-        c = self._controller
+        """Return True when taper is enabled for this coordinator."""
         if getattr(coordinator, "battery_manual_mode_enabled", False):
             return False
         if not self._taper_enabled(coordinator):
-            return False
-        if c._is_active_balance_mode_running(coordinator):
-            return False
-        if getattr(coordinator, "active_balance_mode_enabled", False):
             return False
         return True
 
@@ -408,7 +402,7 @@ class MaxSocChargeManager:
                 "voltage_taper_latched": c._normal_balance_voltage_tapered.get(
                     coordinator, False
                 ),
-                "active_balance_phase": c._normal_active_balance_phases.get(coordinator),
+                "normal_balance_phase": c._normal_balance_phases.get(coordinator),
                 "soc_recal_active": c._normal_balance_recal_override.get(coordinator, False),
                 "soc_recal_bms_cutoff": c._normal_balance_recal_latched.get(coordinator, False),
                 "soc_recal_retry_pending": c._normal_balance_recal_retry_pending.get(
@@ -444,20 +438,18 @@ class MaxSocChargeManager:
         for coordinator in c.coordinators:
             if coordinator.data is None or not self._taper_applies(coordinator):
                 continue
-            if c._is_active_balance_mode_running(coordinator):
-                continue
             if weekly_active:
                 # Let the weekly taper charge to the BMS cutoff; don't hold/measure.
-                c._normal_active_balance_phases.pop(coordinator, None)
+                c._normal_balance_phases.pop(coordinator, None)
                 c._normal_balance_measure_started.pop(coordinator, None)
                 continue
             if c._normal_balance_recal_override.get(coordinator):
                 # SOC recalibration in progress: let PD keep charging to the BMS
                 # cutoff instead of holding/measuring at the top voltage.
-                c._normal_active_balance_phases.pop(coordinator, None)
+                c._normal_balance_phases.pop(coordinator, None)
                 c._normal_balance_measure_started.pop(coordinator, None)
                 continue
-            if coordinator in c._normal_active_balance_phases:
+            if coordinator in c._normal_balance_phases:
                 active_coordinators.add(coordinator)
                 continue
             try:
@@ -465,17 +457,16 @@ class MaxSocChargeManager:
             except (TypeError, ValueError):
                 continue
             if vmax >= NORMAL_BALANCE_PAUSE_CELL_VOLTAGE:
-                c._normal_active_balance_phases[coordinator] = "WAIT_MEASURE"
+                c._normal_balance_phases[coordinator] = "WAIT_MEASURE"
                 c._normal_balance_measure_started[coordinator] = dt_util.utcnow()
                 active_coordinators.add(coordinator)
 
-        for coordinator in list(c._normal_active_balance_phases):
+        for coordinator in list(c._normal_balance_phases):
             if getattr(coordinator, "battery_manual_mode_enabled", False):
                 continue
             if coordinator not in active_coordinators:
-                c._normal_active_balance_phases.pop(coordinator, None)
+                c._normal_balance_phases.pop(coordinator, None)
                 c._normal_balance_measure_started.pop(coordinator, None)
-                c._reset_active_balance_charge_resume_target(coordinator)
 
         for coordinator in active_coordinators:
             data = coordinator.data or {}
@@ -483,12 +474,11 @@ class MaxSocChargeManager:
                 vmax = float(data.get("max_cell_voltage"))
                 vmin = float(data.get("min_cell_voltage"))
             except (TypeError, ValueError):
-                c._normal_active_balance_phases.pop(coordinator, None)
+                c._normal_balance_phases.pop(coordinator, None)
                 c._normal_balance_measure_started.pop(coordinator, None)
-                c._reset_active_balance_charge_resume_target(coordinator)
                 continue
 
-            phase = c._normal_active_balance_phases.get(coordinator, "WAIT_MEASURE")
+            phase = c._normal_balance_phases.get(coordinator, "WAIT_MEASURE")
             charge_power = 0
             discharge_power = 0
             delta_v = round(vmax - vmin, 4)
@@ -500,7 +490,7 @@ class MaxSocChargeManager:
                 if (dt_util.utcnow() - started).total_seconds() >= NORMAL_BALANCE_MEASURE_WAIT_SECONDS:
                     c._normal_balance_last_delta_v[coordinator] = delta_v
                     phase = "MEASURED"
-                    c._normal_active_balance_phases[coordinator] = phase
+                    c._normal_balance_phases[coordinator] = phase
                     if c._balance_monitor is not None:
                         await c._balance_monitor.async_record_top_balance_measurement(
                             coordinator,
@@ -516,9 +506,8 @@ class MaxSocChargeManager:
                         vmax,
                     )
             if phase == "MEASURED" and vmax < NORMAL_BALANCE_PAUSE_CELL_VOLTAGE:
-                c._normal_active_balance_phases.pop(coordinator, None)
+                c._normal_balance_phases.pop(coordinator, None)
                 c._normal_balance_measure_started.pop(coordinator, None)
-                c._reset_active_balance_charge_resume_target(coordinator)
                 await c._set_battery_power(coordinator, 0, 0)
                 continue
 

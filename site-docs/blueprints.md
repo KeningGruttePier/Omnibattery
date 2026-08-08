@@ -4,6 +4,16 @@ Blueprints are optional Home Assistant automations that complement Omnibattery. 
 
 For manual installation, copy the YAML file to `/config/blueprints/automation/omnibattery/` and reload blueprints. See [Installation](installation.md#blueprint-installation) for the general steps.
 
+## Active cell balancing for one Marstek battery
+
+[Import blueprint](https://raw.githubusercontent.com/ffunes/Omnibattery/main/blueprints/marstek_active_balance_blueprint.yaml)
+
+Runs the active cell-balancing profile for exactly one Marstek battery. Create one persistent `input_boolean` and one automation per battery, selecting all entities from that same battery. The automation uses the per-battery **Battery Manual Mode** switch as its ownership boundary, so Omnibattery's automatic controller and other manual automations cannot write competing setpoints while the run is active.
+
+The blueprint uses only Home Assistant entities; it does not access Modbus. It validates telemetry, force-mode options, voltage ordering and number limits before taking control. Its defaults are 3.49 V → 3.60 V, 95 W top charge, 200 W discharge, 60 s rest, a 30 mV target and a 3.40 V adaptive retry floor. The `force_mode` options are named **None**, **Charge** and **Discharge**; old lowercase ESPHome entities remain supported during migration.
+
+Turn the request helper ON to start or resume after a restart and OFF to cancel. Every exit attempts to write 0 W in both directions, restore the normal SOC maximum and release Battery Manual Mode. If any safety confirmation fails, the switch is deliberately left ON so the battery can be inspected before another automation is allowed to control it.
+
 ## Central status webhook reporter
 
 [Import blueprint](https://raw.githubusercontent.com/ffunes/Omnibattery/main/blueprints/central_status_webhook_reporter_blueprint.yaml)

@@ -81,7 +81,7 @@ _ENTITY_MAP: dict[str, tuple[str, str]] = {
 # Marstek register semantics so the shared entity layer (which speaks wire
 # values through write_control / coordinator.data) needs no changes.
 _SELECT_WIRE_TO_OPTION: dict[str, dict[int, str]] = {
-    "force_mode":         {0: "stop", 1: "charge", 2: "discharge"},
+    "force_mode":         {0: "None", 1: "Charge", 2: "Discharge"},
     "user_work_mode":     {0: "manual", 1: "anti-feed", 2: "ai"},
     "backup_function":    {0: "enable", 1: "disable"},
     "rs485_control_mode": {21930: "enable", 21947: "disable"},
@@ -89,6 +89,17 @@ _SELECT_WIRE_TO_OPTION: dict[str, dict[int, str]] = {
 _SELECT_OPTION_TO_WIRE: dict[str, dict[str, int]] = {
     key: {opt: wire for wire, opt in table.items()}
     for key, table in _SELECT_WIRE_TO_OPTION.items()
+}
+
+# Older versions of the community ESPHome YAML exposed these three options in
+# lowercase (and used ``stop`` for the idle value).  The integration's public
+# contract is now the same for every Marstek path, but accepting the old state
+# spelling keeps telemetry and already-installed bridges readable while users
+# update their ESPHome package.
+_FORCE_MODE_OPTION_ALIASES = {
+    "None": ("None", "stop", "none", "standby"),
+    "Charge": ("Charge", "charge"),
+    "Discharge": ("Discharge", "discharge"),
 }
 
 # The upstream "Inverter State" text sensor's strings → the v2 numeric state
@@ -446,7 +457,13 @@ class EsphomeEntityDriver(BatteryDriver):
         """Decode one HA state string into the logical wire value."""
         option_map = _SELECT_OPTION_TO_WIRE.get(key)
         if option_map is not None:
-            return option_map.get(raw)
+            if raw in option_map:
+                return option_map[raw]
+            if key == "force_mode":
+                for canonical, aliases in _FORCE_MODE_OPTION_ALIASES.items():
+                    if raw in aliases:
+                        return option_map[canonical]
+            return None
         if key == "inverter_state":
             return _INVERTER_STATE_TO_CODE.get(raw.strip().lower())
         try:
@@ -488,6 +505,17 @@ class EsphomeEntityDriver(BatteryDriver):
                 "ESPHome driver: no option for %s wire value %s", key, wire_value
             )
             return False
+        # Keep an older external ESPHome entity usable if it still advertises
+        # lowercase force-mode options. New integration-owned entities always
+        # expose the canonical spelling above.
+        if key == "force_mode":
+            state = self.hass.states.get(entity_id)
+            options = getattr(state, "attributes", {}).get("options", []) if state else []
+            if options:
+                for canonical, aliases in _FORCE_MODE_OPTION_ALIASES.items():
+                    if option == canonical:
+                        option = next((candidate for candidate in aliases if candidate in options), option)
+                        break
         return await self._call("select", "select_option", entity_id, {"option": option})
 
     # --- control (write) --------------------------------------------------------

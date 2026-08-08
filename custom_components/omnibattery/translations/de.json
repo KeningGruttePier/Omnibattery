@@ -1339,9 +1339,6 @@
       "full_charge_voltage_taper": {
         "name": "100%-Ladungsreduktion per Spannung"
       },
-      "active_balance_mode": {
-        "name": "Aktiver Zellabgleich"
-      },
       "automation_charging_active": {
         "name": "Laden nach externem Preis"
       },
@@ -1450,7 +1447,6 @@
           "manual": "Manueller Modus",
           "grid_charging": "Laden aus dem Netz",
           "weekly_full_charge": "Wöchentliche Volladung",
-          "active_balance_mode": "Aktiver Zellabgleich",
           "charge_delayed": "Ladung verzögert",
           "waiting_for_solar": "Warten auf Solar",
           "charging_to_setpoint": "Laden bis Sollwert",

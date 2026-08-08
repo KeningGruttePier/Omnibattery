@@ -187,7 +187,6 @@ from .const import (
     IDLE_RUNAWAY_POWER_W,
     IDLE_RUNAWAY_GRACE_S,
     DISCHARGE_MIN_SOC_REENTRY_MARGIN,
-    CONF_ACTIVE_BALANCE_MODE_ENABLED,
     CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED,
     DEFAULT_FULL_CHARGE_VOLTAGE_TAPER_ENABLED,
     MIN_CHARGE_HYSTERESIS_PERCENT,
@@ -199,7 +198,6 @@ from .infra.coordinator import MarstekVenusDataUpdateCoordinator
 from .tracking.hourly_balance import HourlyBalanceManager
 from .tracking.non_responsive_tracker import NonResponsiveTracker
 from .control.weekly_full_charge import WeeklyFullChargeManager
-from .control.active_balance_mode import ActiveBalanceModeManager
 from .control.max_soc_charge import MaxSocChargeManager
 from .control.temperature_limit import TemperatureChargeLimitManager
 from .control.phase_power_limit import PhasePowerLimiter
@@ -554,7 +552,7 @@ class ChargeDischargeController:
         # capacity calculation because _battery_power_limit() reads them.
         self._normal_balance_date = dt_util.now().date()
         self._normal_balance_voltage_tapered: dict[MarstekVenusDataUpdateCoordinator, bool] = {}
-        self._normal_active_balance_phases: dict[MarstekVenusDataUpdateCoordinator, str] = {}
+        self._normal_balance_phases: dict[MarstekVenusDataUpdateCoordinator, str] = {}
         self._normal_balance_measure_started: dict[MarstekVenusDataUpdateCoordinator, datetime] = {}
         self._normal_balance_last_delta_v: dict[MarstekVenusDataUpdateCoordinator, float] = {}
         # SOC recalibration override: keep charging past the taper when the
@@ -565,7 +563,6 @@ class ChargeDischargeController:
         self._normal_balance_recal_retry_pending: dict[MarstekVenusDataUpdateCoordinator, bool] = {}
         self._normal_balance_recal_retry_active: dict[MarstekVenusDataUpdateCoordinator, bool] = {}
         self._normal_balance_recal_first_cutoff_voltage: dict[MarstekVenusDataUpdateCoordinator, float] = {}
-        self._active_balance_mgr = ActiveBalanceModeManager(hass, self)
         self._max_soc_mgr = MaxSocChargeManager(hass, self)
         self._temp_limit_mgr = TemperatureChargeLimitManager(hass, self)
         # Temperature-based charge derate: settings must load before the first
@@ -1013,19 +1010,6 @@ class ChargeDischargeController:
                 if state is not None:
                     state.pop(coordinator, None)
 
-        active_balance = getattr(self, "_active_balance_mgr", None)
-        if active_balance is not None:
-            for attr in (
-                "_active_balance_mode_phases",
-                "_active_balance_charge_resume_targets",
-                "_active_balance_charge_reject_counts",
-                "_active_balance_charge_leg_started",
-                "_active_balance_charge_seen_power",
-            ):
-                state = getattr(active_balance, attr, None)
-                if state is not None:
-                    state.pop(coordinator, None)
-
         for attr in (
             "_last_commanded_net_sign",
             "_charge_engage_started",
@@ -1167,18 +1151,6 @@ class ChargeDischargeController:
         """Return top-of-charge diagnostics for the integration status sensor."""
         return self._max_soc_mgr.get_status()
 
-    def _active_balance_charge_resume_target(self, coordinator) -> float:
-        return self._active_balance_mgr._active_balance_charge_resume_target(coordinator)
-
-    def _reset_active_balance_charge_resume_target(self, coordinator) -> None:
-        self._active_balance_mgr._reset_active_balance_charge_resume_target(coordinator)
-
-    def _lower_active_balance_charge_resume_target(self, coordinator, vmax_f: float) -> float:
-        return self._active_balance_mgr._lower_active_balance_charge_resume_target(coordinator, vmax_f)
-
-    def _active_balance_charge_rejected_detected(self, coordinator, phase: str) -> bool:
-        return self._active_balance_mgr._active_balance_charge_rejected_detected(coordinator, phase)
-
     def _pd_house_demand_present(self) -> bool:
         """Return True when the PD input indicates household/grid demand."""
         consumption_state = self.hass.states.get(self.consumption_sensor)
@@ -1188,70 +1160,6 @@ class ChargeDischargeController:
         active_target = self.compute_active_target()
         return sensor_raw > active_target + self.deadband
 
-    def _persist_battery_runtime_config(self, coordinator, updates: dict) -> None:
-        """Persist multiple per-battery runtime values in one config-entry write."""
-        if coordinator._config_entry is None:
-            return
-        new_data = dict(coordinator._config_entry.data)
-        batteries = [dict(b) for b in new_data.get("batteries", [])]
-        for battery in batteries:
-            if (battery.get("host") == coordinator.host and battery.get("port") == coordinator.port
-                    and battery.get("slave_id", 1) == coordinator.slave_id):
-                battery.update(updates)
-                break
-        new_data["batteries"] = batteries
-        self.hass.config_entries.async_update_entry(coordinator._config_entry, data=new_data)
-
-    def _active_balance_mode_delta_v(self, coordinator) -> float | None:
-        return self._active_balance_mgr._active_balance_mode_delta_v(coordinator)
-
-    def _active_balance_mode_cell_values(self, coordinator) -> tuple[float | None, float | None, float | None]:
-        return self._active_balance_mgr._active_balance_mode_cell_values(coordinator)
-
-    async def _record_active_balance_mode_measurement(self, coordinator, details: dict) -> None:
-        await self._active_balance_mgr._record_active_balance_mode_measurement(coordinator, details)
-
-    def _active_balance_mode_last_recorded_delta_v(self, coordinator) -> tuple[float | None, str]:
-        return self._active_balance_mgr._active_balance_mode_last_recorded_delta_v(coordinator)
-
-    def _format_active_balance_value(self, value, unit: str, decimals: int = 1) -> str:
-        return self._active_balance_mgr._format_active_balance_value(value, unit, decimals)
-
-    def _active_balance_notification_id(self, coordinator, kind: str, started_ts: str | None = None, reason: str | None = None) -> str:
-        return self._active_balance_mgr._active_balance_notification_id(coordinator, kind, started_ts, reason)
-
-    async def _dismiss_persistent_notification(self, notification_id: str) -> None:
-        await self._active_balance_mgr._dismiss_persistent_notification(notification_id)
-
-    async def _dismiss_legacy_active_balance_notifications(self, coordinator) -> None:
-        await self._active_balance_mgr._dismiss_legacy_active_balance_notifications(coordinator)
-
-    async def _notify_active_balance_mode_started(self, coordinator, started_ts: str) -> None:
-        await self._active_balance_mgr._notify_active_balance_mode_started(coordinator, started_ts)
-
-    async def _notify_active_balance_mode_completed(self, coordinator, reason: str, started_ts: str | None, elapsed_h: float | None) -> None:
-        await self._active_balance_mgr._notify_active_balance_mode_completed(coordinator, reason, started_ts, elapsed_h)
-
-    def _is_active_balance_mode_running(self, coordinator) -> bool:
-        return self._active_balance_mgr._is_active_balance_mode_running(coordinator)
-
-    def _active_balance_mode_started(self, coordinator) -> bool:
-        return self._active_balance_mgr._active_balance_mode_started(coordinator)
-
-    def get_active_balance_mode_status(self) -> dict:
-        return self._active_balance_mgr.get_active_balance_mode_status()
-
-    async def _apply_active_balance_mode_cutoff(self, coordinator) -> None:
-        await self._active_balance_mgr._apply_active_balance_mode_cutoff(coordinator)
-
-    async def _restore_active_balance_mode_cutoff(self, coordinator) -> None:
-        await self._active_balance_mgr._restore_active_balance_mode_cutoff(coordinator)
-
-    async def _complete_active_balance_mode(self, coordinator, reason: str, today: str, mark_completed: bool = True) -> None:
-        await self._active_balance_mgr._complete_active_balance_mode(coordinator, reason, today, mark_completed)
-
-    async def _handle_active_balance_mode(self) -> None:
-        await self._active_balance_mgr._handle_active_balance_mode()
     def _slot_manual_direction_for(self, slot: dict | None, coordinator) -> tuple[str, int] | None:
         """Return (direction, power_w) when `slot` is a valid manual single-direction
         slot for `coordinator`, or None.
@@ -1281,7 +1189,7 @@ class ChargeDischargeController:
         """Drive batteries with an active manual time slot directly, bypassing PD.
 
         Manual slots take a battery off the PD/predictive control path for the
-        cycle. Safety blockers (min/max SOC, EV pause, active balance) still
+        cycle. Safety blockers (min/max SOC and EV pause) still
         apply — if a safety block is set, the manual write is skipped.
         """
         self._manual_slot_owned = set()
@@ -1289,8 +1197,6 @@ class ChargeDischargeController:
             if ChargeDischargeController._is_battery_manual_owned(coord):
                 continue
             if not coord.is_available:
-                continue
-            if self._is_active_balance_mode_running(coord):
                 continue
             if self._is_backup_function_active(coord):
                 continue
@@ -2072,19 +1978,6 @@ class ChargeDischargeController:
                 continue
 
             current_soc = coordinator.data.get("battery_soc", 0)
-            active_balance_enabled = bool(
-                getattr(coordinator, "active_balance_mode_enabled", False)
-            )
-
-            if active_balance_enabled:
-                if coordinator.enable_charge_hysteresis and coordinator._hysteresis_active:
-                    _LOGGER.debug(
-                        "%s: Temporarily ignoring hysteresis for active balance mode",
-                        coordinator.name,
-                    )
-                self.remove_charge_block("max_soc", coordinator=coordinator)
-                self.remove_charge_block("charge_hysteresis", coordinator=coordinator)
-                continue
 
             if weekly_100_unlocked:
                 if coordinator.enable_charge_hysteresis and coordinator._hysteresis_active:
@@ -2281,8 +2174,6 @@ class ChargeDischargeController:
 
     def _refresh_operation_blockers(self) -> None:
         """Refresh all runtime operation blockers for the current control cycle."""
-        # Active balance ignores this source on its explicit per-battery writes.
-        # Keep the global block so every other battery remains delayed.
         if (
             self.charge_delay_enabled
             and self._charge_delay_mgr.is_charge_delayed()
@@ -2387,10 +2278,6 @@ class ChargeDischargeController:
                 _LOGGER.debug("%s: Skipping - excluded due to non-responsive behavior", coordinator.name)
                 continue
 
-            if self._is_active_balance_mode_running(coordinator):
-                _LOGGER.debug("%s: Skipping - active balance mode owns this battery", coordinator.name)
-                continue
-
             # Skip batteries with backup function active (they manage themselves autonomously)
             if self._is_backup_function_active(coordinator):
                 _LOGGER.debug("%s: Skipping - backup function is active", coordinator.name)
@@ -2406,18 +2293,8 @@ class ChargeDischargeController:
                 _LOGGER.debug("%s: Skipping - manual time slot owns this battery", coordinator.name)
                 continue
 
-            active_balance_enabled = bool(
-                getattr(coordinator, "active_balance_mode_enabled", False)
-            )
-
             if include_operation_blocks and is_charging:
                 charge_blockers = self.get_charge_blockers(coordinator)
-                if active_balance_enabled:
-                    charge_blockers = {
-                        source: block
-                        for source, block in charge_blockers.items()
-                        if source not in {"max_soc", "charge_hysteresis"}
-                    }
                 if charge_blockers:
                     _LOGGER.debug(
                         "%s: Skipping charge - blocked by %s",
@@ -2448,17 +2325,7 @@ class ChargeDischargeController:
 
                 # Update hysteresis state if enabled
                 if coordinator.enable_charge_hysteresis:
-                    # Only override hysteresis when an explicit full/top-balance
-                    # run is active.
-                    if active_balance_enabled:
-                        # Active balance temporarily bypasses hysteresis, but keeps
-                        # the previous latch so it is restored when the mode stops.
-                        if coordinator._hysteresis_active:
-                            _LOGGER.debug(
-                                "%s: Temporarily ignoring hysteresis for active balance mode",
-                                coordinator.name,
-                            )
-                    elif weekly_100_unlocked:
+                    if weekly_100_unlocked:
                         # Force-disable hysteresis during weekly full charge.
                         if coordinator._hysteresis_active:
                             _LOGGER.debug(
@@ -3529,8 +3396,6 @@ class ChargeDischargeController:
             self.previous_power = 0
             self.previous_error = 0
             for coordinator in self.coordinators:
-                if self._is_active_balance_mode_running(coordinator):
-                    continue
                 await self._set_battery_power(coordinator, 0, 0)
             return
 
@@ -3714,8 +3579,6 @@ class ChargeDischargeController:
         # Set all other batteries to 0 (non-available + available-but-not-selected)
         for coordinator in self.coordinators:
             if coordinator not in allocated_batteries:
-                if self._is_active_balance_mode_running(coordinator):
-                    continue
                 await self._set_battery_power(coordinator, 0, 0)
         
         # Update state
@@ -4547,8 +4410,6 @@ class ChargeDischargeController:
         for coordinator in self.coordinators:
             if ChargeDischargeController._is_battery_manual_owned(coordinator):
                 continue
-            if self._is_active_balance_mode_running(coordinator):
-                continue
             await self._set_battery_power(coordinator, 0, 0)
         self.previous_power = 0
         self._active_discharge_batteries = []
@@ -4858,9 +4719,8 @@ class ChargeDischargeController:
             True: {},
             False: {},
         }
-        # Capture both directions before issuing any writes. Active Balance can
-        # own one battery while the main controller uses another; writing the
-        # first direction must not erase the second direction's live intent.
+        # Capture both directions before issuing any writes. Writing the first
+        # direction must not erase the second direction's live intent.
         for is_charging in (True, False):
             for coordinator in self.coordinators:
                 if ChargeDischargeController._is_battery_manual_owned(coordinator):
@@ -5710,10 +5570,6 @@ class ChargeDischargeController:
         # control logic runs. Owned batteries are skipped by PD/predictive.
         await self._try_apply_manual_slot()
 
-        # Per-battery scheduled active balance mode has priority over global
-        # modes. It owns only the selected battery; PD can still use the rest.
-        await self._handle_active_balance_mode()
-
         # Phase staleness is caused by the passage of time, so it cannot depend
         # on receiving another phase event. Check it on every safety cycle and
         # enforce the current envelope before predictive/max-SOC early returns
@@ -5902,8 +5758,6 @@ class ChargeDischargeController:
                 "Capacity Protection conserving capacity: stopping existing battery command"
             )
             for coordinator in self.coordinators:
-                if self._is_active_balance_mode_running(coordinator):
-                    continue
                 await self._set_battery_power(coordinator, 0, 0)
             self.previous_power = 0
             self.previous_sensor = sensor_actual
@@ -6005,8 +5859,6 @@ class ChargeDischargeController:
                 self._active_charge_batteries = []
                 # Set all batteries to 0
                 for coordinator in self.coordinators:
-                    if self._is_active_balance_mode_running(coordinator):
-                        continue
                     await self._set_battery_power(coordinator, 0, 0)
                 return
 
@@ -6021,8 +5873,6 @@ class ChargeDischargeController:
                 self._active_discharge_batteries = []
                 self._active_charge_batteries = []
                 for coordinator in self.coordinators:
-                    if self._is_active_balance_mode_running(coordinator):
-                        continue
                     await self._set_battery_power(coordinator, 0, 0)
                 return
 
@@ -6079,8 +5929,6 @@ class ChargeDischargeController:
             # Set all other batteries to 0 (non-available + available-but-not-selected)
             for coordinator in self.coordinators:
                 if coordinator not in allocated_batteries:
-                    if self._is_active_balance_mode_running(coordinator):
-                        continue
                     await self._set_battery_power(coordinator, 0, 0)
 
             # Reset PD state for clean start (CRITICAL: clear saturated integral)
@@ -6325,8 +6173,6 @@ class ChargeDischargeController:
             # settle timer being cleared underneath that latch, not the latch itself.
             _LOGGER.debug("ChargeDischargeController: No available batteries, setting all to 0.")
             for coordinator in self.coordinators:
-                if self._is_active_balance_mode_running(coordinator):
-                    continue
                 await self._set_battery_power(coordinator, 0, 0)
             self.previous_power = 0
             self.previous_sensor = sensor_actual
@@ -6382,8 +6228,6 @@ class ChargeDischargeController:
         # Set all other batteries to 0 (non-available + available-but-not-selected)
         for coordinator in self.coordinators:
             if coordinator not in allocated_batteries:
-                if self._is_active_balance_mode_running(coordinator):
-                    continue
                 await self._set_battery_power(coordinator, 0, 0)
         
         # Update state for next cycle
@@ -6833,6 +6677,246 @@ def _device_owns_initial_config(brand: str) -> bool:
     return brand == "zendure"
 
 
+_LEGACY_ACTIVE_BALANCE_PREFIX = "active_balance_mode_"
+_LEGACY_ACTIVE_BALANCE_MARKERS = (
+    "active_balance_mode_enabled",
+    "active_balance_mode_started_ts",
+    "active_balance_mode_phase",
+    "active_balance_mode_saved_max_soc",
+)
+
+
+def _legacy_active_balance_keys(battery_config: dict) -> set[str]:
+    """Return persisted keys owned by the removed integrated balance runner."""
+    return {
+        key for key in battery_config
+        if isinstance(key, str) and key.startswith(_LEGACY_ACTIVE_BALANCE_PREFIX)
+    }
+
+
+def _legacy_active_balance_is_running(battery_config: dict) -> bool:
+    """Return whether legacy data indicates an interrupted active-balance run."""
+    return any(
+        bool(battery_config.get(key))
+        for key in _LEGACY_ACTIVE_BALANCE_MARKERS
+        if key != "active_balance_mode_saved_max_soc"
+    ) or battery_config.get("active_balance_mode_saved_max_soc") is not None
+
+
+def _legacy_active_balance_entity_id(hass: HomeAssistant, coordinator) -> str | None:
+    """Resolve the old per-battery switch entity from its stable unique ID."""
+    from homeassistant.helpers import entity_registry as er
+
+    return er.async_get(hass).async_get_entity_id(
+        "switch",
+        DOMAIN,
+        f"{coordinator.device_key}_active_balance_mode",
+    )
+
+
+async def _dismiss_legacy_active_balance_notifications(
+    hass: HomeAssistant, coordinator, battery_config: dict | None = None
+) -> None:
+    """Dismiss notifications emitted by the removed integrated runner."""
+    notification_ids = {
+        f"marstek_active_balance_mode_{suffix}_{coordinator.device_key}"
+        for suffix in ("start", "result")
+    }
+    # Later releases added the run timestamp (and, for results, the reason) to
+    # the notification ID.  The timestamp is still in the legacy config when
+    # an interrupted run is migrated, so dismiss those IDs too.
+    if battery_config:
+        started_ts = battery_config.get("active_balance_mode_started_ts")
+        if started_ts:
+            sanitized_device = "".join(
+                char if char.isalnum() else "_"
+                for char in str(coordinator.device_key)
+            ).strip("_") or "unknown"
+            sanitized_ts = "".join(
+                char if char.isalnum() else "_" for char in str(started_ts)
+            ).strip("_") or "unknown"
+            notification_ids.add(
+                f"{NOTIFICATION_ID_PREFIX}marstek_active_balance_mode_start_"
+                f"{sanitized_device}_{sanitized_ts}"
+            )
+            reason = battery_config.get("active_balance_mode_completion_reason")
+            if reason:
+                sanitized_reason = "".join(
+                    char if char.isalnum() else "_" for char in str(reason)
+                ).strip("_") or "unknown"
+                notification_ids.add(
+                    f"{NOTIFICATION_ID_PREFIX}marstek_active_balance_mode_result_"
+                    f"{sanitized_device}_{sanitized_ts}_{sanitized_reason}"
+                )
+
+    for notification_id in notification_ids:
+        await hass.services.async_call(
+            "persistent_notification",
+            "dismiss",
+            {"notification_id": notification_id},
+        )
+
+
+async def _async_migrate_legacy_active_balance(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    controller,
+    coordinators: list,
+) -> None:
+    """Remove the old active-balance state after a safe manual handoff.
+
+    A stale, inactive record is metadata-only and can be removed immediately.
+    An interrupted run is different: it may have left a temporary 100% charge
+    cutoff behind. The battery is therefore acquired through the existing manual
+    ownership path, idled and verified, restored, and released before its legacy
+    keys and entity are deleted. Failures deliberately retain both the legacy
+    record and manual ownership so setup can retry without guessing the hardware
+    state.
+    """
+    if not coordinators:
+        return
+
+    original_data = entry.data
+    batteries = [dict(item) for item in original_data.get("batteries", [])]
+    data_changed = False
+
+    for coordinator in coordinators:
+        index = next(
+            (
+                idx
+                for idx, battery in enumerate(batteries)
+                if battery.get(CONF_HOST) == coordinator.host
+                and battery.get(CONF_PORT) == coordinator.port
+                and battery.get("slave_id", 1) == coordinator.slave_id
+            ),
+            None,
+        )
+        if index is None:
+            continue
+
+        battery = batteries[index]
+        legacy_keys = _legacy_active_balance_keys(battery)
+        old_entity_id = _legacy_active_balance_entity_id(hass, coordinator)
+        if not legacy_keys and not old_entity_id:
+            continue
+
+        legacy_notification_config = dict(battery)
+        active = _legacy_active_balance_is_running(battery)
+        if not active:
+            for key in legacy_keys:
+                battery.pop(key, None)
+            if old_entity_id:
+                from homeassistant.helpers import entity_registry as er
+
+                er.async_get(hass).async_remove(old_entity_id)
+            await _dismiss_legacy_active_balance_notifications(
+                hass, coordinator, legacy_notification_config
+            )
+            data_changed = data_changed or bool(legacy_keys)
+            _LOGGER.info(
+                "[%s] Removed stale integrated active-balance state",
+                coordinator.name,
+            )
+            continue
+
+        already_manual = bool(
+            getattr(coordinator, CONF_BATTERY_MANUAL_MODE_ENABLED, False)
+        )
+        acquired_manual = False
+        try:
+            # Re-enter the ownership path even when another manual owner is
+            # already present.  The old runner may have left a non-zero
+            # hardware command behind, and the ownership helper is the one
+            # place that performs the verified zero-power handoff.
+            await controller._set_battery_manual_mode(coordinator, True)
+            acquired_manual = not already_manual
+
+            battery[CONF_BATTERY_MANUAL_MODE_ENABLED] = True
+            battery["manual_force_mode"] = "None"
+            battery["manual_set_charge_power"] = 0
+            battery["manual_set_discharge_power"] = 0
+
+            saved_max_soc = battery.get("active_balance_mode_saved_max_soc")
+            if saved_max_soc is not None:
+                try:
+                    saved_max_soc_f = float(saved_max_soc)
+                except (TypeError, ValueError) as err:
+                    raise HomeAssistantError(
+                        f"Invalid legacy max SOC {saved_max_soc!r}"
+                    ) from err
+                if not math.isfinite(saved_max_soc_f) or not 12 <= saved_max_soc_f <= 100:
+                    raise HomeAssistantError(
+                        f"Legacy max SOC out of range: {saved_max_soc!r}"
+                    )
+                restored_max_soc = int(round(saved_max_soc_f))
+                coordinator.max_soc = restored_max_soc
+                if coordinator.capabilities.hardware_soc_cutoff:
+                    cutoff_ok = await coordinator.set_charge_cutoff(restored_max_soc)
+                    if not cutoff_ok:
+                        raise HomeAssistantError(
+                            f"Could not restore charge cutoff to {restored_max_soc}%"
+                        )
+                battery["max_soc"] = restored_max_soc
+
+            if acquired_manual:
+                await controller._set_battery_manual_mode(coordinator, False)
+                battery[CONF_BATTERY_MANUAL_MODE_ENABLED] = False
+                battery["manual_force_mode"] = "None"
+                battery["manual_set_charge_power"] = 0
+                battery["manual_set_discharge_power"] = 0
+
+            for key in legacy_keys:
+                battery.pop(key, None)
+            if old_entity_id:
+                from homeassistant.helpers import entity_registry as er
+
+                er.async_get(hass).async_remove(old_entity_id)
+            await _dismiss_legacy_active_balance_notifications(
+                hass, coordinator, legacy_notification_config
+            )
+            data_changed = True
+            _LOGGER.info(
+                "[%s] Migrated interrupted integrated active-balance state safely",
+                coordinator.name,
+            )
+        except Exception as err:
+            # The manual flag is the safety boundary. Keep it asserted even if
+            # restoring the cutoff or releasing the ownership failed.
+            coordinator.battery_manual_mode_enabled = True
+            battery[CONF_BATTERY_MANUAL_MODE_ENABLED] = True
+            battery["manual_force_mode"] = "None"
+            battery["manual_set_charge_power"] = 0
+            battery["manual_set_discharge_power"] = 0
+            data_changed = True
+            await hass.services.async_call(
+                "persistent_notification",
+                "create",
+                {
+                    "notification_id": (
+                        f"{NOTIFICATION_ID_PREFIX}active_balance_migration_"
+                        f"{coordinator.device_key}"
+                    ),
+                    "title": f"{coordinator.name}: active balance migration paused",
+                    "message": (
+                        "The old integrated active-balance run could not be migrated "
+                        f"safely ({err}). The battery is held in manual mode at 0 W. "
+                        "Keep it available and reload Omnibattery to retry."
+                    ),
+                },
+            )
+            _LOGGER.error(
+                "[%s] Could not migrate integrated active-balance state; "
+                "manual ownership retained: %s",
+                coordinator.name,
+                err,
+            )
+
+    if data_changed:
+        new_data = dict(entry.data)
+        new_data["batteries"] = batteries
+        hass.config_entries.async_update_entry(entry, data=new_data)
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Omnibattery from a config entry."""
     hass.data.setdefault(DOMAIN, {})
@@ -6907,7 +6991,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             backup_offgrid_threshold=battery_config.get("backup_offgrid_threshold", 50),
             allow_charge=battery_config.get("allow_charge", True),
             allow_discharge=battery_config.get("allow_discharge", True),
-            active_balance_mode_enabled=battery_config.get(CONF_ACTIVE_BALANCE_MODE_ENABLED, False),
             full_charge_voltage_taper_enabled=battery_config.get(
                 CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED,
                 DEFAULT_FULL_CHARGE_VOLTAGE_TAPER_ENABLED,
@@ -6957,26 +7040,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             battery_config.get("user_max_discharge_power", coordinator.max_discharge_power),
             coordinator.max_discharge_power,
         )
-        coordinator.active_balance_mode_started_ts = battery_config.get("active_balance_mode_started_ts")
-        coordinator.active_balance_mode_run_date = battery_config.get("active_balance_mode_run_date")
-        coordinator.active_balance_mode_phase = battery_config.get("active_balance_mode_phase")
-        coordinator.active_balance_mode_top_reached = battery_config.get("active_balance_mode_top_reached", False)
-        coordinator.active_balance_mode_completed_date = battery_config.get("active_balance_mode_completed_date")
-        coordinator.active_balance_mode_completion_reason = battery_config.get("active_balance_mode_completion_reason")
-        coordinator.active_balance_mode_saved_max_soc = battery_config.get("active_balance_mode_saved_max_soc")
-        coordinator.active_balance_mode_start_delta_mv = battery_config.get("active_balance_mode_start_delta_mv")
-        coordinator.active_balance_mode_start_delta_source = battery_config.get("active_balance_mode_start_delta_source")
-        coordinator.active_balance_mode_start_max_cell_voltage = battery_config.get("active_balance_mode_start_max_cell_voltage")
-        coordinator.active_balance_mode_start_min_cell_voltage = battery_config.get("active_balance_mode_start_min_cell_voltage")
-        coordinator.active_balance_mode_last_cutoff_ts = battery_config.get("active_balance_mode_last_cutoff_ts")
-        coordinator.active_balance_mode_last_cutoff_delta_mv = battery_config.get("active_balance_mode_last_cutoff_delta_mv")
-        coordinator.active_balance_mode_last_cutoff_source = battery_config.get("active_balance_mode_last_cutoff_source")
-        coordinator.active_balance_mode_last_cutoff_max_cell_voltage = battery_config.get("active_balance_mode_last_cutoff_max_cell_voltage")
-        coordinator.active_balance_mode_last_cutoff_min_cell_voltage = battery_config.get("active_balance_mode_last_cutoff_min_cell_voltage")
-        coordinator.active_balance_mode_last_cutoff_soc = battery_config.get("active_balance_mode_last_cutoff_soc")
-        coordinator.active_balance_mode_wait_started_ts = battery_config.get("active_balance_mode_wait_started_ts")
-        coordinator.active_balance_mode_retry_voltage = battery_config.get("active_balance_mode_retry_voltage")
-        coordinator.active_balance_mode_last_cutoff_delta_v = battery_config.get("active_balance_mode_last_cutoff_delta_v")
         coordinator._shadow_selects = {
             k[len("shadow_select_"):]: v
             for k, v in battery_config.items()
@@ -7079,6 +7142,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         entry.entry_id,
         controller.manual_mode_enabled,
     )
+
+    # Remove the former integrated active-balance runner only after all
+    # coordinators and the manual ownership path are ready. Interrupted legacy
+    # runs are migrated with a verified zero-power handoff before their state is
+    # discarded.
+    await _async_migrate_legacy_active_balance(hass, entry, controller, coordinators)
 
     # Restore daily consumption history: try Store first (survives reloads), then binary sensor fallback
     loaded = await consumption_tracker.load_consumption_history()

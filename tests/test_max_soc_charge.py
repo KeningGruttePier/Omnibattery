@@ -46,7 +46,6 @@ class _Coord:
         data=None,
         max_soc=100,
         taper_enabled=True,
-        active_balance_mode_enabled=False,
         max_charge_power=800,
         commanded_charge_power=0,
     ):
@@ -54,7 +53,6 @@ class _Coord:
         self.data = {} if data is None else data
         self.max_soc = max_soc
         self.max_charge_power = max_charge_power
-        self.active_balance_mode_enabled = active_balance_mode_enabled
         self.commanded_charge_power = commanded_charge_power
         setattr(self, CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED, taper_enabled)
 
@@ -67,7 +65,7 @@ tracks the manager's runtime state."""
         coordinators=list(coords),
         _normal_balance_date=dt_util.now().date(),
         _normal_balance_voltage_tapered={},
-        _normal_active_balance_phases={},
+        _normal_balance_phases={},
         _normal_balance_measure_started={},
         _normal_balance_last_delta_v={},
         _normal_balance_recal_override={},
@@ -76,12 +74,10 @@ tracks the manager's runtime state."""
         _normal_balance_recal_retry_pending={},
         _normal_balance_recal_retry_active={},
         _normal_balance_recal_first_cutoff_voltage={},
-        _is_active_balance_mode_running=lambda coordinator: False,
         _weekly_charge_mgr=object(),
         _weekly_full_charge_unlocked=lambda: False,
         _battery_power_limit=lambda coordinator, is_charging: coordinator.max_charge_power,
         _balance_monitor=None,
-        _reset_active_balance_charge_resume_target=lambda coordinator: None,
     )
     base.update(overrides)
     ctrl = SimpleNamespace(**base)
@@ -113,17 +109,6 @@ def test_taper_applies_true_at_max_soc_100():
 
 def test_taper_applies_false_when_taper_disabled():
     c = _Coord(max_soc=100, taper_enabled=False)
-    assert _mgr(_controller([c]))._taper_applies(c) is False
-
-
-def test_taper_applies_false_when_active_balance_running():
-    c = _Coord(max_soc=100)
-    ctrl = _controller([c], _is_active_balance_mode_running=lambda coordinator: True)
-    assert _mgr(ctrl)._taper_applies(c) is False
-
-
-def test_taper_applies_false_when_coordinator_active_balance_enabled():
-    c = _Coord(max_soc=100, active_balance_mode_enabled=True)
     assert _mgr(_controller([c]))._taper_applies(c) is False
 
 
@@ -422,7 +407,7 @@ async def test_handle_measurement_enters_hold_and_takes_over():
     took_over = await _mgr(ctrl).handle_measurement()
 
     assert took_over is True
-    assert ctrl._normal_active_balance_phases[c] == "WAIT_MEASURE"
+    assert ctrl._normal_balance_phases[c] == "WAIT_MEASURE"
     assert len(calls) == 1
     name, charge, discharge, kw = calls[0]
     assert (charge, discharge) == (0, 0)
@@ -448,13 +433,13 @@ async def test_handle_measurement_records_delta_after_wait():
         _balance_monitor=monitor,
     )
     # Pre-seed an in-flight measurement whose wait window has already elapsed.
-    ctrl._normal_active_balance_phases[c] = "WAIT_MEASURE"
+    ctrl._normal_balance_phases[c] = "WAIT_MEASURE"
     ctrl._normal_balance_measure_started[c] = dt_util.utcnow() - timedelta(seconds=61)
 
     await _mgr(ctrl).handle_measurement()
 
     assert ctrl._normal_balance_last_delta_v[c] == 0.05
-    assert ctrl._normal_active_balance_phases[c] == "MEASURED"
+    assert ctrl._normal_balance_phases[c] == "MEASURED"
     assert len(monitor.calls) == 1
     assert monitor.calls[0][4] == "top_charge_3_55v"
 
@@ -474,7 +459,7 @@ async def test_handle_measurement_skips_during_soc_recalibration():
 
     assert took_over is False
     assert calls == []
-    assert c not in ctrl._normal_active_balance_phases
+    assert c not in ctrl._normal_balance_phases
 
 
 async def test_handle_measurement_skips_during_weekly_full_charge():
@@ -494,7 +479,7 @@ async def test_handle_measurement_skips_during_weekly_full_charge():
 
     assert took_over is False
     assert calls == []
-    assert c not in ctrl._normal_active_balance_phases
+    assert c not in ctrl._normal_balance_phases
 
 
 async def _noop():

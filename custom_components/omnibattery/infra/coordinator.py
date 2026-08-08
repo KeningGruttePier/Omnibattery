@@ -14,7 +14,6 @@ from ..const import (
     SCAN_INTERVAL,
     DEBUG_POLL_SENSOR_SKIPS,
     DEBUG_POLL_SENSOR_VALUES,
-    CONF_ACTIVE_BALANCE_MODE_ENABLED,
     CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED,
     DEFAULT_FULL_CHARGE_VOLTAGE_TAPER_ENABLED,
     BURST_POLL_WINDOW_S,
@@ -107,7 +106,6 @@ class MarstekVenusDataUpdateCoordinator(DataUpdateCoordinator):
                  charge_hysteresis_percent: int = 2,
                  backup_offgrid_threshold: int = 50,
                  allow_charge: bool = True, allow_discharge: bool = True,
-                 active_balance_mode_enabled: bool = False,
                  full_charge_voltage_taper_enabled: bool = DEFAULT_FULL_CHARGE_VOLTAGE_TAPER_ENABLED,
                  brand: str = "marstek",
                  zendure_model: str = ZENDURE_MODEL_2400AC_PRO,
@@ -137,7 +135,6 @@ class MarstekVenusDataUpdateCoordinator(DataUpdateCoordinator):
         self.brand = brand
         if self.brand in ("zendure", "anker", "hoymiles"):
             full_charge_voltage_taper_enabled = False
-            active_balance_mode_enabled = False
 
         # Validate and store battery version
         from ..const import SUPPORTED_VERSIONS, DEFAULT_VERSION
@@ -186,30 +183,9 @@ class MarstekVenusDataUpdateCoordinator(DataUpdateCoordinator):
         self.user_max_discharge_power = max_discharge_power
         self.allow_charge = allow_charge
         self.allow_discharge = allow_discharge
-        self.active_balance_mode_enabled = active_balance_mode_enabled
         setattr(self, CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED, full_charge_voltage_taper_enabled)
         self._hysteresis_active = False  # Tracks if battery reached max_soc (for hysteresis)
         self._hysteresis_base_soc = None  # SOC that triggered hysteresis (used as threshold base)
-        self.active_balance_mode_started_ts = None
-        self.active_balance_mode_run_date = None
-        self.active_balance_mode_top_reached = False
-        self.active_balance_mode_completed_date = None
-        self.active_balance_mode_completion_reason = None
-        self.active_balance_mode_saved_max_soc = None
-        self.active_balance_mode_cutoff_applied = False
-        self.active_balance_mode_start_delta_mv = None
-        self.active_balance_mode_start_delta_source = None
-        self.active_balance_mode_start_max_cell_voltage = None
-        self.active_balance_mode_start_min_cell_voltage = None
-        self.active_balance_mode_last_cutoff_ts = None
-        self.active_balance_mode_last_cutoff_delta_mv = None
-        self.active_balance_mode_last_cutoff_delta_v = None
-        self.active_balance_mode_last_cutoff_source = None
-        self.active_balance_mode_last_cutoff_max_cell_voltage = None
-        self.active_balance_mode_last_cutoff_min_cell_voltage = None
-        self.active_balance_mode_last_cutoff_soc = None
-        self.active_balance_mode_wait_started_ts = None
-        self.active_balance_mode_retry_voltage = None
         self._scan_counter = 0
         self.lock = asyncio.Lock()
         self._is_shutting_down = False  # Flag to suppress errors during shutdown
@@ -1164,7 +1140,7 @@ class MarstekVenusDataUpdateCoordinator(DataUpdateCoordinator):
     async def set_charge_cutoff(self, soc_pct: float) -> bool:
         """Write the hardware charge-cutoff register via the driver, holding self.lock.
 
-        Semantic entry point for the weekly-full-charge / active-balance flows
+        Semantic entry point for the weekly-full-charge flow
         that temporarily raise the BMS charge ceiling to 100% and later restore
         the configured max_soc. The driver owns the register address, the
         deci-percent scaling and the settle; this wrapper only adds the

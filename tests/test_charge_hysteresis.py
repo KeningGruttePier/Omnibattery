@@ -30,7 +30,6 @@ class _Coord:
         self.max_soc = max_soc
         self.charge_hysteresis_percent = pct
         self.enable_charge_hysteresis = True
-        self.active_balance_mode_enabled = False
         self._hysteresis_active = active
         self._hysteresis_base_soc = base
 

@@ -35,13 +35,6 @@ def _controller_with_reset(**overrides):
             _charge_selection_hold_until={},
             _discharge_selection_hold_until={},
         ),
-        _active_balance_mgr=SimpleNamespace(
-            _active_balance_mode_phases={},
-            _active_balance_charge_resume_targets={},
-            _active_balance_charge_reject_counts={},
-            _active_balance_charge_leg_started={},
-            _active_balance_charge_seen_power={},
-        ),
         _last_commanded_net_sign={},
         _charge_engage_started={},
         _discharge_engage_started={},
@@ -122,7 +115,6 @@ def test_reset_battery_ownership_state_clears_transient_automatic_state():
     controller._manual_slot_owned.add(coordinator)
     controller._power_distribution._charge_selection_hold_until[coordinator] = 10
     controller._power_distribution._discharge_selection_hold_until[coordinator] = 10
-    controller._active_balance_mgr._active_balance_mode_phases[coordinator] = "CHARGE"
     controller._last_commanded_net_sign[coordinator] = 1
     controller._weekly_charge_mgr._bms_cutoff_counts[coordinator.name] = 2
 
@@ -133,7 +125,6 @@ def test_reset_battery_ownership_state_clears_transient_automatic_state():
     assert coordinator not in controller._manual_slot_owned
     assert coordinator not in controller._power_distribution._charge_selection_hold_until
     assert coordinator not in controller._power_distribution._discharge_selection_hold_until
-    assert coordinator not in controller._active_balance_mgr._active_balance_mode_phases
     assert coordinator not in controller._last_commanded_net_sign
     assert coordinator.name not in controller._weekly_charge_mgr._bms_cutoff_counts
 
@@ -288,7 +279,6 @@ def _available_pool_controller(manual, automatic):
     controller = ChargeDischargeController.__new__(ChargeDischargeController)
     controller.coordinators = [manual, automatic]
     controller._non_responsive = SimpleNamespace(is_excluded=lambda _c: False)
-    controller._is_active_balance_mode_running = lambda _c: False
     controller._is_backup_function_active = lambda _c: False
     controller._is_manual_slot_owned = lambda _c: False
     controller.get_charge_blockers = lambda _c: {}
@@ -317,7 +307,6 @@ def test_available_pool_excludes_manual_battery_even_without_blocker_checks():
         is_available=True,
         _consecutive_failures=0,
         rs485_user_disabled=False,
-        active_balance_mode_enabled=False,
         enable_charge_hysteresis=False,
         max_soc=100,
         min_soc=10,

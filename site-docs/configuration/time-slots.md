@@ -29,7 +29,7 @@ This preserves the legacy behavior: the existing "no-discharge time slots" remai
 ## Mode behavior
 
 - **PD mode (default)**: the slot acts as a constraint. SOC and power overrides apply on top of the normal PD loop; the controller still reacts to grid/load.
-- **Manual mode**: requires the power tick to be on and exactly one of `allow_charge` / `allow_discharge` enabled. The battery is forced to that exact power (force charge or force discharge) and is removed from PD allocation for the cycle. Safety blockers (min SOC, max SOC, EV pause, active balance) still stop the manual write.
+- **Manual mode**: requires the power tick to be on and exactly one of `allow_charge` / `allow_discharge` enabled. The battery is forced to that exact power (force charge or force discharge) and is removed from PD allocation for the cycle. Battery Manual Mode ownership and safety blockers (min SOC, max SOC, EV pause) remain authoritative.
 
 ## Battery scope
 

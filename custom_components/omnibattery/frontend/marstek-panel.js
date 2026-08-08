@@ -85,7 +85,7 @@ const I18N = {
     bcChargePower: "Charge power", bcDischargePower: "Discharge power",
     bcMaxCharge: "Max charge", bcMaxDischarge: "Max discharge",
     bcChargeToSoc: "Charge to SOC", bcChargeHysteresis: "Charge hysteresis", bcBackup: "Backup function", bcOffgridMode: "Off-grid mode",
-    bcBackupThreshold: "Backup threshold", bcVoltageTaper: "100% charge taper", bcActiveBalance: "Active balance", bcBatteryPhase: "Battery phase",
+    bcBackupThreshold: "Backup threshold", bcVoltageTaper: "100% charge taper", bcBatteryPhase: "Battery phase",
     secPhaseProtection: "Three-phase protection", threePhaseProtection: "Three-phase current protection",
     secManual: "Manual mode", itemEnable: "Enable",
     secTempLimit: "Temperature charge limit", itemTempLimitC: "Temperature limit", itemTempLimitBand: "Ramp band", itemTempLimitFloor: "Minimum charge power", itemTempApplyDischarge: "Also throttle discharge",
@@ -156,7 +156,7 @@ const I18N = {
     bcChargePower: "Potencia de carga", bcDischargePower: "Potencia de descarga",
     bcMaxCharge: "Máx. carga", bcMaxDischarge: "Máx. descarga",
     bcChargeToSoc: "Cargar hasta SOC", bcChargeHysteresis: "Histéresis de carga", bcBackup: "Función de respaldo", bcOffgridMode: "Modo off-grid",
-    bcBackupThreshold: "Umbral de respaldo", bcVoltageTaper: "Reducción carga 100%", bcActiveBalance: "Balanceo activo", bcBatteryPhase: "Fase de la batería",
+    bcBackupThreshold: "Umbral de respaldo", bcVoltageTaper: "Reducción carga 100%", bcBatteryPhase: "Fase de la batería",
     secPhaseProtection: "Protección trifásica", threePhaseProtection: "Protección de corriente trifásica",
     secManual: "Modo manual", itemEnable: "Activar",
     secTempLimit: "Límite de carga por temperatura", itemTempLimitC: "Límite de temperatura", itemTempLimitBand: "Banda de reducción", itemTempLimitFloor: "Potencia de carga mínima", itemTempApplyDischarge: "Reducir también la descarga",
@@ -581,10 +581,8 @@ const BAT_CONTROLS = [
   // Zendure off-grid output port mode (select: normal/economy/off). Distinct from
   // the Marstek backup_function switch; only one exists per device.
   { key: "grid_off_mode", domain: "select", lk: "bcOffgridMode", icon: "mdi:transmission-tower-off" },
-  // Cell-maintenance switches (Marstek only): 100% charge voltage taper and active
-  // balancing. Both default-enabled per battery; absent on Zendure/Anker.
+  // Cell-maintenance switch (Marstek only): 100% charge voltage taper.
   { key: "full_charge_voltage_taper", domain: "switch", lk: "bcVoltageTaper", icon: "mdi:battery-clock" },
-  { key: "active_balance_mode", domain: "switch", lk: "bcActiveBalance", icon: "mdi:battery-sync" },
 ];
 
 // Unified Control tab: system-level entities grouped BY FEATURE — each section

@@ -376,31 +376,6 @@ IDLE_RUNAWAY_GRACE_S = 15
 # becomes dischargeable again after recovering this many percent above min_soc.
 DISCHARGE_MIN_SOC_REENTRY_MARGIN = 2
 
-# Active balance mode.
-# Once the battery has reached the top, keep the cells in the balancing window
-# with gentle charge/discharge micro-cycles instead of only resting at 100% SOC.
-ACTIVE_BALANCE_CHARGE_RESUME_CELL_VOLTAGE = 3.49
-ACTIVE_BALANCE_CHARGE_STOP_CELL_VOLTAGE = 3.60
-ACTIVE_BALANCE_DISCHARGE_STOP_CELL_VOLTAGE = 3.49
-ACTIVE_BALANCE_FINAL_DISCHARGE_STOP_CELL_VOLTAGE = 3.48
-ACTIVE_BALANCE_MEASURE_WAIT_SECONDS = 60
-ACTIVE_BALANCE_ADAPTIVE_RESUME_STEP_V = 0.01
-ACTIVE_BALANCE_ADAPTIVE_MIN_RESUME_CELL_VOLTAGE = 3.40
-# Give a new active-balance charge leg time to engage before a near-zero power
-# sample can count as BMS rejection. DISCHARGE -> CHARGE briefly reports Standby
-# and residual ~0 W while the new 95 W command is taking effect; without this
-# grace, repeated control ticks over that transition are mistaken for a cutoff.
-ACTIVE_BALANCE_CHARGE_ENGAGE_GRACE_S = 10
-# Consecutive ~0 W charge-rejection detections required after the engage grace
-# (or after charge has first been observed) before treating a below-stop charge
-# as a real BMS cut.
-ACTIVE_BALANCE_CHARGE_REJECT_DEBOUNCE_CYCLES = 3
-ACTIVE_BALANCE_CHARGE_POWER_W = 95
-ACTIVE_BALANCE_DISCHARGE_POWER_W = 200
-ACTIVE_BALANCE_MODE_TARGET_DELTA_V = 0.03
-
-# Per-battery scheduled active balance mode.
-CONF_ACTIVE_BALANCE_MODE_ENABLED = "active_balance_mode_enabled"
 CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED = "full_charge_voltage_taper_enabled"
 DEFAULT_FULL_CHARGE_VOLTAGE_TAPER_ENABLED = True
 

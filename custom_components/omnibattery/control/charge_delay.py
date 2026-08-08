@@ -270,14 +270,8 @@ class ChargeDelayManager:
                 )
                 continue
             soc = coordinator.data.get("battery_soc") if coordinator.data else None
-            active_balance_enabled = bool(
-                getattr(coordinator, "active_balance_mode_enabled", False)
-            )
-            # Active balance owns only its selected battery; other batteries at
-            # the floor must retain their individual charge-delay block.
             if (
                 setpoint_active
-                and not active_balance_enabled
                 and soc is not None
                 and soc >= ctrl._delay_soc_setpoint
             ):

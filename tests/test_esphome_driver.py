@@ -104,6 +104,13 @@ def test_match_entities_entity_id_fallback():
     assert resolved["force_mode"] == "select.mydevice_forcible_charge_discharge"
 
 
+def test_legacy_force_mode_option_names_are_still_decoded():
+    assert EsphomeEntityDriver._decode("force_mode", "stop") == 0
+    assert EsphomeEntityDriver._decode("force_mode", "standby") == 0
+    assert EsphomeEntityDriver._decode("force_mode", "charge") == 1
+    assert EsphomeEntityDriver._decode("force_mode", "discharge") == 2
+
+
 # ---------------------------------------------------------------------------
 # Telemetry
 # ---------------------------------------------------------------------------
@@ -116,7 +123,7 @@ async def test_read_telemetry_decodes_states():
         _ENTITIES["ac_power"]: "830",
         _ENTITIES["battery_voltage"]: "52.3",
         _ENTITIES["inverter_state"]: "Discharge",
-        _ENTITIES["force_mode"]: "discharge",
+        _ENTITIES["force_mode"]: "Discharge",
         _ENTITIES["user_work_mode"]: "manual",
         _ENTITIES["backup_function"]: "disable",
         _ENTITIES["rs485_control_mode"]: "enable",
@@ -177,7 +184,7 @@ async def test_apply_setpoint_charge(monkeypatch):
     import asyncio as _asyncio
     monkeypatch.setattr(_asyncio, "sleep", AsyncMock())
     driver = _driver({
-        _ENTITIES["force_mode"]: "charge",
+        _ENTITIES["force_mode"]: "Charge",
         _ENTITIES["set_charge_power"]: "800",
         _ENTITIES["set_discharge_power"]: "0",
         _ENTITIES["battery_power"]: "790",
@@ -190,7 +197,7 @@ async def test_apply_setpoint_charge(monkeypatch):
     # discharge number, charge number, then the force select — Marstek order
     assert calls[0] == ("number", "set_value", {"entity_id": _ENTITIES["set_discharge_power"], "value": 0})
     assert calls[1] == ("number", "set_value", {"entity_id": _ENTITIES["set_charge_power"], "value": 800})
-    assert calls[2] == ("select", "select_option", {"entity_id": _ENTITIES["force_mode"], "option": "charge"})
+    assert calls[2] == ("select", "select_option", {"entity_id": _ENTITIES["force_mode"], "option": "Charge"})
 
 
 @pytest.mark.asyncio
@@ -201,7 +208,7 @@ async def test_apply_setpoint_discharge_clamps_to_capability():
     assert result.net_power_w == -2500
     calls = _calls(driver)
     assert calls[0][2]["value"] == 2500
-    assert calls[2][2]["option"] == "discharge"
+    assert calls[2][2]["option"] == "Discharge"
 
 
 @pytest.mark.asyncio
@@ -209,7 +216,7 @@ async def test_apply_setpoint_idle_and_failure():
     driver = _driver({})
     result = await driver.apply_setpoint(0, read_back=False)
     assert result.ok
-    assert _calls(driver)[2][2]["option"] == "stop"
+    assert _calls(driver)[2][2]["option"] == "None"
 
     driver.hass.services.async_call = AsyncMock(side_effect=Exception("boom"))
     result = await driver.apply_setpoint(500, read_back=False)
@@ -225,7 +232,7 @@ async def test_write_control_maps_wire_values():
     assert await driver.write_control("max_charge_power", 2000)
     assert not await driver.write_control("nonexistent_key", 1)
     calls = _calls(driver)
-    assert calls[0] == ("select", "select_option", {"entity_id": _ENTITIES["force_mode"], "option": "charge"})
+    assert calls[0] == ("select", "select_option", {"entity_id": _ENTITIES["force_mode"], "option": "Charge"})
     assert calls[1] == ("select", "select_option", {"entity_id": _ENTITIES["rs485_control_mode"], "option": "disable"})
     assert calls[2] == ("number", "set_value", {"entity_id": _ENTITIES["max_charge_power"], "value": 2000})
 

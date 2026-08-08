@@ -29,7 +29,7 @@ Esto preserva el comportamiento anterior: las "franjas de no-descarga" existente
 ## Comportamiento por modo
 
 - **Modo PD (por defecto)**: la franja actúa como restricción. Los overrides de SOC y potencia se aplican sobre el lazo PD normal; el controlador sigue respondiendo a red y consumo.
-- **Modo Manual**: requiere el tick de potencia activo y exactamente una de `allow_charge` / `allow_discharge` activada. La batería se fuerza a esa potencia exacta (force charge o force discharge) y se excluye de la asignación PD durante el ciclo. Los blockers de seguridad (SOC mín, SOC máx, pausa VE, balance activo) siguen deteniendo la escritura manual.
+- **Modo Manual**: requiere el tick de potencia activo y exactamente una de `allow_charge` / `allow_discharge` activada. La batería se fuerza a esa potencia exacta (force charge o force discharge) y se excluye de la asignación PD durante el ciclo. La propiedad de Battery Manual Mode y los bloqueos de seguridad (SOC mín, SOC máx, pausa VE) siguen siendo autoritativos.
 
 ## Alcance por batería
 

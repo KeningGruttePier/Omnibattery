@@ -592,7 +592,6 @@ def _prepare_runtime_manager(
         battery: battery.max_soc
         for battery in ctrl.coordinators
     }
-    ctrl._is_active_balance_mode_running = lambda _battery: False
 
     async def set_power(battery, charge, discharge):
         commands.append((battery.name, charge, discharge))

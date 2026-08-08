@@ -223,9 +223,9 @@ protocolo:
 |---|---|
 | SOC | `battery_soc`, registro `37005`, `uint16`, `%` |
 | Potencia medida | `battery_power`, registro `30001`, `int16`; positiva al cargar y negativa al descargar |
-| Orden de carga | `set_discharge_power=0`, `set_charge_power=W`, `force_mode=charge` |
-| Orden de descarga | `set_discharge_power=W`, `set_charge_power=0`, `force_mode=discharge` |
-| Reposo | Ambos setpoints a `0` y `force_mode=stop` |
+| Orden de carga | `set_discharge_power=0`, `set_charge_power=W`, `force_mode=Charge` |
+| Orden de descarga | `set_discharge_power=W`, `set_charge_power=0`, `force_mode=Discharge` |
+| Reposo | Ambos setpoints a `0` y `force_mode=None` |
 | Sobre de potencia | Setpoints `0–2500 W`, paso documentado `50 W`; límites de instalación en `max_charge_power`/`max_discharge_power` |
 | Potencia mínima declarada | `800 W` para los límites v3; se refleja en las capacidades del driver |
 | Control externo | `rs485_control_mode`, comandos específicos `0x55AA`/`0x55BB` |

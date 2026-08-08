@@ -1339,9 +1339,6 @@
       "full_charge_voltage_taper": {
         "name": "Reducció Càrrega 100% per Voltatge"
       },
-      "active_balance_mode": {
-        "name": "Mode de Balanç Actiu"
-      },
       "automation_charging_active": {
         "name": "Càrrega per Preu Extern"
       },
@@ -1450,7 +1447,6 @@
           "manual": "Mode Manual",
           "grid_charging": "Carregant des de la Xarxa",
           "weekly_full_charge": "Càrrega Setmanal Completa",
-          "active_balance_mode": "Mode de Balanç Actiu",
           "charge_delayed": "Càrrega Retardada",
           "waiting_for_solar": "Esperant Solar",
           "charging_to_setpoint": "Carregant al Setpoint",

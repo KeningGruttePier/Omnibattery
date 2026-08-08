@@ -56,7 +56,6 @@ subpackages by responsibility.
 | `control/charge_delay.py` | — | Solar charge delay |
 | `control/max_soc_charge.py` | — | 100 % voltage taper / top-of-charge protection |
 | `control/weekly_full_charge.py` | `WeeklyFullChargeManager` | Weekly full charge state, persistence and register-write orchestration |
-| `control/active_balance_mode.py` | — | Active cell-balance measurement |
 | `tracking/consumption_tracker.py` | `ConsumptionTracker` | Consumption history, daily energy accumulators, solar-timing detection, recorder backfill, daily capture |
 | `tracking/balance_monitor.py` | `CellBalanceMonitor` | Post-full-charge cell voltage spread measurement and health history |
 | `tracking/non_responsive_tracker.py` | `NonResponsiveTracker` | Non-responsive battery detection and 5-minute exclusion windows |

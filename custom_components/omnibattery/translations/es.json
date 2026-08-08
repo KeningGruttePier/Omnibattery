@@ -1357,9 +1357,6 @@
       "full_charge_voltage_taper": {
         "name": "Reduccion Carga 100% por Voltaje"
       },
-      "active_balance_mode": {
-        "name": "Modo de Balanceo Activo"
-      },
       "automation_charging_active": {
         "name": "Carga por Precio Externo"
       },
@@ -1450,7 +1447,6 @@
           "manual": "Modo Manual",
           "grid_charging": "Cargando desde la Red",
           "weekly_full_charge": "Carga Semanal Completa",
-          "active_balance_mode": "Modo de Balanceo Activo",
           "charge_delayed": "Carga Retrasada",
           "waiting_for_solar": "Esperando Solar",
           "charging_to_setpoint": "Cargando al Setpoint",

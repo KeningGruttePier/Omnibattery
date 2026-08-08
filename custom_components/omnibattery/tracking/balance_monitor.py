@@ -131,8 +131,9 @@ class BalanceMonitor:
     async def async_process(self, coordinator: Any) -> None:
         """Clear legacy OCV state.
 
-        Imbalance readings are now recorded only by explicit 3.55 V top-charge
-        measurements and active-balance measurements.
+        Imbalance readings are now recorded only by explicit top-charge
+        measurements. Historical active-balance records remain readable but are
+        no longer produced by the integration.
         """
         host = coordinator.device_key
         if host not in self._states:
@@ -146,75 +147,6 @@ class BalanceMonitor:
             state.stable_polls = 0
             state.prev_vmax = None
             await self._persist_state(host, state)
-
-    # ------------------------------------------------------------------
-    # External entry point — called by the active-balance controller
-    # ------------------------------------------------------------------
-
-    async def async_record_active_balance_transition(
-        self,
-        coordinator: Any,
-        vmax: float,
-        vmin: float,
-        soc: float | None,
-        from_phase: str | None,
-        to_phase: str,
-    ) -> None:
-        """Record a delta reading when the active-balance mode switches phase.
-
-        The current use case is the CHARGE/HOLD -> DISCHARGE transition. It is
-        persisted as ``active_balance_transition`` for diagnostics, but does not
-        feed the Cell Delta entity, its average, trend or top-charge evaluator.
-        """
-        try:
-            vmax_f = float(vmax)
-            vmin_f = float(vmin)
-        except (TypeError, ValueError):
-            return
-        try:
-            soc_f = float(soc) if soc is not None else None
-        except (TypeError, ValueError):
-            soc_f = None
-        delta_mv = (vmax_f - vmin_f) * 1000
-        extra = {"from_phase": from_phase, "to_phase": to_phase}
-        await self._save_reading(
-            coordinator.device_key,
-            delta_mv,
-            vmax_f,
-            vmin_f,
-            soc_f,
-            "active_balance_transition",
-            extra=extra,
-        )
-
-    async def async_record_active_balance_measurement(
-        self,
-        coordinator: Any,
-        vmax: float,
-        vmin: float,
-        soc: float | None,
-        phase: str | None = None,
-    ) -> None:
-        """Record the explicit active-balance top delta measurement."""
-        try:
-            vmax_f = float(vmax)
-            vmin_f = float(vmin)
-        except (TypeError, ValueError):
-            return
-        try:
-            soc_f = float(soc) if soc is not None else None
-        except (TypeError, ValueError):
-            soc_f = None
-        delta_mv = (vmax_f - vmin_f) * 1000
-        await self._save_reading(
-            coordinator.device_key,
-            delta_mv,
-            vmax_f,
-            vmin_f,
-            soc_f,
-            "active_balance_measurement",
-            extra={"phase": phase},
-        )
 
     async def async_record_top_balance_measurement(
         self,
@@ -327,8 +259,8 @@ class BalanceMonitor:
             issues.append(
                 f"High cell imbalance ({delta_mv:.0f} mV) for "
                 f"{bat['consecutive_red']} consecutive full charges. Consider "
-                f"enabling the 'Active Balance Mode' switch for this battery to "
-                f"rebalance the cells."
+                f"running the Marstek active-balance blueprint for this battery "
+                f"to rebalance the cells."
             )
 
         return status, severe
@@ -448,6 +380,9 @@ class BalanceMonitor:
         if reading.get("delta_mV") is None:
             return False
         reading_type = reading.get("type")
+        # Keep filtering records written by pre-blueprint releases so an old
+        # history store remains interpretable after the integrated runner is
+        # removed. New code never writes either legacy reading type.
         if reading_type == "active_balance_transition":
             return False
         if reading_type == "active_balance_measurement":

@@ -11,11 +11,9 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.util import dt as dt_util
 
 from .const import (
     DOMAIN,
-    CONF_ACTIVE_BALANCE_MODE_ENABLED,
     CONF_CAPACITY_PROTECTION_ENABLED,
     CONF_CAPACITY_PROTECTION_EXCLUDED_DEVICES,
     CONF_DELAY_SOC_SETPOINT_ENABLED,
@@ -75,11 +73,10 @@ async def async_setup_entry(
             entities.append(BatteryAllowChargeSwitch(hass, entry, controller, coordinator))
             entities.append(BatteryAllowDischargeSwitch(hass, entry, controller, coordinator))
             entities.append(BatteryManualModeSwitch(hass, entry, controller, coordinator))
-            # Marstek-only cell maintenance: voltage taper + active balance need
-            # per-cell voltages Anker/Zendure do not expose the same way.
+            # Marstek-only cell maintenance: voltage taper needs per-cell
+            # voltages that Anker/Zendure do not expose in the same way.
             if coordinator.brand not in ("zendure", "anker"):
                 entities.append(BatteryFullChargeVoltageTaperSwitch(hass, entry, controller, coordinator))
-                entities.append(BatteryActiveBalanceModeSwitch(hass, entry, controller, coordinator))
 
     # Add manual mode switch (system-level, always present)
     if controller:
@@ -473,51 +470,6 @@ class BatteryFullChargeVoltageTaperSwitch(SwitchEntity):
     @property
     def device_info(self):
         return self.coordinator.battery_device_info
-
-
-class BatteryActiveBalanceModeSwitch(SwitchEntity):
-    """Switch enabling active balancing for one battery."""
-
-    def __init__(self, hass: HomeAssistant, entry: ConfigEntry, controller, coordinator) -> None:
-        self.hass = hass
-        self.entry = entry
-        self.controller = controller
-        self.coordinator = coordinator
-
-        self._attr_has_entity_name = True
-        self._attr_translation_key = "active_balance_mode"
-        self._attr_unique_id = f"{coordinator.device_key}_active_balance_mode"
-        self.entity_id = english_entity_id("switch", coordinator.name, "active_balance_mode")
-        self._attr_icon = "mdi:battery-sync"
-        self._attr_should_poll = False
-
-    @property
-    def is_on(self) -> bool:
-        return bool(getattr(self.coordinator, CONF_ACTIVE_BALANCE_MODE_ENABLED, False))
-
-    def _persist(self, enabled: bool) -> None:
-        setattr(self.coordinator, CONF_ACTIVE_BALANCE_MODE_ENABLED, enabled)
-        self.coordinator.persist_battery_config(CONF_ACTIVE_BALANCE_MODE_ENABLED, enabled)
-
-    async def async_turn_on(self, **kwargs) -> None:
-        self._persist(True)
-        self.async_write_ha_state()
-
-    async def async_turn_off(self, **kwargs) -> None:
-        self._persist(False)
-        if self.controller._active_balance_mode_started(self.coordinator):
-            await self.controller._complete_active_balance_mode(
-                self.coordinator,
-                "disabled",
-                dt_util.now().date().isoformat(),
-                mark_completed=False,
-            )
-        self.async_write_ha_state()
-
-    @property
-    def device_info(self):
-        return self.coordinator.battery_device_info
-
 
 class PredictiveChargingSwitch(SwitchEntity):
     """Switch to enable/disable predictive grid charging at runtime.

@@ -1330,9 +1330,6 @@
       "full_charge_voltage_taper": {
         "name": "100% Charge Voltage Taper"
       },
-      "active_balance_mode": {
-        "name": "Active Balance Mode"
-      },
       "automation_charging_active": {
         "name": "External Price Charging"
       },
@@ -1441,7 +1438,6 @@
           "manual": "Manual Mode",
           "grid_charging": "Charging from Grid",
           "weekly_full_charge": "Weekly Full Charge",
-          "active_balance_mode": "Active Balance Mode",
           "charge_delayed": "Charge Delayed",
           "waiting_for_solar": "Waiting for Solar",
           "charging_to_setpoint": "Charging to Setpoint",

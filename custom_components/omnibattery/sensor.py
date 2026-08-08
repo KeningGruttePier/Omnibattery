@@ -811,12 +811,6 @@ class IntegrationStatusSensor(SensorEntity):
             if c._weekly_charge_status.get("state") in ("Charging to 100%", "Active balancing"):
                 return "weekly_full_charge"
 
-        if any(
-            status.get("state") == "active"
-            for status in c.get_active_balance_mode_status().values()
-        ):
-            return "active_balance_mode"
-
         # Priority 4: Charge delay states
         if c.charge_delay_enabled:
             delay_state = c._charge_delay_status.get("state", "Idle")
@@ -969,10 +963,6 @@ class IntegrationStatusSensor(SensorEntity):
         normal_balance = c.get_max_soc_charge_status()
         if normal_balance:
             attrs["normal_balance_protection"] = normal_balance
-
-        active_balance_mode = c.get_active_balance_mode_status()
-        if active_balance_mode:
-            attrs["active_balance_mode"] = active_balance_mode
 
         non_responsive = c.non_responsive_battery_names
         if non_responsive:
