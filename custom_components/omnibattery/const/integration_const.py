@@ -97,7 +97,7 @@ PHASE_L2 = "l2"
 PHASE_L3 = "l3"
 PHASE_VALUES = (PHASE_L1, PHASE_L2, PHASE_L3)
 # Explicit selector value for a battery that is outside the protected phase
-# layout. Runtime treats it as unassigned and fails safe while protection is on.
+# layout. Runtime leaves it outside the phase-protection envelope.
 PHASE_UNASSIGNED = "unassigned"
 PHASE_ASSIGNMENT_VALUES = (PHASE_UNASSIGNED, *PHASE_VALUES)
 PHASE_CONFIG = {

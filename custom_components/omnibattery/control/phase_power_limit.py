@@ -444,7 +444,7 @@ class PhasePowerLimiter:
         is_charging: bool,
         available_batteries: list[Any] | None = None,
     ) -> dict[Any, int]:
-        """Cap the normal plan, then place rejected power on phases with room."""
+        """Cap protected phases and leave unassigned batteries unrestricted."""
         allocation = {coordinator: 0 for coordinator in requested_allocation}
         if not self.enabled:
             return {
@@ -452,9 +452,14 @@ class PhasePowerLimiter:
                 for coordinator, power in requested_allocation.items()
             }
 
+        # A battery explicitly marked Unassigned is outside this safety
+        # envelope. Preserve its normal allocation so enabling phase protection
+        # does not change its operation.
         for coordinator in requested_allocation:
             if self._battery_phase(coordinator) not in PHASE_VALUES:
-                self._set_degraded_reason(coordinator, "battery_phase_missing")
+                allocation[coordinator] = max(
+                    0, int(requested_allocation[coordinator])
+                )
 
         for phase in PHASE_VALUES:
             phase_request = {
@@ -510,6 +515,16 @@ class PhasePowerLimiter:
                 break
             phase = self._battery_phase(coordinator)
             if phase not in PHASE_VALUES:
+                battery_room = _round_down(
+                    self._individual_limit(coordinator, is_charging)
+                    - allocation[coordinator],
+                    self.rounding_w,
+                )
+                extra = min(remaining, battery_room)
+                if extra <= 0:
+                    continue
+                allocation[coordinator] += extra
+                remaining -= extra
                 continue
             snapshot = self._snapshots.get(phase) or self.phase_snapshot(phase)
             if snapshot["degraded"]:
@@ -598,8 +613,11 @@ class PhasePowerLimiter:
 
         phase = self._battery_phase(coordinator)
         if phase not in PHASE_VALUES:
-            self._set_degraded_reason(coordinator, "battery_phase_missing")
-            return 0, 0
+            own_limit = _round_down(
+                self._individual_limit(coordinator, is_charging), self.rounding_w
+            )
+            allowed = _round_down(min(float(requested), own_limit), self.rounding_w)
+            return (allowed, 0) if is_charging else (0, allowed)
         snapshot = self.phase_snapshot(phase)
         if snapshot["degraded"]:
             return 0, 0
@@ -633,30 +651,6 @@ class PhasePowerLimiter:
             snapshot["assigned_power_w"] = allowed if is_charging else -allowed
             self._log_limit(snapshot, requested, allowed)
         return (allowed, 0) if is_charging else (0, allowed)
-
-    def _set_degraded_reason(self, coordinator: Any, reason: str) -> None:
-        phase = self._battery_phase(coordinator)
-        if phase not in PHASE_VALUES:
-            phase = PHASE_UNASSIGNED
-        snapshot = self._snapshots.setdefault(
-            phase,
-            {
-                "phase": phase,
-                "reading_a": None,
-                "limit_a": None,
-                "base_a": None,
-                "charge_budget_a": 0.0,
-                "discharge_budget_a": 0.0,
-                "charge_budget_w": 0.0,
-                "discharge_budget_w": 0.0,
-                "assigned_power_w": 0.0,
-                "requested_power_w": 0.0,
-                "degraded": True,
-                "reason": reason,
-            },
-        )
-        snapshot.update({"degraded": True, "reason": reason})
-        self._log_state_change(snapshot)
 
     def _log_state_change(self, snapshot: dict[str, Any]) -> None:
         phase = snapshot.get("phase", "?")

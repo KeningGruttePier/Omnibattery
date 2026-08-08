@@ -20,6 +20,7 @@ from custom_components.omnibattery.const import (
     PHASE_L1,
     PHASE_L2,
     PHASE_L3,
+    PHASE_UNASSIGNED,
     SLOT_MODE_MANUAL,
 )
 from custom_components.omnibattery.control import (
@@ -405,10 +406,10 @@ def test_unconfigured_phases_are_optional_and_unlimited():
     assert limiter.limit_single_command(l2_battery, 1000, 0) == (1000, 0)
 
 
-def test_direct_command_guard_blocks_unassigned_and_caps_valid_phase():
+def test_unassigned_battery_is_exempt_and_valid_phase_is_capped():
     now = datetime.now(timezone.utc)
     b1 = FakeCoordinator("L1 battery", PHASE_L1)
-    unassigned = FakeCoordinator("Unassigned", "")
+    unassigned = FakeCoordinator("Unassigned", PHASE_UNASSIGNED)
     limiter = _limiter(
         {
             "sensor.l1": _state(20, now=now),
@@ -419,7 +420,9 @@ def test_direct_command_guard_blocks_unassigned_and_caps_valid_phase():
     )
 
     assert limiter.limit_single_command(b1, 2000, 0) == (1035, 0)
-    assert limiter.limit_single_command(unassigned, 1000, 0) == (0, 0)
+    assert limiter.limit_single_command(unassigned, 1000, 0) == (1000, 0)
+    assert limiter.limit_allocation({unassigned: 1500}, True) == {unassigned: 1500}
+    assert limiter.has_degraded_phase() is False
 
 
 def test_config_validation_rejects_duplicate_sensors_and_bad_units():
