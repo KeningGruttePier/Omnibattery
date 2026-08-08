@@ -535,6 +535,73 @@ DEFAULT_SYSTEM_MAX_DISCHARGE_POWER = 0    # 0 = disabled
 # Legacy alias so existing __init__.py imports don't break during transition
 DEFAULT_SLOT_TARGET_GRID_POWER = DEFAULT_TARGET_GRID_POWER
 
+
+# --- Configured system power envelope ---------------------------------------
+# Single source of truth for "how much power did the user configure this system
+# to move", derived from config_entry.data alone (no hass, no coordinators).
+#
+# Deliberately NOT MarstekController._effective_system_capacity: that one sums
+# the *live* per-coordinator limits after temperature derate, SOC taper and slot
+# ceilings for the current control cycle. This is the *static configured*
+# envelope, which is what a UI bound must advertise. Do not merge them — slider
+# bounds must not jump around with battery temperature.
+
+def _non_negative_int(value) -> int:
+    """Coerce a config value to a non-negative int (missing/None/junk -> 0)."""
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def total_battery_power(data) -> tuple[int, int]:
+    """Return (charge_w, discharge_w) summed over the configured battery limits."""
+    batteries = data.get("batteries") or []
+    return (
+        sum(_non_negative_int(b.get("max_charge_power")) for b in batteries),
+        sum(_non_negative_int(b.get("max_discharge_power")) for b in batteries),
+    )
+
+
+def system_power_limits_enabled(data) -> bool:
+    """Return whether the optional system-wide power cap is active.
+
+    Entries predating CONF_ENABLE_SYSTEM_POWER_LIMITS had the feature on iff a
+    non-zero cap was set, so that stays the default for the missing key.
+    """
+    charge = _non_negative_int(
+        data.get(CONF_SYSTEM_MAX_CHARGE_POWER, DEFAULT_SYSTEM_MAX_CHARGE_POWER)
+    )
+    discharge = _non_negative_int(
+        data.get(CONF_SYSTEM_MAX_DISCHARGE_POWER, DEFAULT_SYSTEM_MAX_DISCHARGE_POWER)
+    )
+    return bool(
+        data.get(CONF_ENABLE_SYSTEM_POWER_LIMITS, charge > 0 or discharge > 0)
+    )
+
+
+def effective_system_power(data) -> tuple[int, int]:
+    """Return (charge_w, discharge_w) after the optional system-wide cap.
+
+    A cap of 0 means "disabled" for that direction, mirroring
+    MarstekController._configured_system_limit. The cap can only narrow the
+    per-battery sum, never widen it.
+    """
+    charge_w, discharge_w = total_battery_power(data)
+    if not system_power_limits_enabled(data):
+        return charge_w, discharge_w
+
+    charge_cap = _non_negative_int(
+        data.get(CONF_SYSTEM_MAX_CHARGE_POWER, DEFAULT_SYSTEM_MAX_CHARGE_POWER)
+    )
+    discharge_cap = _non_negative_int(
+        data.get(CONF_SYSTEM_MAX_DISCHARGE_POWER, DEFAULT_SYSTEM_MAX_DISCHARGE_POWER)
+    )
+    return (
+        min(charge_w, charge_cap) if charge_cap else charge_w,
+        min(discharge_w, discharge_cap) if discharge_cap else discharge_w,
+    )
+
 # PD Tuning Profiles
 # One-click presets for the PD response-shape parameters (Kp, Kd, max power
 # change). Selecting a profile writes those at once; the "custom" profile leaves
@@ -662,6 +729,10 @@ PRICE_INTEGRATION_TIBBER = "tibber"
 TIBBER_REFRESH_MINUTES = 60
 NORDPOOL_REFRESH_MINUTES = 60
 
+# Marker for CONFIG_NUMBER_DEFINITIONS entries whose slider bounds are derived
+# at runtime; the authored min/max become the fallback.
+DYNAMIC_BOUNDS_SYSTEM_POWER = "system_power"
+
 # Configuration Number Definitions (for config entities exposed in the UI)
 CONFIG_NUMBER_DEFINITIONS = [
     {
@@ -765,12 +836,16 @@ CONFIG_NUMBER_DEFINITIONS = [
     {
         "key": CONF_TARGET_GRID_POWER,
         "name": "PD Target Grid Power",
+        # Fallback only. The live bounds follow the configured system power
+        # envelope (see DYNAMIC_BOUNDS_SYSTEM_POWER); these apply when no
+        # battery limits are configured yet, or a direction is configured to 0 W.
         "min": -2500,
         "max": 2500,
         "step": 10,
         "unit": "W",
         "default": DEFAULT_TARGET_GRID_POWER,
         "icon": "mdi:transmission-tower-export",
+        "dynamic_bounds": DYNAMIC_BOUNDS_SYSTEM_POWER,
     },
     {
         "key": CONF_SYSTEM_MAX_CHARGE_POWER,

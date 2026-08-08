@@ -497,7 +497,7 @@
           "pd_direction_hysteresis": "Leistungsschwelle zum Wechsel zwischen Laden und Entladen. Verhindert schnelle Richtungswechsel. Bereich: 0-200W, Standard: 60W",
           "pd_min_charge_power": "Minimale Leistung zum Laden. Unterhalb dieser Schwelle bleibt der Regler im Leerlauf statt mit niedriger Leistung zu laden. 0 = deaktiviert.",
           "pd_min_discharge_power": "Minimale Leistung zum Entladen. Unterhalb dieser Schwelle bleibt der Regler im Leerlauf statt mit niedriger Leistung zu entladen. 0 = deaktiviert.",
-          "pd_target_grid_power": "Netzleistungs-Sollwert, auf den der Regler regelt. Negativ = Einspeisung, positiv = Bezug, 0 = Netto-Null. Bereich: -500 bis +500 W, Standard: 0 W.",
+          "pd_target_grid_power": "Netzleistungs-Sollwert, auf den der Regler regelt. Positiv = Bezug aus dem Netz (Batterie lädt), negativ = Einspeisung ins Netz (Batterie entlädt), 0 = Netto-Null. Der Bereich richtet sich nach der insgesamt konfigurierten Batterieleistung, begrenzt durch die System-Leistungsgrenzen, wenn diese aktiv sind. Standard: 0 W.",
           "enable_system_power_limits": "Wenn aktiviert, begrenzen die beiden Slider unten die kombinierte Lade-/Entladeleistung aller aktiven Batterien.",
           "system_max_charge_power": "Optionales Limit fuer die kombinierte Ladeleistung aller aktiven Batterien. 0 = deaktiviert; Limits pro Batterie gelten weiterhin.",
           "system_max_discharge_power": "Optionales Limit fuer die kombinierte Entladeleistung aller aktiven Batterien. 0 = deaktiviert; Limits pro Batterie gelten weiterhin."
@@ -1150,7 +1150,7 @@
           "pd_direction_hysteresis": "Leistungsschwelle zum Wechsel zwischen Laden und Entladen. Verhindert schnelle Richtungswechsel. Bereich: 0-200W, Standard: 60W",
           "pd_min_charge_power": "Minimale Leistung zum Laden. Unterhalb dieser Schwelle bleibt der Regler im Leerlauf statt mit niedriger Leistung zu laden. 0 = deaktiviert.",
           "pd_min_discharge_power": "Minimale Leistung zum Entladen. Unterhalb dieser Schwelle bleibt der Regler im Leerlauf statt mit niedriger Leistung zu entladen. 0 = deaktiviert.",
-          "pd_target_grid_power": "Netzleistungs-Sollwert, auf den der Regler regelt. Negativ = Einspeisung, positiv = Bezug, 0 = Netto-Null. Bereich: -500 bis +500 W, Standard: 0 W.",
+          "pd_target_grid_power": "Netzleistungs-Sollwert, auf den der Regler regelt. Positiv = Bezug aus dem Netz (Batterie lädt), negativ = Einspeisung ins Netz (Batterie entlädt), 0 = Netto-Null. Der Bereich richtet sich nach der insgesamt konfigurierten Batterieleistung, begrenzt durch die System-Leistungsgrenzen, wenn diese aktiv sind. Standard: 0 W.",
           "enable_system_power_limits": "Wenn aktiviert, begrenzen die beiden Slider unten die kombinierte Lade-/Entladeleistung aller aktiven Batterien.",
           "system_max_charge_power": "Optionales Limit fuer die kombinierte Ladeleistung aller aktiven Batterien. 0 = deaktiviert; Limits pro Batterie gelten weiterhin.",
           "system_max_discharge_power": "Optionales Limit fuer die kombinierte Entladeleistung aller aktiven Batterien. 0 = deaktiviert; Limits pro Batterie gelten weiterhin."

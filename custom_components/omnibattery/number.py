@@ -13,6 +13,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
     CONFIG_NUMBER_DEFINITIONS,
+    DYNAMIC_BOUNDS_SYSTEM_POWER,
     CONF_ENABLE_SYSTEM_POWER_LIMITS,
     CONF_MAX_PRICE_THRESHOLD,
     CONF_DISCHARGE_PRICE_THRESHOLD,
@@ -42,6 +43,7 @@ from .const import (
     MIN_CHARGE_HYSTERESIS_PERCENT,
     MAX_CHARGE_HYSTERESIS_PERCENT,
     DOMAIN,
+    effective_system_power,
 )
 from .infra.coordinator import MarstekVenusDataUpdateCoordinator
 from .infra.entity_naming import (
@@ -307,6 +309,57 @@ class MarstekVenusNumber(CoordinatorEntity, NumberEntity):
         return self.coordinator.battery_device_info
 
 
+def _floor_to_step(value: int, step) -> int:
+    """Floor a bound magnitude onto the slider's absolute step grid.
+
+    HA number sliders snap to absolute multiples of ``step``, and the dashboard
+    panel floors the element's min the same way (marstek-panel.js ``_sliderMin``).
+    Rounding *down* keeps every advertised bound reachable and never advertises
+    more power than the user actually configured.
+    """
+    try:
+        s = float(step)
+    except (TypeError, ValueError):
+        return value
+    if s <= 0:
+        return value
+    return int(value // s * s)
+
+
+def config_number_bounds(definition: dict, data) -> tuple[float, float]:
+    """Return (min, max) for a CONFIG_NUMBER_DEFINITIONS entry.
+
+    Entries without a ``dynamic_bounds`` marker keep their authored min/max.
+    The system-power marker derives them from the configured per-battery limits,
+    narrowed by the optional system cap:
+
+        max = +sum(max_charge_power)     (positive = import -> battery charges)
+        min = -sum(max_discharge_power)  (negative = export -> battery discharges)
+
+    Units: authored min/max are already in *display* units (the charge-delay
+    margin is authored in hours with ``scale: 60``), while a dynamic source
+    yields *stored* units — so only the dynamic branch divides by ``scale``.
+
+    Each direction independently falls back to its authored bound when its sum
+    floors to 0. That keeps the slider non-degenerate (HA needs min < max, and
+    the frontend divides by ``max - min``) and preserves the historical
+    +/-2500 W range for a not-yet-configured entry.
+    """
+    static_min, static_max = definition["min"], definition["max"]
+    if definition.get("dynamic_bounds") != DYNAMIC_BOUNDS_SYSTEM_POWER:
+        return static_min, static_max
+
+    charge_w, discharge_w = effective_system_power(data)
+    step = definition.get("step", 1)
+    scale = definition.get("scale", 1) or 1
+    hi = _floor_to_step(charge_w, step)
+    lo = _floor_to_step(discharge_w, step)
+    return (
+        -lo / scale if lo > 0 else static_min,
+        hi / scale if hi > 0 else static_max,
+    )
+
+
 class MarstekConfigNumberEntity(NumberEntity):
     """Number entity for system-level configuration parameters (PD controller, etc.)."""
 
@@ -323,8 +376,8 @@ class MarstekConfigNumberEntity(NumberEntity):
         self.entity_id = system_entity_id("number", definition["key"])
         self._attr_icon = definition.get("icon")
         self._attr_native_unit_of_measurement = definition.get("unit")
-        self._attr_native_min_value = definition["min"]
-        self._attr_native_max_value = definition["max"]
+        # min/max are not set here: they are properties, so entries marked
+        # dynamic_bounds can follow config_entry.data without a reload.
         self._attr_native_step = definition["step"]
         self._attr_mode = NumberMode.SLIDER
         self._attr_entity_category = EntityCategory.CONFIG
@@ -343,6 +396,24 @@ class MarstekConfigNumberEntity(NumberEntity):
     async def _handle_entry_update(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         """Re-render the slider value after a config entry update."""
         self.async_write_ha_state()
+
+    @property
+    def native_min_value(self) -> float:
+        """Lower bound; dynamic for entries marked ``dynamic_bounds``.
+
+        A plain property rather than ``_attr_native_min_value``: the bound has
+        to follow config_entry.data (per-battery limits, system caps), and every
+        write path goes through ``async_update_entry`` -> ``_handle_entry_update``
+        -> ``async_write_ha_state``, at which point HA recomputes the entity's
+        capability attributes. Freezing the value in __init__ would only refresh
+        on a full platform reload.
+        """
+        return config_number_bounds(self._definition, self.entry.data)[0]
+
+    @property
+    def native_max_value(self) -> float:
+        """Upper bound; see :meth:`native_min_value`."""
+        return config_number_bounds(self._definition, self.entry.data)[1]
 
     @property
     def native_value(self):

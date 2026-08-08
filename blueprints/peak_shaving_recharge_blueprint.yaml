@@ -72,12 +72,12 @@ blueprint:
 
     charge_target_w:
       name: "Grid Target While Recharging"
-      description: "Positive values mean import from grid (battery charges). The number entity clamps to its own range."
+      description: "Positive values mean import from grid (battery charges). Values outside the number entity's own range are rejected by Home Assistant; that range follows your total configured battery power."
       default: 500
       selector:
         number:
           min: 0
-          max: 2500
+          max: 15000
           step: 10
           unit_of_measurement: W
           mode: box
@@ -88,8 +88,8 @@ blueprint:
       default: 0
       selector:
         number:
-          min: -2500
-          max: 2500
+          min: -15000
+          max: 15000
           step: 10
           unit_of_measurement: W
           mode: box
