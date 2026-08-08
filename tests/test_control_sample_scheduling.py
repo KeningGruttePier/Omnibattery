@@ -15,6 +15,11 @@ from homeassistant.core import State
 from custom_components.omnibattery import ChargeDischargeController
 
 
+class _HashableNamespace(SimpleNamespace):
+    __hash__ = object.__hash__
+    __eq__ = object.__eq__
+
+
 async def _async_noop(*_args, **_kwargs):
     return None
 
@@ -199,7 +204,7 @@ def test_repeated_publication_does_not_reapply_pd_but_real_change_runs_once():
     assert controller.previous_power == previous_power
 
 
-def test_manual_grid_charge_is_not_seen_as_automatic_discharge_demand():
+def test_manual_grid_charge_does_not_induce_automatic_discharge_when_idle():
     first_report = datetime(2026, 1, 1, tzinfo=timezone.utc)
     state_holder = {"state": _state(700, first_report)}
     pd_calls = []
@@ -209,7 +214,7 @@ def test_manual_grid_charge_is_not_seen_as_automatic_discharge_demand():
     controller.ki = 0.0
     controller._power_distribution._rebalance_expired_load_sharing_hold = _async_false
 
-    manual = SimpleNamespace(
+    manual = _HashableNamespace(
         _is_shutting_down=False,
         battery_manual_mode_enabled=True,
         data={"battery_power": 700},
@@ -219,10 +224,45 @@ def test_manual_grid_charge_is_not_seen_as_automatic_discharge_demand():
 
     asyncio.run(controller._run_control_cycle(now=first_report + timedelta(seconds=1)))
 
-    # Without the manual-power correction, the 700 W import would enter the PD
-    # law as a positive error and request automatic discharge.
+    # With no automatic charge active, the intentional manual import is not a
+    # reason to discharge an automatic battery.
     assert pd_calls == []
     assert controller.previous_power == 0.0
+
+
+def test_manual_grid_charge_reduces_automatic_charge_without_discharge():
+    first_report = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    state_holder = {"state": _state(1000, first_report)}
+    pd_calls = []
+    controller = _main_controller(state_holder, pd_calls)
+    controller.previous_power = 2000.0
+    controller.last_output_sign = 1
+    controller.ki = 0.0
+    controller._power_distribution._rebalance_expired_load_sharing_hold = _async_false
+    controller.coordinators[0].data = {
+        "battery_soc": 50,
+        "battery_power": 2000,
+    }
+
+    def _reduce_automatic_charge(error, sensor_elapsed_s, stale_safety_recalc):
+        pd_calls.append((error, sensor_elapsed_s, stale_safety_recalc))
+        return 1000.0
+
+    controller._compute_pd_new_power = _reduce_automatic_charge
+    manual = _HashableNamespace(
+        _is_shutting_down=False,
+        battery_manual_mode_enabled=True,
+        data={"battery_power": 1000},
+        name="manual battery",
+    )
+    controller.coordinators.append(manual)
+
+    asyncio.run(controller._run_control_cycle(now=first_report + timedelta(seconds=1)))
+
+    # The 1 kW import is used to reduce the automatic 2 kW charge to 1 kW;
+    # it must not be turned into an automatic discharge command.
+    assert pd_calls and pd_calls[0][0] == 1000
+    assert controller.previous_power == 1000.0
 
 
 def test_busy_loop_cadence_does_not_consume_pending_real_change():

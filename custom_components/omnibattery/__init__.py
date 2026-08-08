@@ -4529,10 +4529,13 @@ class ChargeDischargeController:
     def _manual_battery_power_for_grid_feedback(self) -> float:
         """Return manual batteries' signed AC contribution to the grid meter.
 
-        Automatic PD must regulate the household/grid flow independently of a
-        battery that the user owns manually. Prefer measured AC-side power, which
-        excludes DC-coupled solar on drivers that expose it; fall back to the
-        manual setpoint only when no delivered-power telemetry is available.
+        Prefer measured AC-side power, which excludes DC-coupled solar on drivers
+        that expose it; fall back to the manual setpoint only when no delivered-
+        power telemetry is available. The control loop uses this contribution
+        conditionally: while automatic batteries are charging it remains visible
+        so they can reduce their charge to keep the meter at zero; once automatic
+        charging is idle, a manual grid charge is excluded so it cannot trigger an
+        automatic discharge.
         """
         total = 0.0
         for coordinator in self.coordinators:
@@ -5816,21 +5819,20 @@ class ChargeDischargeController:
 
         active_target = self.compute_active_target()
 
-        # Use filtered sensor directly - it shows the real grid imbalance we need to correct
+        # Use the real filtered meter reading while automatic batteries are
+        # charging. A manual grid charge must then count as load so the automatic
+        # charge is reduced (for example, 2 kW automatic + 1 kW manual becomes
+        # 1 kW automatic). Once the automatic command is idle or discharging,
+        # remove only the manual charging contribution: otherwise the intentional
+        # manual import would make automatic batteries discharge to compensate it.
         sensor_actual = sensor_filtered
-
-        # An individually manual battery is outside automatic ownership. Its AC
-        # charge/discharge still appears in the site grid meter, though, and would
-        # otherwise make PD discharge/charge the automatic batteries to cancel the
-        # user's manual command. Remove that contribution from the control signal;
-        # keep sensor_filtered untouched for the contracted-power safety clamp below.
         manual_grid_power = ChargeDischargeController._manual_battery_power_for_grid_feedback(
             self
         )
-        if manual_grid_power:
+        if manual_grid_power > 0 and self.previous_power <= 0:
             sensor_actual -= manual_grid_power
             _LOGGER.debug(
-                "Ignoring %.0fW manual-battery AC power in automatic PD feedback",
+                "Ignoring %.0fW manual-battery charging power while automatic batteries are not charging",
                 manual_grid_power,
             )
 

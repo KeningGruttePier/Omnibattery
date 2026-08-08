@@ -121,7 +121,7 @@ Each battery also exposes `switch.*_battery_manual_mode`. When enabled, Omnibatt
 
 Turning the switch off keeps the battery under manual ownership while the final idle command is verified. Only then is it returned to the automatic pool and an immediate control cycle scheduled. If the idle handoff fails, the switch stays enabled and the battery remains manual.
 
-This control is independent from the global `Manual Mode` switch. For example, with two batteries, battery A can be left in manual mode at a user-selected power while battery B remains automatic. The PD controller removes battery A's measured AC power from its automatic feedback, so B covers only the household demand; a manual grid charge on A does not make B discharge to compensate it. DC-coupled solar power is not removed when the driver exposes a separate AC-power reading.
+This control is independent from the global `Manual Mode` switch. For example, with two batteries, battery A can be left in manual mode at a user-selected power while battery B remains automatic. If B is already charging, the PD controller includes A's measured AC grid charge so B reduces its own charge and the meter remains at zero. Once the automatic batteries are no longer charging, A's intentional grid charge is excluded from feedback so B does not discharge to compensate it. DC-coupled solar power is not included when the driver exposes a separate AC-power reading.
 
 ## Unified blocker registry
 
