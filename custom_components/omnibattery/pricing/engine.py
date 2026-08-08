@@ -76,6 +76,13 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
+# A plan is intentionally not rebuilt on every control sample: that would make
+# the selected high-value blocks chatter while SOC telemetry is settling.  It
+# is rebuilt when the available headroom has moved enough to change the answer,
+# with a short cooldown to keep the Modbus/control path stable.
+CURTAILMENT_AUTO_REPLAN_HEADROOM_DELTA_KWH = 0.5
+CURTAILMENT_AUTO_REPLAN_COOLDOWN_S = 60.0
+
 # Sensor attributes each integration expects to hold a LIST of price entries.
 # Used only to detect an attribute that arrived as a string; PVPC is absent
 # because it reads scalar per-hour attributes, not a list.
@@ -1438,6 +1445,99 @@ class PricingManager:
         )
         return reserve, space
 
+    def _maybe_rebuild_curtailment_plan(
+        self,
+        plan: CurtailmentPlan,
+        snapshots: list[BatterySnapshot],
+        now: datetime,
+    ) -> bool:
+        """Rebuild a stale pre-discharge plan after a material SOC change.
+
+        The daily dynamic-pricing evaluation is made before the battery has
+        necessarily completed its morning charge.  Without this refresh, a plan
+        that was valid at midnight can have no future discharge slot left when
+        the battery fills later in the day; pressing the re-evaluation button
+        then appears to "fix" it.  Keep the refresh local and synchronous so it
+        can run from the existing control-cycle blocker refresh.
+        """
+        controller = self._controller
+        if not self._smart_predischarge_enabled() or plan.status == "fail_safe":
+            return False
+
+        future_risk_slots = [
+            slot for slot in getattr(plan, "risk_slots", []) if slot.end > now
+        ]
+        if not future_risk_slots:
+            return False
+
+        # Once the first risk window has started, pre-discharge cannot create
+        # useful headroom for it anymore.  Live reserve accounting continues to
+        # be updated by the normal runtime path.
+        if now >= min(slot.start for slot in future_risk_slots):
+            return False
+
+        current_headroom = sum(
+            max(
+                0.0,
+                (snapshot.max_soc_pct - snapshot.soc_pct)
+                / 100.0
+                * snapshot.capacity_kwh,
+            )
+            for snapshot in snapshots
+            if snapshot.eligible
+        )
+        planned_headroom = getattr(
+            controller, "_curtailment_last_planned_headroom_kwh", None
+        )
+        if planned_headroom is None:
+            controller._curtailment_last_planned_headroom_kwh = current_headroom
+            return False
+
+        selected_future_slot = any(
+            slot.end > now for slot in getattr(plan, "selected_discharge_slots", [])
+        )
+        required = max(
+            0.0,
+            float(
+                getattr(plan, "solar_reserve_remaining_kwh", None)
+                or getattr(plan, "required_headroom_kwh", 0.0)
+                or 0.0
+            ),
+        )
+        headroom_changed = (
+            abs(current_headroom - float(planned_headroom))
+            >= CURTAILMENT_AUTO_REPLAN_HEADROOM_DELTA_KWH
+        )
+        missing_future_slot = (
+            current_headroom + 1e-6 < required and not selected_future_slot
+        )
+        if not headroom_changed and not missing_future_slot:
+            return False
+
+        last_replan = getattr(
+            controller, "_curtailment_last_auto_replan", None
+        )
+        if last_replan is not None:
+            try:
+                if (now - last_replan).total_seconds() < CURTAILMENT_AUTO_REPLAN_COOLDOWN_S:
+                    return False
+            except (TypeError, ValueError):
+                pass
+
+        slots = self.get_future_price_slots()
+        if not slots:
+            return False
+        schedule = getattr(controller, "_dynamic_pricing_schedule", None)
+        reserved_slots = list(getattr(schedule, "selected_slots", []) or [])
+        _LOGGER.info(
+            "Smart pre-discharge: rebuilding stale plan (headroom %.2f -> %.2f kWh)",
+            float(planned_headroom),
+            current_headroom,
+        )
+        self._build_curtailment_plan(slots, reserved_slots, now=now)
+        controller._curtailment_last_auto_replan = now
+        return True
+
     def _build_curtailment_plan(
         self,
         slots: list[PriceSlot],
@@ -1513,10 +1613,14 @@ class PricingManager:
             return plan
         self._controller._curtailment_plan = plan
         self._controller._curtailment_last_evaluation = evaluated_at
+        snapshots = self._curtailment_battery_snapshots()
         self._update_curtailment_opportunistic_diagnostics(
             plan,
-            self._curtailment_battery_snapshots(),
+            snapshots,
             evaluated_at,
+        )
+        self._controller._curtailment_last_planned_headroom_kwh = (
+            plan.current_headroom_kwh
         )
         self._set_curtailment_runtime(plan.status, plan.reason)
         return plan
@@ -1548,6 +1652,7 @@ class PricingManager:
         """Remove every smart override/block and optionally keep diagnostics."""
         controller = self._controller
         controller.remove_setpoint_override("curtailment_predischarge")
+        controller.remove_setpoint_override("curtailment_negative_window")
         controller.remove_discharge_block("curtailment_negative_window")
         for coordinator in controller.coordinators:
             controller.remove_discharge_block("curtailment_negative_window", coordinator=coordinator)
@@ -1580,6 +1685,8 @@ class PricingManager:
             controller._curtailment_plan = CurtailmentPlan(
                 status="disabled", reason=reason, evaluation_time=datetime.now()
             )
+            controller._curtailment_last_planned_headroom_kwh = None
+            controller._curtailment_last_auto_replan = None
         self._set_curtailment_runtime("disabled" if not preserve_plan else getattr(
             getattr(controller, "_curtailment_plan", None), "status", "disabled"
         ), reason)
@@ -1647,9 +1754,14 @@ class PricingManager:
             return
 
         now = datetime.now()
+        snapshots = self._curtailment_battery_snapshots()
+        if self._maybe_rebuild_curtailment_plan(plan, snapshots, now):
+            plan = getattr(self._controller, "_curtailment_plan", plan)
         risk_slot = self._current_curtailment_risk_slot(plan, now)
-        # The negative-window blocker is per battery so capacity protection can
-        # take its priority-10 override without a global blocker deadlocking it.
+        # Keep the old per-battery blocker cleanup for plans created by older
+        # versions, then replace it during the active risk window with a net-zero
+        # grid target.  A blanket discharge block makes the house import from
+        # the grid even when the battery could safely cover domestic load.
         for coordinator in self._controller.coordinators:
             self._controller.remove_discharge_block(
                 "curtailment_negative_window", coordinator=coordinator
@@ -1660,32 +1772,19 @@ class PricingManager:
         self._controller.remove_setpoint_override("curtailment_predischarge")
         self._controller._curtailment_active = False
 
-        snapshots = self._curtailment_battery_snapshots()
         self._update_curtailment_opportunistic_diagnostics(plan, snapshots, now)
 
         if risk_slot is not None:
             self._refresh_curtailment_floor_blocks(snapshots)
-            details = {
-                "current_price": current_price,
-                "threshold": getattr(self._controller, "negative_injection_threshold", 0.0),
-                "start": risk_slot.start.isoformat(),
-                "end": risk_slot.end.isoformat(),
-            }
-            for coordinator in self._controller.coordinators:
-                if (
-                    coordinator.data is not None
-                    and coordinator.is_available
-                    and not getattr(coordinator, "battery_manual_mode_enabled", False)
-                ):
-                    self._controller.set_discharge_block(
-                        "curtailment_negative_window",
-                        "negative_injection_window",
-                        details,
-                        coordinator=coordinator,
-                    )
+            overrides = getattr(self._controller, "_setpoint_overrides", {}) or {}
+            if overrides.get("curtailment_negative_window") != (6, 0.0):
+                self._controller.set_setpoint_override(
+                    "curtailment_negative_window", 0.0, priority=6
+                )
             self._set_curtailment_runtime("protected_window", "negative_injection_window")
             return
 
+        self._controller.remove_setpoint_override("curtailment_negative_window")
         current_headroom = plan.current_headroom_kwh
         required = max(
             0.0,

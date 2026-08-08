@@ -664,7 +664,8 @@ def test_smart_predischarge_runtime_starts_stops_and_protects_negative_window():
     assert any(call[:2] == ("set_override", "curtailment_predischarge") for call in calls)
     assert ctrl._curtailment_runtime_status == "predischarging"
 
-    # The same runtime plan blocks normal discharge during the negative window.
+    # The same runtime plan protects the negative window with a net-zero grid
+    # target, so domestic load can still be supplied by the battery.
     ctrl._curtailment_plan = CurtailmentPlan(
         status="planned",
         reason="headroom_required",
@@ -676,12 +677,59 @@ def test_smart_predischarge_runtime_starts_stops_and_protects_negative_window():
     manager.refresh_curtailment_runtime()
 
     assert ctrl._curtailment_runtime_status == "protected_window"
-    assert any(call[0] == "set_block" and call[1] == "curtailment_negative_window" for call in calls)
+    assert any(
+        call[:2] == ("set_override", "curtailment_negative_window")
+        and call[2:] == (0.0, 6)
+        for call in calls
+    )
+    assert not any(
+        call[0] == "set_block" and call[1] == "curtailment_negative_window"
+        for call in calls
+    )
 
     ctrl.smart_predischarge_enabled = False
     manager.refresh_curtailment_runtime()
     assert ctrl._curtailment_runtime_status == "disabled"
     assert ("remove_override", "curtailment_predischarge") in calls
+
+
+def test_curtailment_auto_replans_after_headroom_changes():
+    now = datetime.now()
+    risk = PriceSlot(now + timedelta(hours=2), now + timedelta(hours=3), -0.10)
+    candidate = PriceSlot(now + timedelta(minutes=30), now + timedelta(hours=1, minutes=30), 0.30)
+    coordinator = SimpleNamespace(data={"battery_soc": 70.0}, is_available=True, name="b1")
+    plan = CurtailmentPlan(
+        status="protected",
+        reason="headroom_sufficient",
+        risk_slots=[risk],
+        required_headroom_kwh=4.0,
+        current_headroom_kwh=6.0,
+    )
+    ctrl = _controller(
+        smart_predischarge_enabled=True,
+        predictive_charging_enabled=True,
+        predictive_charging_mode=PREDICTIVE_MODE_DYNAMIC_PRICING,
+        coordinators=[coordinator],
+        _curtailment_plan=plan,
+        _curtailment_last_planned_headroom_kwh=6.0,
+        _curtailment_last_auto_replan=None,
+        _dynamic_pricing_schedule=_schedule([]),
+    )
+    manager = _mgr(ctrl)
+    manager._curtailment_battery_snapshots = lambda: [
+        BatterySnapshot("b1", 50.0, 10.0, 100.0, 10.0, 2000.0)
+    ]
+    manager.get_future_price_slots = lambda: [candidate, risk]
+    rebuilt = []
+    manager._build_curtailment_plan = lambda slots, reserved, now=None: rebuilt.append(
+        (slots, reserved, now)
+    )
+
+    assert manager._maybe_rebuild_curtailment_plan(
+        plan, manager._curtailment_battery_snapshots(), now
+    ) is True
+    assert rebuilt and rebuilt[0][0] == [candidate, risk]
+    assert ctrl._curtailment_last_auto_replan == now
 
 
 def test_curtailment_runtime_releases_space_for_underproduction_and_stops_on_excess():

@@ -766,6 +766,8 @@ class ChargeDischargeController:
         self._curtailment_opportunity_limited = False
         self._curtailment_opportunistic_target_soc = None
         self._curtailment_last_evaluation = None
+        self._curtailment_last_planned_headroom_kwh = None
+        self._curtailment_last_auto_replan = None
         self._pricing_mgr = PricingManager(hass, self)
 
         # Consumption history for dynamic base consumption (7-day rolling average)
