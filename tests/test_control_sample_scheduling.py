@@ -199,6 +199,32 @@ def test_repeated_publication_does_not_reapply_pd_but_real_change_runs_once():
     assert controller.previous_power == previous_power
 
 
+def test_manual_grid_charge_is_not_seen_as_automatic_discharge_demand():
+    first_report = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    state_holder = {"state": _state(700, first_report)}
+    pd_calls = []
+    controller = _main_controller(state_holder, pd_calls)
+    controller.previous_power = 0.0
+    controller.last_output_sign = 0
+    controller.ki = 0.0
+    controller._power_distribution._rebalance_expired_load_sharing_hold = _async_false
+
+    manual = SimpleNamespace(
+        _is_shutting_down=False,
+        battery_manual_mode_enabled=True,
+        data={"battery_power": 700},
+        name="manual battery",
+    )
+    controller.coordinators.append(manual)
+
+    asyncio.run(controller._run_control_cycle(now=first_report + timedelta(seconds=1)))
+
+    # Without the manual-power correction, the 700 W import would enter the PD
+    # law as a positive error and request automatic discharge.
+    assert pd_calls == []
+    assert controller.previous_power == 0.0
+
+
 def test_busy_loop_cadence_does_not_consume_pending_real_change():
     first_report = datetime(2026, 1, 1, tzinfo=timezone.utc)
     state_holder = {"state": _state(100, first_report)}

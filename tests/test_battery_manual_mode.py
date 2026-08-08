@@ -351,6 +351,65 @@ def test_power_distribution_drops_manual_battery_before_selection():
     assert allocation == {automatic: 500}
 
 
+def test_manual_grid_feedback_uses_ac_power_not_dc_solar_power():
+    manual = SimpleNamespace(
+        battery_manual_mode_enabled=True,
+        data={"ac_power": -700, "battery_power": 1000},
+    )
+    controller = SimpleNamespace(coordinators=[manual])
+
+    assert (
+        ChargeDischargeController._manual_battery_power_for_grid_feedback(
+            controller
+        )
+        == 700
+    )
+
+    # On a DC-coupled battery, battery_power can include solar while ac_power
+    # remains zero. Only the AC contribution belongs in the grid feedback.
+    manual.data = {"ac_power": 0, "battery_power": 700}
+    assert (
+        ChargeDischargeController._manual_battery_power_for_grid_feedback(
+            controller
+        )
+        == 0
+    )
+
+
+def test_manual_grid_feedback_falls_back_to_manual_setpoint_without_telemetry():
+    manual = SimpleNamespace(
+        battery_manual_mode_enabled=True,
+        data={},
+        manual_force_mode="Charge",
+        manual_set_charge_power=800,
+    )
+    controller = SimpleNamespace(coordinators=[manual])
+
+    assert (
+        ChargeDischargeController._manual_battery_power_for_grid_feedback(
+            controller
+        )
+        == 800
+    )
+
+
+def test_automatic_measured_power_excludes_manual_battery():
+    manual = HashableNamespace(
+        battery_manual_mode_enabled=True,
+        data={"battery_power": 700},
+    )
+    automatic = HashableNamespace(
+        battery_manual_mode_enabled=False,
+        data={"battery_power": -400},
+    )
+    controller = SimpleNamespace(
+        coordinators=[manual, automatic],
+        _coordinator_delivered_power=ChargeDischargeController._coordinator_delivered_power,
+    )
+
+    assert ChargeDischargeController._measured_battery_power(controller) == -400
+
+
 @pytest.mark.asyncio
 async def test_global_manual_mode_preserves_individual_software_state():
     coordinator = SimpleNamespace(

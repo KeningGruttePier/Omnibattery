@@ -4447,7 +4447,7 @@ class ChargeDischargeController:
         the anti-windup re-anchors the command to ~0 on every cycle. Returns None
         when neither value is reported (e.g. right after a restart).
         """
-        data = coordinator.data
+        data = getattr(coordinator, "data", None)
         if not data:
             return None
         ac = data.get("ac_power")
@@ -4464,16 +4464,111 @@ class ChargeDischargeController:
                 return None
         return None
 
+    @staticmethod
+    def _manual_battery_commanded_power(coordinator) -> float:
+        """Return a manual battery's signed setpoint as a fallback measurement."""
+        mode = getattr(coordinator, "manual_force_mode", "None")
+        if mode == "Charge":
+            value = getattr(coordinator, "manual_set_charge_power", 0)
+            if not value:
+                value = getattr(coordinator, "commanded_charge_power", 0)
+            sign = 1
+        elif mode == "Discharge":
+            value = getattr(coordinator, "manual_set_discharge_power", 0)
+            if not value:
+                value = getattr(coordinator, "commanded_discharge_power", 0)
+            sign = -1
+        else:
+            charge = getattr(coordinator, "commanded_charge_power", 0) or 0
+            discharge = getattr(coordinator, "commanded_discharge_power", 0) or 0
+            if charge or discharge:
+                try:
+                    return float(charge) - float(discharge)
+                except (TypeError, ValueError):
+                    return 0.0
+
+            data = getattr(coordinator, "data", None) or {}
+            driver = getattr(coordinator, "driver", None)
+            net_power_from_data = getattr(driver, "net_power_from_data", None)
+            if callable(net_power_from_data):
+                try:
+                    value = net_power_from_data(data)
+                except (TypeError, ValueError, KeyError):
+                    value = None
+                if value is not None:
+                    try:
+                        return float(value)
+                    except (TypeError, ValueError):
+                        return 0.0
+
+            # Keep the fallback usable for lightweight/test coordinators and
+            # for driver data received before the driver object is attached.
+            try:
+                force_mode = int(round(float(data.get("force_mode"))))
+            except (TypeError, ValueError):
+                force_mode = 0
+            if force_mode == 1:
+                value = data.get("set_charge_power", 0)
+                sign = 1
+            elif force_mode == 2:
+                value = data.get("set_discharge_power", 0)
+                sign = -1
+            else:
+                return 0.0
+
+            try:
+                return sign * max(0.0, float(value or 0))
+            except (TypeError, ValueError):
+                return 0.0
+
+        try:
+            return sign * max(0.0, float(value or 0))
+        except (TypeError, ValueError):
+            return 0.0
+
+    def _manual_battery_power_for_grid_feedback(self) -> float:
+        """Return manual batteries' signed AC contribution to the grid meter.
+
+        Automatic PD must regulate the household/grid flow independently of a
+        battery that the user owns manually. Prefer measured AC-side power, which
+        excludes DC-coupled solar on drivers that expose it; fall back to the
+        manual setpoint only when no delivered-power telemetry is available.
+        """
+        total = 0.0
+        for coordinator in self.coordinators:
+            if not ChargeDischargeController._is_battery_manual_owned(coordinator):
+                continue
+            measured = ChargeDischargeController._coordinator_delivered_power(
+                coordinator
+            )
+            power = (
+                measured
+                if measured is not None
+                else ChargeDischargeController._manual_battery_commanded_power(
+                    coordinator
+                )
+            )
+            try:
+                if power is not None and math.isfinite(float(power)):
+                    total += float(power)
+            except (TypeError, ValueError):
+                continue
+        return total
+
     def _measured_battery_power(self):
-        """Aggregate measured battery power across batteries, in controller convention.
+        """Aggregate measured automatic-battery power in controller convention.
 
         Controller convention is + charge / - discharge. Uses the AC-side power (what
-        the grid meter sees, excludes DC PV on vA/vD) where available. Returns None if
-        no battery reports a value (e.g. right after a restart).
+        the grid meter sees, excludes DC PV on vA/vD) where available. Manual
+        batteries are omitted because their output is not part of the automatic
+        controller's command. Returns None if no automatic battery reports a value
+        (e.g. right after a restart).
         """
         total = 0.0
         seen = False
         for coordinator in self.coordinators:
+            if ChargeDischargeController._is_battery_manual_owned(coordinator):
+                continue
             delivered = self._coordinator_delivered_power(coordinator)
             if delivered is None:
                 continue
@@ -5724,6 +5819,21 @@ class ChargeDischargeController:
         # Use filtered sensor directly - it shows the real grid imbalance we need to correct
         sensor_actual = sensor_filtered
 
+        # An individually manual battery is outside automatic ownership. Its AC
+        # charge/discharge still appears in the site grid meter, though, and would
+        # otherwise make PD discharge/charge the automatic batteries to cancel the
+        # user's manual command. Remove that contribution from the control signal;
+        # keep sensor_filtered untouched for the contracted-power safety clamp below.
+        manual_grid_power = ChargeDischargeController._manual_battery_power_for_grid_feedback(
+            self
+        )
+        if manual_grid_power:
+            sensor_actual -= manual_grid_power
+            _LOGGER.debug(
+                "Ignoring %.0fW manual-battery AC power in automatic PD feedback",
+                manual_grid_power,
+            )
+
         if DEBUG_CONTROL_LOOP_DETAIL:
             _LOGGER.debug("Sensor: raw=%.1fW, filtered=%.1fW", sensor_raw, sensor_filtered)
 
@@ -5768,7 +5878,8 @@ class ChargeDischargeController:
             self._active_charge_batteries = []
             return
 
-        # CRITICAL: Check deadband on FILTERED sensor (actual grid balance) BEFORE compensation
+        # CRITICAL: Check deadband on the automatic-control sensor before the
+        # external-load and capacity-protection adjustments below.
         # Deadband is centered around the active target grid power
         # Skip on first_execution: controller hasn't initialized yet; returning here keeps
         # first_execution=True forever when the grid happens to be balanced at startup.
@@ -5776,12 +5887,12 @@ class ChargeDischargeController:
             not self.first_execution
             and not blocked_active_changed
             and not self._phase_safety_pending
-            and abs(sensor_filtered - active_target) < self.deadband
+            and abs(sensor_actual - active_target) < self.deadband
         ):
             if DEBUG_CONTROL_LOOP_DETAIL:
                 _LOGGER.debug(
                     "ChargeDischargeController: Filtered sensor %.1fW within deadband of target %dW (+/-%dW), no action.",
-                    sensor_filtered,
+                    sensor_actual,
                     active_target,
                     self.deadband,
                 )
@@ -5794,7 +5905,7 @@ class ChargeDischargeController:
                 self.sign_changes = 0  # Reset oscillation counter
             
             # Update previous_sensor for next cycle
-            self.previous_sensor = sensor_filtered
+            self.previous_sensor = sensor_actual
             # Keep the derivative reference current while idling in the deadband, so
             # leaving it does not compute Δerror against a stale pre-deadband error
             # over one sample (a derivative kick). Drop the filtered derivative too.

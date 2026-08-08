@@ -121,7 +121,7 @@ Cada batería también expone `switch.*_battery_manual_mode`. Al activarlo, Omni
 
 Al apagar el switch, la batería mantiene la propiedad manual mientras se verifica la última consigna de reposo. Solo después vuelve al grupo automático y se programa un ciclo de control inmediato. Si falla la transición a reposo, el switch permanece activado y la batería sigue en modo manual.
 
-Este control es independiente del switch global `Manual Mode`. Por ejemplo, con dos baterías, la batería A puede permanecer en modo manual con la potencia elegida por el usuario mientras la batería B sigue en automático. El controlador PD reparte entonces la demanda automática entre B; B puede compensar la salida fija de A, por lo que la potencia de red puede cambiar cuando A se maneja manualmente.
+Este control es independiente del switch global `Manual Mode`. Por ejemplo, con dos baterías, la batería A puede permanecer en modo manual con la potencia elegida por el usuario mientras la batería B sigue en automático. El controlador PD descuenta de su realimentación automática la potencia AC medida de A, por lo que B solo cubre la demanda doméstica; una carga manual desde la red en A no hace que B se descargue para compensarla. La potencia solar acoplada en CC no se descuenta cuando el driver proporciona una lectura AC independiente.
 
 ## Registro unificado de bloqueos
 
