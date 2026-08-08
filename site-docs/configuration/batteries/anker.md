@@ -37,3 +37,12 @@ The common limits page also includes:
 
 Anker does not expose Marstek's cell-voltage taper. For runtime SOC controls,
 system caps and backup thresholds, see [Battery configuration](index.md).
+
+### Manual control
+
+Anker does not expose Marstek-style force-mode and power-setpoint entities.
+Omnibattery stores the software `Force Mode`, `Set Charge Power` and `Set
+Discharge Power` values and re-applies non-idle setpoints through the local
+driver while **Battery Manual Control** is enabled. Keep **Third-Party Control**
+enabled in the Anker app; the driver and BMS remain responsible for their own
+hardware safety limits.

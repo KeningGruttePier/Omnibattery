@@ -124,7 +124,10 @@ class PricingManager:
         if not self._controller.predictive_charging_enabled:
             return  # Unloaded during sleep
 
-        coordinators_with_data = [c for c in self._controller.coordinators if c.data]
+        coordinators_with_data = [
+            c for c in self._controller.coordinators
+            if c.data and not getattr(c, "battery_manual_mode_enabled", False)
+        ]
         if not coordinators_with_data:
             _LOGGER.warning(
                 "Dynamic pricing: startup evaluation skipped — no coordinator data after 15 s"
@@ -617,6 +620,7 @@ class PricingManager:
         if (
             getattr(coordinator, "data", None) is None
             or not getattr(coordinator, "is_available", True)
+            or getattr(coordinator, "battery_manual_mode_enabled", False)
             or not getattr(coordinator, "allow_charge", True)
             or getattr(coordinator, "rs485_user_disabled", False)
         ):
@@ -1079,6 +1083,7 @@ class PricingManager:
             eligible = bool(
                 data
                 and coordinator.is_available
+                and not getattr(coordinator, "battery_manual_mode_enabled", False)
                 and not self._controller._non_responsive.is_excluded(coordinator)
                 and not self._controller._is_active_balance_mode_running(coordinator)
                 and not self._controller._is_backup_function_active(coordinator)
@@ -1672,7 +1677,11 @@ class PricingManager:
                 "end": risk_slot.end.isoformat(),
             }
             for coordinator in self._controller.coordinators:
-                if coordinator.data is not None and coordinator.is_available:
+                if (
+                    coordinator.data is not None
+                    and coordinator.is_available
+                    and not getattr(coordinator, "battery_manual_mode_enabled", False)
+                ):
                     self._controller.set_discharge_block(
                         "curtailment_negative_window",
                         "negative_injection_window",
@@ -2241,7 +2250,10 @@ class PricingManager:
         ref = self._controller._dp_last_eval_soc
         if ref is None:
             return False
-        coords = [c for c in self._controller.coordinators if c.data]
+        coords = [
+            c for c in self._controller.coordinators
+            if c.data and not getattr(c, "battery_manual_mode_enabled", False)
+        ]
         if not coords:
             return False
         current = sum(c.data.get("battery_soc", 0) for c in coords) / len(coords)
@@ -2328,7 +2340,10 @@ class PricingManager:
         await self._maybe_refresh_service_prices(force=True)
 
         # --- Battery state ---
-        coordinators_with_data = [c for c in self._controller.coordinators if c.data]
+        coordinators_with_data = [
+            c for c in self._controller.coordinators
+            if c.data and not getattr(c, "battery_manual_mode_enabled", False)
+        ]
         if not coordinators_with_data:
             _LOGGER.info("Evening recharge: no battery data, skipping")
             return
@@ -2554,8 +2569,15 @@ class PricingManager:
         """Send notification for the evening re-evaluation result."""
         avg_soc = sum(
             (c.data.get("battery_soc", 0) or 0)
-            for c in self._controller.coordinators if c.data
-        ) / max(1, sum(1 for c in self._controller.coordinators if c.data))
+            for c in self._controller.coordinators
+            if c.data and not getattr(c, "battery_manual_mode_enabled", False)
+        ) / max(
+            1,
+            sum(
+                1 for c in self._controller.coordinators
+                if c.data and not getattr(c, "battery_manual_mode_enabled", False)
+            ),
+        )
         title, message = notifications.format_evening_recharge_notification(
             deficit_kwh,
             slots,
@@ -2610,6 +2632,8 @@ class PricingManager:
         controller.first_execution = True
         if write_idle:
             for coordinator in getattr(controller, "coordinators", []):
+                if getattr(coordinator, "battery_manual_mode_enabled", False):
+                    continue
                 if controller._is_active_balance_mode_running(coordinator):
                     continue
                 await controller._set_battery_power(coordinator, 0, 0)
@@ -2970,7 +2994,14 @@ class PricingManager:
                     self._controller.first_execution = True
                 return
 
-            current_avg_soc = sum(c.data.get("battery_soc", 0) for c in self._controller.coordinators if c.data) / len(self._controller.coordinators)
+            automatic = [
+                c for c in self._controller.coordinators
+                if c.data and not getattr(c, "battery_manual_mode_enabled", False)
+            ]
+            current_avg_soc = (
+                sum(c.data.get("battery_soc", 0) for c in automatic)
+                / max(1, len(automatic))
+            )
             is_initial_eval = self._controller.last_evaluation_soc is None
 
             # On slot entry, wait 5 minutes before the initial evaluation so the

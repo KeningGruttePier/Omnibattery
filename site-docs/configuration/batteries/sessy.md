@@ -34,3 +34,10 @@ threshold. The default minimum SOC is `5%` and the maximum is `100%`.
 Sessy does not expose Marstek's cell-voltage taper. See [Battery
 configuration](index.md) for the common runtime controls and system power
 limits.
+
+### Manual control
+
+The Sessy API exposes a net power setpoint rather than Marstek-style force-mode
+registers. Use the software `Force Mode` and power controls with **Battery
+Manual Control** enabled; Omnibattery re-applies non-idle setpoints through the
+local API while that ownership is active.

@@ -48,7 +48,8 @@ async def async_setup_entry(
         for definition in coordinator.select_definitions:
             entities.append(MarstekVenusSelect(coordinator, definition))
         # Drivers without a force_mode register (Zendure) get a software force
-        # mode; the controller applies it via apply_setpoint in manual mode.
+        # mode; the controller applies it via apply_setpoint while global manual
+        # mode or this battery's individual manual ownership is active.
         if coordinator.needs_software_manual_control:
             entities.append(MarstekManualForceModeSelect(coordinator))
 
@@ -309,10 +310,10 @@ MANUAL_FORCE_MODE_OPTIONS = ["None", "Charge", "Discharge"]
 class MarstekManualForceModeSelect(CoordinatorEntity, SelectEntity):
     """Software force mode for drivers without a force_mode register.
 
-    Stores the choice on the coordinator; while the global Manual Mode switch is
-    on, the controller drives the battery to the matching charge/discharge
-    setpoint via apply_setpoint (see _apply_software_manual_setpoints). "None"
-    leaves the battery idle.
+    Stores the choice on the coordinator; while the global Manual Mode switch or
+    this battery's individual manual switch is on, the controller drives the
+    battery to the matching charge/discharge setpoint via apply_setpoint (see
+    _apply_software_manual_setpoints). "None" leaves the battery idle.
     """
 
     def __init__(self, coordinator: MarstekVenusDataUpdateCoordinator) -> None:

@@ -92,6 +92,14 @@ layer.
 the write was confirmed by a readback, the measured delivered power, and a
 brand-native state echo the coordinator merges into `coordinator.data`.
 
+Individual manual ownership is coordinated above the driver. On handoff the
+controller verifies an idle (`0 W`) setpoint, then excludes the battery from
+automatic assignments. Drivers without force-mode/setpoint registers (for
+example Zendure and Anker) receive their persisted manual charge/discharge
+setpoint through `apply_setpoint` on each control cycle; an idle (`None`) manual
+selection is deliberately not reasserted, so it does not fight the device's
+own app mode.
+
 ### Capabilities replace version checks
 
 Each driver reports a frozen `DriverCapabilities` once; callers consult it instead

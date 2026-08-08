@@ -75,6 +75,10 @@ class WeeklyFullChargeManager:
         ctrl = self._controller
         self.is_active()  # side effect: day-boundary flag reset
         for c in ctrl.coordinators:
+            if getattr(c, "battery_manual_mode_enabled", False):
+                # Individual manual mode owns the battery. Freeze its cutoff
+                # evidence so weekly charge cannot classify or reconfigure it.
+                continue
             if not c.data:
                 self._bms_cutoff_counts[c.name] = 0
                 continue
@@ -147,6 +151,8 @@ class WeeklyFullChargeManager:
         Used by both handle_registers() (weekly completion) and
         _get_available_batteries() (normal max_soc=100% case).
         """
+        if getattr(coordinator, "battery_manual_mode_enabled", False):
+            return False
         if not coordinator.data:
             return False
         soc = coordinator.data.get("battery_soc", 0)
@@ -311,6 +317,8 @@ class WeeklyFullChargeManager:
         if ctrl._weekly_charge_needs_restore:
             _LOGGER.info("Weekly Full Charge: Restoring hardware cutoff registers after mid-charge abort")
             for coordinator in ctrl.coordinators:
+                if getattr(coordinator, "battery_manual_mode_enabled", False):
+                    continue
                 if ctrl._is_active_balance_mode_running(coordinator):
                     continue
                 if ctrl._is_backup_function_active(coordinator):
@@ -339,6 +347,19 @@ class WeeklyFullChargeManager:
         if not self.is_active():
             return
 
+        automatic_batteries = [
+            coordinator
+            for coordinator in ctrl.coordinators
+            if not getattr(coordinator, "battery_manual_mode_enabled", False)
+        ]
+        if not automatic_batteries:
+            # Do not mark a weekly run as active when every battery is owned by
+            # individual manual mode. Nothing may be written until a battery
+            # returns to the automatic pool.
+            ctrl._weekly_charge_status["state"] = "Idle"
+            ctrl._weekly_charge_status.pop("completion_reason", None)
+            return
+
         # Check if unified charge delay is active - if so, don't write registers yet
         # Skip delay logic when force button was pressed
         if (ctrl.charge_delay_enabled and not ctrl._charge_delay_unlocked
@@ -359,6 +380,8 @@ class WeeklyFullChargeManager:
             else:
                 _LOGGER.info("Weekly Full Charge: Activating for compatible batteries")
             for coordinator in ctrl.coordinators:
+                if getattr(coordinator, "battery_manual_mode_enabled", False):
+                    continue
                 if ctrl._is_active_balance_mode_running(coordinator):
                     continue
                 if ctrl._is_backup_function_active(coordinator):
@@ -404,7 +427,9 @@ class WeeklyFullChargeManager:
         batteries_with_data = [
             c
             for c in ctrl.coordinators
-            if c.data and not ctrl._is_active_balance_mode_running(c)
+            if c.data
+            and not getattr(c, "battery_manual_mode_enabled", False)
+            and not ctrl._is_active_balance_mode_running(c)
         ]
         all_batteries_full = bool(batteries_with_data) and all(
             self.is_battery_full(c)
@@ -418,7 +443,9 @@ class WeeklyFullChargeManager:
                 "is_full": self.is_battery_full(c),
             }
             for c in ctrl.coordinators
-            if c.data and not ctrl._is_active_balance_mode_running(c)
+            if c.data
+            and not getattr(c, "battery_manual_mode_enabled", False)
+            and not ctrl._is_active_balance_mode_running(c)
         }
 
         if all_batteries_full and not ctrl.weekly_full_charge_complete:
@@ -433,6 +460,8 @@ class WeeklyFullChargeManager:
         ctrl._weekly_charge_status["completion_reason"] = reason
         completion_batteries: dict = {}
         for coordinator in ctrl.coordinators:
+            if getattr(coordinator, "battery_manual_mode_enabled", False):
+                continue
             if ctrl._is_active_balance_mode_running(coordinator):
                 continue
             data = coordinator.data or {}
@@ -455,6 +484,8 @@ class WeeklyFullChargeManager:
 
         # Restore register 44000 to original max_soc values (v2 only).
         for coordinator in ctrl.coordinators:
+            if getattr(coordinator, "battery_manual_mode_enabled", False):
+                continue
             if ctrl._is_active_balance_mode_running(coordinator):
                 continue
             if ctrl._is_backup_function_active(coordinator):
@@ -483,6 +514,8 @@ class WeeklyFullChargeManager:
         # the 60-second diagnostic measurement (measurement is best-effort).
         measured = getattr(ctrl, "_normal_balance_last_delta_v", {})
         for coordinator in ctrl.coordinators:
+            if getattr(coordinator, "battery_manual_mode_enabled", False):
+                continue
             if ctrl._is_active_balance_mode_running(coordinator):
                 continue
             if coordinator in measured:
@@ -511,6 +544,8 @@ class WeeklyFullChargeManager:
 
         # Re-enable hysteresis for batteries that have it configured.
         for coordinator in ctrl.coordinators:
+            if getattr(coordinator, "battery_manual_mode_enabled", False):
+                continue
             if ctrl._is_active_balance_mode_running(coordinator):
                 continue
             if coordinator.enable_charge_hysteresis:

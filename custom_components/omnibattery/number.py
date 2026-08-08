@@ -82,7 +82,8 @@ async def async_setup_entry(
 
         # Drivers without force_mode/set_*_power registers (Zendure) get
         # software manual-power setpoints; the controller applies them via
-        # apply_setpoint while global manual mode is active.
+        # apply_setpoint while global manual mode or individual battery manual
+        # ownership is active.
         if coordinator.needs_software_manual_control:
             entities.append(MarstekManualSetPowerNumber(coordinator, "charge"))
             entities.append(MarstekManualSetPowerNumber(coordinator, "discharge"))
@@ -854,8 +855,9 @@ class MarstekManualSetPowerNumber(CoordinatorEntity, NumberEntity):
 
     Mirrors the UX of the Marstek set_charge_power/set_discharge_power register
     entities, but writes only to coordinator state. While the global Manual Mode
-    switch is on, the controller asserts this value via the driver's
-    apply_setpoint each cycle (see _apply_software_manual_setpoints).
+    switch or the individual battery manual switch is on, the controller asserts
+    this value via the driver's apply_setpoint each cycle (see
+    _apply_software_manual_setpoints).
     """
 
     def __init__(self, coordinator: MarstekVenusDataUpdateCoordinator, kind: str) -> None:

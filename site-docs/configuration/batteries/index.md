@@ -53,6 +53,12 @@ Max/min SOC and max charge/discharge power can be adjusted at any time using
 the integration's sliders without reconfiguring. Changes are persisted and
 restored on every Home Assistant restart.
 
+The per-battery `Battery Manual Control` switch is also available at runtime.
+It hands the battery to the user after verifying `0 W`, keeps it out of the
+automatic pool, and persists that ownership across restarts. See the
+[multi-battery guide](../../features/multi-battery.md#manual-control-per-battery)
+for the handoff behavior and its effect on the other batteries.
+
 ![SOC and power sliders](../../assets/screenshots/configuration/battery-runtime-sliders.png){ width="650"  style="display: block; margin: 0 auto;"}
 
 ## System power limits

@@ -1324,6 +1324,9 @@
       "battery_allow_discharge": {
         "name": "Allow Discharge"
       },
+      "battery_manual_mode": {
+        "name": "Manual Battery Control"
+      },
       "full_charge_voltage_taper": {
         "name": "100% Charge Voltage Taper"
       },

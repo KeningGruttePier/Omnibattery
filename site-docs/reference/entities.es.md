@@ -84,6 +84,7 @@ Solo presentes cuando el [monitor de equilibrio de celdas](../features/cell-bala
 | `switch.*_rs485_control` | Modo control RS485 |
 | `switch.*_allow_charge` | Control de software que permite que esta batería participe en la carga automática |
 | `switch.*_allow_discharge` | Control de software que permite que esta batería participe en la descarga automática |
+| `switch.*_battery_manual_mode` | Excluye esta batería del control automático de potencia, manteniendo su telemetría y potencia física en los agregados del sistema |
 | `switch.*_backup_function` | Función de reserva — cuando está activo **y** la potencia AC offgrid ≠ 0 W, la batería queda excluida del control PD (no se envían comandos de escritura) |
 | `switch.marstek_venus_system_override_predictive_charging` | Cancelar carga predictiva |
 | `switch.omnibattery_smart_predischarge` | Activar predescarga inteligente / anti-vertido (solo Precio Dinámico) |

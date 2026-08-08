@@ -114,7 +114,8 @@ class MarstekVenusDataUpdateCoordinator(DataUpdateCoordinator):
                  serial_port: str | None = None,
                  esphome_device_id: str | None = None,
                  username: str = "",
-                 password: str = "") -> None:
+                 password: str = "",
+                 battery_manual_mode_enabled: bool = False) -> None:
         """Initialize the data update coordinator."""
         super().__init__(
             hass,
@@ -163,9 +164,10 @@ class MarstekVenusDataUpdateCoordinator(DataUpdateCoordinator):
         # battery_total_energy each poll so stored_energy / predictive / pricing
         # math work. Set from battery_config after construction; 0 = not yet set.
         self.battery_capacity_kwh = 0.0
-        # Software manual-control setpoints for drivers without force_mode /
-        # set_*_power registers (e.g. Zendure). While global manual mode is on the
+        # Per-battery manual-control ownership and software setpoints for drivers
+        # without force_mode / set_*_power registers (e.g. Zendure). The
         # controller asserts these via apply_setpoint each cycle. Persisted.
+        self.battery_manual_mode_enabled = bool(battery_manual_mode_enabled)
         self.manual_force_mode = "None"
         self.manual_set_charge_power = 0
         self.manual_set_discharge_power = 0
@@ -599,6 +601,9 @@ class MarstekVenusDataUpdateCoordinator(DataUpdateCoordinator):
             "name": self.name,
             "brand": self.brand,
             "battery_version": self.battery_version,
+            "battery_manual_mode_enabled": getattr(
+                self, "battery_manual_mode_enabled", False
+            ),
             "connected": self._is_connected,
             "available": self.is_available,
             "shutting_down": self._is_shutting_down,

@@ -493,8 +493,25 @@ async def async_get_config_entry_diagnostics(
             "health": coord.health_snapshot(),
             "driver": _driver_info(coord),
             "tracker": _tracker_info(controller, coord),
+            "runtime": {
+                "battery_manual_mode_enabled": bool(
+                    getattr(coord, "battery_manual_mode_enabled", False)
+                ),
+                "automatic_pool": not bool(
+                    getattr(coord, "battery_manual_mode_enabled", False)
+                ),
+            },
         }
         for coord in coordinators
+    ]
+
+    manual_batteries = [
+        coord.name for coord in coordinators
+        if getattr(coord, "battery_manual_mode_enabled", False)
+    ]
+    automatic_batteries = [
+        coord.name for coord in coordinators
+        if not getattr(coord, "battery_manual_mode_enabled", False)
     ]
 
     return {
@@ -505,6 +522,10 @@ async def async_get_config_entry_diagnostics(
             "options": async_redact_data(dict(entry.options), TO_REDACT),
         },
         "batteries": batteries,
+        "control_pool": {
+            "manual_batteries": manual_batteries,
+            "automatic_batteries": automatic_batteries,
+        },
         "dynamic_pricing": _dynamic_pricing_info(controller),
         "curtailment": _curtailment_info(controller),
         "phase_protection": async_redact_data(

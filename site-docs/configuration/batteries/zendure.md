@@ -44,4 +44,13 @@ Nominal capacity is optional. Enter it when you want Omnibattery to calculate
 stored energy and efficiency from SOC; Zendure does not provide a nominal
 capacity counter in its report.
 
+### Manual control
+
+Zendure has no native force-mode or charge/discharge setpoint entities in this
+API. Omnibattery therefore provides software `Force Mode`, `Set Charge Power`
+and `Set Discharge Power` controls. Select the per-battery **Battery Manual
+Control** switch before using them; the controller re-applies a non-idle
+software setpoint on each cycle while that switch is enabled. Keep HEMS off or
+the Zendure app may override the command.
+
 For the common runtime controls and system limits, see [Battery configuration](index.md).

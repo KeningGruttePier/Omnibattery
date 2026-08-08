@@ -96,6 +96,7 @@ Only present when the [cell balance monitor](../features/cell-balance-monitor.md
 | `switch.*_rs485_control` | RS485 control mode |
 | `switch.*_allow_charge` | Software control that allows this battery to participate in automatic charging |
 | `switch.*_allow_discharge` | Software control that allows this battery to participate in automatic discharging |
+| `switch.*_battery_manual_mode` | Excludes this battery from automatic power control while keeping its telemetry and physical power in system aggregates |
 | `switch.*_backup_function` | Backup function — when enabled **and** AC offgrid power ≠ 0 W, the battery is excluded from PD control (no write commands sent) |
 | `switch.marstek_venus_system_override_predictive_charging` | Override predictive charging |
 | `switch.omnibattery_smart_predischarge` | Opt-in smart pre-discharge / anti-curtailment (Dynamic Pricing only) |

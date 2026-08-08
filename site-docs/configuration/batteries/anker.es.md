@@ -40,3 +40,13 @@ La página de límites también incluye:
 Anker no ofrece la reducción de carga por tensión de celdas de Marstek. Para los
 controles de SOC en tiempo de ejecución, los límites del sistema y los umbrales
 de backup, consulta la [configuración de baterías](index.md).
+
+### Control manual
+
+Anker no ofrece entidades de modo forzado y consignas de potencia al estilo de
+Marstek. Omnibattery guarda los valores de software `Modo forzado`, `Potencia
+de carga` y `Potencia de descarga`, y reaplica las consignas distintas de reposo
+mediante el driver local mientras **Control Manual de Batería** esté activado.
+Mantén **Third-Party Control** activado en la aplicación de Anker; el driver y
+el BMS siguen siendo responsables de sus propios límites de seguridad de
+hardware.

@@ -19,7 +19,7 @@ from homeassistant.const import (
     CONF_PASSWORD,
 )
 from homeassistant.core import CoreState, HomeAssistant, callback
-from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers import event as event_helpers
 from homeassistant.helpers.device_registry import DeviceEntry
@@ -121,6 +121,7 @@ from .const import (
     DEFAULT_CAPACITY_PROTECTION_SOC,
     DEFAULT_CAPACITY_PROTECTION_LIMIT,
     CONF_MANUAL_MODE_ENABLED,
+    CONF_BATTERY_MANUAL_MODE_ENABLED,
     CONF_PREDICTIVE_CHARGING_OVERRIDDEN,
     CONF_PREDICTIVE_CHARGING_MODE,
     CONF_PRICE_SENSOR,
@@ -952,6 +953,10 @@ class ChargeDischargeController:
 
     def _effective_system_capacity(self, batteries: list, is_charging: bool) -> int:
         """Return available capacity after applying the optional global cap."""
+        batteries = [
+            coordinator for coordinator in batteries
+            if not getattr(coordinator, CONF_BATTERY_MANUAL_MODE_ENABLED, False)
+        ]
         total_capacity = sum(
             self._battery_power_limit(c, is_charging)
             for c in batteries
@@ -960,6 +965,180 @@ class ChargeDischargeController:
         if system_limit > 0:
             return min(total_capacity, system_limit)
         return total_capacity
+
+    @staticmethod
+    def _is_battery_manual_owned(coordinator) -> bool:
+        """Return whether an individual battery is outside automatic control."""
+        return bool(getattr(coordinator, CONF_BATTERY_MANUAL_MODE_ENABLED, False))
+
+    def _get_automatic_batteries(self) -> list:
+        """Return the batteries available to automatic planning and control."""
+        return [
+            coordinator for coordinator in self.coordinators
+            if not ChargeDischargeController._is_battery_manual_owned(coordinator)
+        ]
+
+    def _reset_battery_ownership_state(
+        self, coordinator, *, reset_controller_state: bool = True
+    ) -> None:
+        """Remove one battery from transient automatic-control ownership state.
+
+        An ownership transition must not reset the shared PD command: doing so
+        makes the next cycle stop every automatic battery before the controller
+        computes its replacement allocation. The incremental dynamics are
+        reset so the controller can settle after the pool changes.
+        """
+        for active in (
+            getattr(self, "_active_charge_batteries", []),
+            getattr(self, "_active_discharge_batteries", []),
+        ):
+            while coordinator in active:
+                active.remove(coordinator)
+
+        manual_slots = getattr(self, "_manual_slot_owned", None)
+        if manual_slots is not None:
+            manual_slots.discard(coordinator)
+
+        power_distribution = getattr(self, "_power_distribution", None)
+        if power_distribution is not None:
+            for attr in ("_charge_selection_hold_until", "_discharge_selection_hold_until"):
+                holds = getattr(power_distribution, attr, None)
+                if holds is not None:
+                    holds.pop(coordinator, None)
+
+        phase_limiter = getattr(self, "_phase_power_limiter", None)
+        if phase_limiter is not None:
+            for attr in ("_planned", "_limited_batteries"):
+                state = getattr(phase_limiter, attr, None)
+                if state is not None:
+                    state.pop(coordinator, None)
+
+        active_balance = getattr(self, "_active_balance_mgr", None)
+        if active_balance is not None:
+            for attr in (
+                "_active_balance_mode_phases",
+                "_active_balance_charge_resume_targets",
+                "_active_balance_charge_reject_counts",
+                "_active_balance_charge_leg_started",
+                "_active_balance_charge_seen_power",
+            ):
+                state = getattr(active_balance, attr, None)
+                if state is not None:
+                    state.pop(coordinator, None)
+
+        for attr in (
+            "_last_commanded_net_sign",
+            "_charge_engage_started",
+            "_discharge_engage_started",
+            "_idle_commanded_started",
+            "_idle_runaway_handled",
+        ):
+            state = getattr(self, attr, None)
+            if state is not None:
+                state.pop(coordinator, None)
+
+        weekly_manager = getattr(self, "_weekly_charge_mgr", None)
+        cutoff_counts = getattr(weekly_manager, "_bms_cutoff_counts", None)
+        if cutoff_counts is not None:
+            cutoff_counts.pop(getattr(coordinator, "name", coordinator), None)
+            # Accept older/test state keyed directly by coordinator identity.
+            cutoff_counts.pop(coordinator, None)
+
+        if not reset_controller_state:
+            return
+
+        # Reset the incremental dynamics after an ownership transition, but
+        # retain the live aggregate command and filtered meter value. Zeroing
+        # either makes unrelated automatic batteries stop for one cycle before
+        # the controller computes their replacement allocation.
+        for attr, value in (
+            ("previous_error", 0.0),
+            ("error_integral", 0.0),
+            ("derivative_filtered", 0.0),
+            ("last_error_sign", 0),
+            ("last_output_sign", 0),
+            ("sign_changes", 0),
+            ("_zero_cross_since", None),
+            ("_relay_shutoff_since", None),
+            ("_saturation_cycles", 0),
+            ("_saturation_shortfall_since", None),
+        ):
+            if hasattr(self, attr):
+                setattr(self, attr, value)
+
+    async def _set_battery_manual_mode(self, coordinator, enabled: bool) -> None:
+        """Enter or leave individual manual control with a verified idle handoff."""
+        async with self._control_lock:
+            if enabled:
+                # Persist ownership before touching the network. A restart in
+                # the middle of the handoff must keep the battery excluded from
+                # automatic control.
+                coordinator.battery_manual_mode_enabled = True
+                coordinator.persist_battery_config(
+                    CONF_BATTERY_MANUAL_MODE_ENABLED, True
+                )
+                self._reset_battery_ownership_state(
+                    coordinator, reset_controller_state=False
+                )
+                coordinator.manual_force_mode = "None"
+                coordinator.manual_set_charge_power = 0
+                coordinator.manual_set_discharge_power = 0
+                coordinator.persist_battery_config("manual_force_mode", "None")
+                coordinator.persist_battery_config("manual_set_charge_power", 0)
+                coordinator.persist_battery_config("manual_set_discharge_power", 0)
+
+                idle_ok = await self._set_battery_power(
+                    coordinator,
+                    0,
+                    0,
+                    bypass_blockers=True,
+                    force_write=True,
+                    owner="battery_manual",
+                )
+                if not idle_ok:
+                    _LOGGER.error(
+                        "[%s] Individual manual mode enabled but safe idle could not be verified",
+                        coordinator.name,
+                    )
+                    raise HomeAssistantError(
+                        f"Could not place {coordinator.name} in safe idle"
+                    )
+                await coordinator.async_request_refresh()
+                return
+
+            # Keep ownership asserted while the final zero-power command is
+            # acknowledged, so an automatic cycle cannot race the handoff.
+            coordinator.battery_manual_mode_enabled = True
+            idle_ok = await self._set_battery_power(
+                coordinator,
+                0,
+                0,
+                bypass_blockers=True,
+                force_write=True,
+                owner="battery_manual",
+            )
+            if not idle_ok:
+                _LOGGER.error(
+                    "[%s] Individual manual mode remains enabled: safe idle failed",
+                    coordinator.name,
+                )
+                raise HomeAssistantError(
+                    f"Could not leave {coordinator.name} safely idle"
+                )
+
+            coordinator.manual_force_mode = "None"
+            coordinator.manual_set_charge_power = 0
+            coordinator.manual_set_discharge_power = 0
+            coordinator.persist_battery_config("manual_force_mode", "None")
+            coordinator.persist_battery_config("manual_set_charge_power", 0)
+            coordinator.persist_battery_config("manual_set_discharge_power", 0)
+            await coordinator.async_request_refresh()
+            coordinator.battery_manual_mode_enabled = False
+            coordinator.persist_battery_config(
+                CONF_BATTERY_MANUAL_MODE_ENABLED, False
+            )
+            self._reset_battery_ownership_state(coordinator)
+            self.schedule_control_cycle()
 
     def _refresh_effective_system_capacities(self) -> None:
         """Refresh cached capacities used by PD anti-windup diagnostics."""
@@ -1107,6 +1286,8 @@ class ChargeDischargeController:
         """
         self._manual_slot_owned = set()
         for coord in self.coordinators:
+            if ChargeDischargeController._is_battery_manual_owned(coord):
+                continue
             if not coord.is_available:
                 continue
             if self._is_active_balance_mode_running(coord):
@@ -1668,7 +1849,9 @@ class ChargeDischargeController:
         return [
             coordinator
             for coordinator in self.coordinators
-            if coordinator.data is not None and coordinator.is_available
+            if coordinator.data is not None
+            and coordinator.is_available
+            and not ChargeDischargeController._is_battery_manual_owned(coordinator)
         ]
 
     def is_charge_effectively_blocked(self) -> bool:
@@ -1770,6 +1953,10 @@ class ChargeDischargeController:
     def _refresh_time_slot_blocks(self) -> None:
         """Update per-battery charge/discharge blockers from the configured slots."""
         for coordinator in self.coordinators:
+            if ChargeDischargeController._is_battery_manual_owned(coordinator):
+                self.remove_charge_block("time_slot_charge", coordinator=coordinator)
+                self.remove_discharge_block("time_slot_discharge", coordinator=coordinator)
+                continue
             if self._is_time_slot_allowed(coordinator, True):
                 self.remove_charge_block("time_slot_charge", coordinator=coordinator)
             else:
@@ -1875,6 +2062,10 @@ class ChargeDischargeController:
         weekly_100_unlocked = self._weekly_full_charge_unlocked()
 
         for coordinator in self.coordinators:
+            if ChargeDischargeController._is_battery_manual_owned(coordinator):
+                self.remove_charge_block("max_soc", coordinator=coordinator)
+                self.remove_charge_block("charge_hysteresis", coordinator=coordinator)
+                continue
             if coordinator.data is None:
                 self.remove_charge_block("max_soc", coordinator=coordinator)
                 self.remove_charge_block("charge_hysteresis", coordinator=coordinator)
@@ -2016,6 +2207,9 @@ class ChargeDischargeController:
     def _refresh_battery_discharge_limit_blocks(self) -> None:
         """Expose min-SOC discharge availability as per-battery blockers."""
         for coordinator in self.coordinators:
+            if ChargeDischargeController._is_battery_manual_owned(coordinator):
+                self.remove_discharge_block("min_soc", coordinator=coordinator)
+                continue
             if coordinator.data is None:
                 self.remove_discharge_block("min_soc", coordinator=coordinator)
                 continue
@@ -2170,6 +2364,16 @@ class ChargeDischargeController:
         available_batteries = []
         for coordinator in self.coordinators:
             if coordinator.data is None:
+                continue
+
+            # Individual manual mode is an ownership boundary, not an
+            # operation blocker. Exclude it before availability and blocker
+            # evaluation so planning cannot select or classify it as automatic.
+            if getattr(coordinator, CONF_BATTERY_MANUAL_MODE_ENABLED, False):
+                _LOGGER.debug(
+                    "%s: Skipping - individual manual mode owns this battery",
+                    coordinator.name,
+                )
                 continue
 
             # Skip batteries that are unreachable
@@ -2593,7 +2797,10 @@ class ChargeDischargeController:
             )
             return self.compute_active_target(), sensor_actual
 
-        coordinators_with_data = [c for c in self.coordinators if c.data]
+        coordinators_with_data = [
+            c for c in self.coordinators
+            if c.data and not ChargeDischargeController._is_battery_manual_owned(c)
+        ]
         if coordinators_with_data:
             avg_soc = (
                 sum(c.data.get("battery_soc", 0) for c in coordinators_with_data)
@@ -2749,7 +2956,10 @@ class ChargeDischargeController:
         """Return True when peak shaving should be active based on current SOC."""
         if not self.capacity_protection_enabled:
             return False
-        coordinators_with_data = [c for c in self.coordinators if c.data]
+        coordinators_with_data = [
+            c for c in self.coordinators
+            if c.data and not ChargeDischargeController._is_battery_manual_owned(c)
+        ]
         if not coordinators_with_data:
             return False
         avg_soc = (
@@ -2836,7 +3046,10 @@ class ChargeDischargeController:
             }
 
         # Guard against empty or invalid coordinators
-        coordinators_with_data = [c for c in self.coordinators if c.data]
+        coordinators_with_data = [
+            c for c in self.coordinators
+            if c.data and not ChargeDischargeController._is_battery_manual_owned(c)
+        ]
         if not coordinators_with_data:
             _LOGGER.error("No battery coordinators with valid data for predictive charging evaluation")
             return {
@@ -2889,7 +3102,7 @@ class ChargeDischargeController:
         avg_soc = sum(c.data.get("battery_soc", 0) for c in coordinators_with_data) / len(coordinators_with_data)
 
         # Get min_soc from coordinators (use max if mixed configs for safety)
-        min_soc_values = [c.min_soc for c in self.coordinators]
+        min_soc_values = [c.min_soc for c in coordinators_with_data]
         min_soc = max(min_soc_values) if min_soc_values else 20  # Default 20% if unavailable
 
         # Calculate energy components
@@ -3171,7 +3384,10 @@ class ChargeDischargeController:
         if not decision_data:
             return None
 
-        coordinators_with_data = [c for c in self.coordinators if c.data]
+        coordinators_with_data = [
+            c for c in self.coordinators
+            if c.data and not ChargeDischargeController._is_battery_manual_owned(c)
+        ]
         if not coordinators_with_data:
             return None
 
@@ -3231,6 +3447,8 @@ class ChargeDischargeController:
         )
         targets = {}
         for coordinator in self.coordinators:
+            if ChargeDischargeController._is_battery_manual_owned(coordinator):
+                continue
             if coordinator.data is None or not getattr(coordinator, "is_available", True):
                 continue
             target = float(coordinator.max_soc)
@@ -3585,9 +3803,9 @@ class ChargeDischargeController:
             data.get("inverter_state"),
         )
 
-    async def _apply_software_manual_setpoints(self) -> None:
+    async def _apply_software_manual_setpoints(self, global_mode: bool = True) -> None:
         """Assert the per-battery manual setpoint for drivers without manual
-        registers (Zendure/Anker) while global manual mode is active.
+        registers (Zendure/Anker) while global or individual manual mode is active.
 
         Register-based batteries (Marstek) are driven by the user's own register
         writes, so they are skipped here. Charge/Discharge setpoints are
@@ -3599,13 +3817,27 @@ class ChargeDischargeController:
         — fighting Solix app modes the user may select while paused.
         """
         for coordinator in self.coordinators:
+            individual_mode = ChargeDischargeController._is_battery_manual_owned(coordinator)
+            if not global_mode and not individual_mode:
+                continue
             if not coordinator.needs_software_manual_control:
                 continue
             mode = coordinator.manual_force_mode
+            owner = "battery_manual" if individual_mode else "automatic"
             if mode == "Charge":
-                await self._set_battery_power(coordinator, coordinator.manual_set_charge_power, 0, bypass_blockers=True)
+                kwargs = {"bypass_blockers": True}
+                if individual_mode:
+                    kwargs["owner"] = owner
+                await self._set_battery_power(
+                    coordinator, coordinator.manual_set_charge_power, 0, **kwargs
+                )
             elif mode == "Discharge":
-                await self._set_battery_power(coordinator, 0, coordinator.manual_set_discharge_power, bypass_blockers=True)
+                kwargs = {"bypass_blockers": True}
+                if individual_mode:
+                    kwargs["owner"] = owner
+                await self._set_battery_power(
+                    coordinator, 0, coordinator.manual_set_discharge_power, **kwargs
+                )
             # Idle: leave device alone (no 0 W reassert / no mode force).
 
     async def _set_battery_power(
@@ -3618,6 +3850,7 @@ class ChargeDischargeController:
         bypass_blockers: bool = False,
         force_write: bool = False,
         preserve_non_responsive_episode: bool = False,
+        owner: str = "automatic",
     ) -> bool:
         """Set charge/discharge power for a single battery with ACK verification.
 
@@ -3631,6 +3864,15 @@ class ChargeDischargeController:
 
         Returns True if command was acknowledged, False otherwise.
         """
+        if owner == "automatic" and getattr(
+            coordinator, CONF_BATTERY_MANUAL_MODE_ENABLED, False
+        ):
+            _LOGGER.debug(
+                "[%s] Skipping automatic power write - individual manual mode owns this battery",
+                getattr(coordinator, "name", coordinator),
+            )
+            return False
+
         # Skip if battery is unreachable
         if not coordinator.is_available:
             _LOGGER.debug(
@@ -3657,7 +3899,7 @@ class ChargeDischargeController:
             return False
 
         # Skip if a manual time slot already commanded this coord this cycle.
-        if self._is_manual_slot_owned(coordinator):
+        if owner == "automatic" and self._is_manual_slot_owned(coordinator):
             _LOGGER.debug(
                 "[%s] Skipping power write - manual time slot owns this battery",
                 coordinator.name
@@ -3717,7 +3959,7 @@ class ChargeDischargeController:
         # the phase budget twice; direct automatic commands are capped against
         # the other batteries' current orders.
         phase_limiter = getattr(self, "_phase_power_limiter", None)
-        if phase_limiter is not None and phase_limiter.enabled:
+        if owner == "automatic" and phase_limiter is not None and phase_limiter.enabled:
             charge_power, discharge_power = phase_limiter.limit_single_command(
                 coordinator,
                 charge_power,
@@ -4223,6 +4465,8 @@ class ChargeDischargeController:
         guessing with a toggle. Skipped when the user has disabled RS485 control.
         Returns True if the re-enable succeeded.
         """
+        if ChargeDischargeController._is_battery_manual_owned(coordinator):
+            return False
         if coordinator.rs485_user_disabled:
             return False
         if not coordinator.capabilities.has_rs485_control:
@@ -4301,6 +4545,8 @@ class ChargeDischargeController:
         """Stop all battery commands after a global operation block becomes active."""
         _LOGGER.debug("ChargeDischargeController: stopping all batteries due to %s block", direction)
         for coordinator in self.coordinators:
+            if ChargeDischargeController._is_battery_manual_owned(coordinator):
+                continue
             if self._is_active_balance_mode_running(coordinator):
                 continue
             await self._set_battery_power(coordinator, 0, 0)
@@ -4312,12 +4558,16 @@ class ChargeDischargeController:
         """Stop batteries that were active before a per-battery block appeared."""
         stopped = False
         for coordinator in list(self._active_charge_batteries):
+            if ChargeDischargeController._is_battery_manual_owned(coordinator):
+                continue
             if self.is_charge_blocked(coordinator):
                 await self._set_battery_power(coordinator, 0, 0)
                 if coordinator in self._active_charge_batteries:
                     self._active_charge_batteries.remove(coordinator)
                 stopped = True
         for coordinator in list(self._active_discharge_batteries):
+            if ChargeDischargeController._is_battery_manual_owned(coordinator):
+                continue
             if self.is_discharge_blocked(coordinator):
                 await self._set_battery_power(coordinator, 0, 0)
                 if coordinator in self._active_discharge_batteries:
@@ -4398,7 +4648,7 @@ class ChargeDischargeController:
                     if (
                         getattr(coordinator, "phase", None) == phase
                         or getattr(coordinator, CONF_BATTERY_PHASE, None) == phase
-                    )
+                    ) and not ChargeDischargeController._is_battery_manual_owned(coordinator)
                 ]
                 if not phase_batteries:
                     continue
@@ -4430,6 +4680,8 @@ class ChargeDischargeController:
                     return True
 
         for coordinator in self.coordinators:
+            if ChargeDischargeController._is_battery_manual_owned(coordinator):
+                continue
             if not coordinator.data:
                 continue
             blocked = (
@@ -4611,6 +4863,8 @@ class ChargeDischargeController:
         # first direction must not erase the second direction's live intent.
         for is_charging in (True, False):
             for coordinator in self.coordinators:
+                if ChargeDischargeController._is_battery_manual_owned(coordinator):
+                    continue
                 charge = getattr(coordinator, "commanded_charge_power", 0) or 0
                 discharge = getattr(coordinator, "commanded_discharge_power", 0) or 0
                 value = charge if is_charging else discharge
@@ -4638,6 +4892,8 @@ class ChargeDischargeController:
             )
 
         for coordinator in self.coordinators:
+            if ChargeDischargeController._is_battery_manual_owned(coordinator):
+                continue
             await self._set_battery_power(
                 coordinator,
                 allocations[True].get(coordinator, 0),
@@ -5430,6 +5686,12 @@ class ChargeDischargeController:
             # Do not update PD state - freeze controller state
             self._phase_safety_pending = False
             return
+
+        # Individual manual batteries remain under their own software setpoints
+        # while the rest of the fleet continues through automatic planning.
+        apply_manual_setpoints = getattr(self, "_apply_software_manual_setpoints", None)
+        if apply_manual_setpoints is not None:
+            await apply_manual_setpoints(global_mode=False)
 
         # === WEEKLY FULL CHARGE REGISTER MANAGEMENT ===
         # Handle register writes and completion detection BEFORE predictive charging
@@ -6656,6 +6918,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             esphome_device_id=battery_config.get("esphome_device_id"),
             username=battery_config.get(CONF_USERNAME, ""),
             password=battery_config.get(CONF_PASSWORD, ""),
+            battery_manual_mode_enabled=battery_config.get(
+                CONF_BATTERY_MANUAL_MODE_ENABLED, False
+            ),
         )
         # Physical phase is metadata for the safety limiter only.  It is never
         # used as an input to the global Grid 0 controller.
@@ -6666,6 +6931,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Restore persisted RS485 user preference and store entry reference for future persistence
         coordinator._config_entry = entry
         coordinator.rs485_user_disabled = battery_config.get("rs485_user_disabled", False)
+        coordinator.battery_manual_mode_enabled = bool(
+            battery_config.get(CONF_BATTERY_MANUAL_MODE_ENABLED, False)
+        )
         coordinator.battery_capacity_kwh = battery_config.get("battery_capacity_kwh", 0.0)
         # Software manual-control + charge-ceiling state (Zendure-class drivers).
         coordinator.manual_force_mode = battery_config.get("manual_force_mode", "None")

@@ -44,5 +44,15 @@ La capacidad nominal es opcional. Introdúcela si quieres que Omnibattery
 calcule la energía almacenada y la eficiencia a partir del SOC; Zendure no
 ofrece un contador de capacidad nominal en su informe.
 
+### Control manual
+
+Zendure no tiene entidades nativas de modo forzado ni de consigna de
+carga/descarga en esta API. Por eso Omnibattery ofrece los controles de
+software `Modo forzado`, `Potencia de carga` y `Potencia de descarga`. Activa
+primero el switch **Control Manual de Batería** antes de usarlos; el controlador
+reaplica una consigna de software distinta de reposo en cada ciclo mientras el
+switch está activado. Mantén HEMS desactivado o la aplicación de Zendure puede
+sobrescribir la orden.
+
 Para los controles comunes en tiempo de ejecución y los límites del sistema,
 consulta la [configuración de baterías](index.md).

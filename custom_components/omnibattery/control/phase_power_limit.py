@@ -718,7 +718,11 @@ class PhasePowerLimiter:
         other_power = sum(
             self._commanded_direction_power(other, is_charging)
             for other in getattr(self.controller, "coordinators", []) or []
-            if other is not coordinator and self._battery_phase(other) == phase
+            if (
+                other is not coordinator
+                and self._battery_phase(other) == phase
+                and not getattr(other, "battery_manual_mode_enabled", False)
+            )
         )
         allowed = _round_down(
             min(float(requested), max(0.0, float(budget) - other_power), own_limit),

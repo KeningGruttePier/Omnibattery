@@ -55,6 +55,13 @@ class PowerDistribution:
         self._charge_selection_hold_until = {}
         self._discharge_selection_hold_until = {}
 
+    def _is_battery_manual_owned(self, coordinator) -> bool:
+        """Return whether a battery is outside automatic ownership."""
+        helper = getattr(self._controller, "_is_battery_manual_owned", None)
+        if helper is not None:
+            return bool(helper(coordinator))
+        return bool(getattr(coordinator, "battery_manual_mode_enabled", False))
+
     def _round_to_5w(self, value: float) -> int:
         """Round value to nearest 5W granularity."""
         return round(value / 5) * 5
@@ -65,6 +72,10 @@ class PowerDistribution:
         is_charging: bool,
     ) -> list:
         """Return batteries in the selector's normal SOC/energy priority order."""
+        available_batteries = [
+            coordinator for coordinator in available_batteries
+            if not self._is_battery_manual_owned(coordinator)
+        ]
         previous_active = (
             self._controller._active_charge_batteries
             if is_charging
@@ -98,6 +109,10 @@ class PowerDistribution:
 
         Returns dict mapping coordinator -> power (int, rounded to 5W).
         """
+        available_batteries = [
+            coordinator for coordinator in available_batteries
+            if not self._is_battery_manual_owned(coordinator)
+        ]
         if not available_batteries:
             return {}
 
@@ -192,6 +207,10 @@ class PowerDistribution:
         - SOC: Active batteries get 5% effective SOC advantage to avoid ping-pong
         - Power: Deactivation threshold = activation threshold − 10 pp
         """
+        available_batteries = [
+            coordinator for coordinator in available_batteries
+            if not self._is_battery_manual_owned(coordinator)
+        ]
         # No power requested: clear load-sharing state. This must run before
         # the single-battery fast path so a one-battery system is not retained
         # as active while the controller is intentionally idle.
@@ -377,6 +396,14 @@ class PowerDistribution:
             self._controller._active_charge_batteries if is_charging
             else self._controller._active_discharge_batteries
         )
+        active_batteries = [
+            coordinator for coordinator in active_batteries
+            if not self._is_battery_manual_owned(coordinator)
+        ]
+        if is_charging:
+            self._controller._active_charge_batteries = active_batteries
+        else:
+            self._controller._active_discharge_batteries = active_batteries
         if len(active_batteries) <= 1:
             return False
 
@@ -438,6 +465,8 @@ class PowerDistribution:
                 await self._controller._set_battery_power(coordinator, 0, power)
 
         for coordinator in self._controller.coordinators:
+            if self._is_battery_manual_owned(coordinator):
+                continue
             if coordinator not in allocated_batteries:
                 if self._controller._is_active_balance_mode_running(coordinator):
                     continue

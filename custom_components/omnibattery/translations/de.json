@@ -1333,6 +1333,9 @@
       "battery_allow_discharge": {
         "name": "Entladen Erlauben"
       },
+      "battery_manual_mode": {
+        "name": "Manuelle Batteriesteuerung"
+      },
       "full_charge_voltage_taper": {
         "name": "100%-Ladungsreduktion per Spannung"
       },

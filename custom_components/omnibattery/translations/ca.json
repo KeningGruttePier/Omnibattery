@@ -1333,6 +1333,9 @@
       "battery_allow_discharge": {
         "name": "Permetre Descàrrega"
       },
+      "battery_manual_mode": {
+        "name": "Control Manual de la Bateria"
+      },
       "full_charge_voltage_taper": {
         "name": "Reducció Càrrega 100% per Voltatge"
       },

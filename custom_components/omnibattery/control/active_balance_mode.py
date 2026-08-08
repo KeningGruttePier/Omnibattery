@@ -519,6 +519,8 @@ class ActiveBalanceModeManager:
 
         Both originals are saved on the coordinator and restored on completion.
         """
+        if getattr(coordinator, "battery_manual_mode_enabled", False):
+            return
         if getattr(coordinator, "active_balance_mode_cutoff_applied", False):
             return
 
@@ -566,6 +568,8 @@ class ActiveBalanceModeManager:
 
     async def _restore_active_balance_mode_cutoff(self, coordinator) -> None:
         """Restore the hardware charge cutoff and software max_soc saved before balance mode."""
+        if getattr(coordinator, "battery_manual_mode_enabled", False):
+            return
         saved_max_soc = getattr(coordinator, "active_balance_mode_saved_max_soc", None)
         if saved_max_soc is None:
             coordinator.active_balance_mode_cutoff_applied = False
@@ -612,6 +616,12 @@ class ActiveBalanceModeManager:
         mark_completed: bool = True,
     ) -> None:
         """Stop and mark one scheduled active-balance run complete."""
+        if getattr(coordinator, "battery_manual_mode_enabled", False):
+            _LOGGER.debug(
+                "%s: preserving active balance state while individual manual mode owns it",
+                coordinator.name,
+            )
+            return
         started_ts = getattr(coordinator, "active_balance_mode_started_ts", None)
         elapsed_h = None
         if started_ts:
@@ -693,6 +703,12 @@ class ActiveBalanceModeManager:
         statuses: dict[str, dict] = {}
 
         for coordinator in self._controller.coordinators:
+            if getattr(coordinator, "battery_manual_mode_enabled", False):
+                statuses[coordinator.name] = {
+                    "enabled": bool(getattr(coordinator, "active_balance_mode_enabled", False)),
+                    "state": "manual",
+                }
+                continue
             enabled = bool(getattr(coordinator, "active_balance_mode_enabled", False))
             started_ts = getattr(coordinator, "active_balance_mode_started_ts", None)
 

@@ -29,6 +29,7 @@ from .const import (
     CONF_WEEKLY_FULL_CHARGE_SKIP_DELAY,
     CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED,
     CONF_MANUAL_MODE_ENABLED,
+    CONF_BATTERY_MANUAL_MODE_ENABLED,
     CONF_NO_PD_MODE_ENABLED,
     CONF_PREDICTIVE_CHARGING_OVERRIDDEN,
     CONF_PREDICTIVE_CHARGING_MODE,
@@ -73,6 +74,7 @@ async def async_setup_entry(
         if controller:
             entities.append(BatteryAllowChargeSwitch(hass, entry, controller, coordinator))
             entities.append(BatteryAllowDischargeSwitch(hass, entry, controller, coordinator))
+            entities.append(BatteryManualModeSwitch(hass, entry, controller, coordinator))
             # Marstek-only cell maintenance: voltage taper + active balance need
             # per-cell voltages Anker/Zendure do not expose the same way.
             if coordinator.brand not in ("zendure", "anker"):
@@ -363,6 +365,47 @@ class BatteryAllowOperationSwitch(SwitchEntity):
             )
         await self._stop_if_active()
         _LOGGER.info("%s: %s blocked by user switch", self.coordinator.name, self._direction)
+        self.async_write_ha_state()
+
+    @property
+    def device_info(self):
+        """Return device information."""
+        return self.coordinator.battery_device_info
+
+
+class BatteryManualModeSwitch(SwitchEntity):
+    """Switch that gives one battery exclusive manual-control ownership."""
+
+    def __init__(self, hass: HomeAssistant, entry: ConfigEntry, controller, coordinator) -> None:
+        self.hass = hass
+        self.entry = entry
+        self.controller = controller
+        self.coordinator = coordinator
+
+        self._attr_has_entity_name = True
+        self._attr_translation_key = "battery_manual_mode"
+        self._attr_unique_id = f"{coordinator.device_key}_battery_manual_mode"
+        self.entity_id = english_entity_id(
+            "switch", coordinator.name, "battery_manual_mode"
+        )
+        self._attr_icon = "mdi:hand-back-right-outline"
+        self._attr_should_poll = False
+
+    @property
+    def is_on(self) -> bool:
+        """Return whether this battery is owned by individual manual mode."""
+        return bool(
+            getattr(self.coordinator, CONF_BATTERY_MANUAL_MODE_ENABLED, False)
+        )
+
+    async def async_turn_on(self, **kwargs) -> None:
+        """Enter individual manual mode after the controller verifies idle."""
+        await self.controller._set_battery_manual_mode(self.coordinator, True)
+        self.async_write_ha_state()
+
+    async def async_turn_off(self, **kwargs) -> None:
+        """Return the battery to automatic control after a verified idle handoff."""
+        await self.controller._set_battery_manual_mode(self.coordinator, False)
         self.async_write_ha_state()
 
     @property
@@ -1386,12 +1429,18 @@ class ManualModeSwitch(SwitchEntity):
         # Set all batteries to 0W (idle state) when entering manual mode
         for coordinator in self.controller.coordinators:
             try:
-                # A persisted Charge/Discharge choice from an earlier manual
-                # session must not be reasserted by the next control cycle.
-                coordinator.manual_force_mode = "None"
+                individual_manual = bool(
+                    getattr(coordinator, CONF_BATTERY_MANUAL_MODE_ENABLED, False)
+                )
+                # A persisted Charge/Discharge choice from an earlier global
+                # manual session must not be reasserted by the next control
+                # cycle. Preserve a per-battery manual choice: the individual
+                # owner is independent and resumes when global mode ends.
+                if not individual_manual:
+                    coordinator.manual_force_mode = "None"
+                    coordinator.persist_battery_config("manual_force_mode", "None")
                 coordinator.commanded_charge_power = 0
                 coordinator.commanded_discharge_power = 0
-                coordinator.persist_battery_config("manual_force_mode", "None")
                 await coordinator.apply_power(0, read_back=False)
                 await coordinator.async_request_refresh()
                 _LOGGER.info("Set %s to 0W (idle) for manual mode", coordinator.name)
@@ -1434,6 +1483,8 @@ class ManualModeSwitch(SwitchEntity):
             self.controller._active_discharge_batteries = []
             self.controller._active_charge_batteries = []
             for coordinator in self.controller.coordinators:
+                if getattr(coordinator, CONF_BATTERY_MANUAL_MODE_ENABLED, False):
+                    continue
                 coordinator.manual_force_mode = "None"
                 coordinator.persist_battery_config("manual_force_mode", "None")
 
@@ -1955,4 +2006,3 @@ class NegativePriceChargingSwitch(SwitchEntity):
             "manufacturer": "Omnibattery",
             "model": "Multi-Battery System",
         }
-

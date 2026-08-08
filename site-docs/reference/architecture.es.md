@@ -93,6 +93,14 @@ registro ni rutas HTTP se filtren a la capa de control.
 la escritura se confirmó por readback, la potencia entregada medida y un eco del
 estado nativo de la marca que el coordinador fusiona en `coordinator.data`.
 
+La propiedad manual individual se coordina por encima del driver. Durante la
+transición el controlador verifica una consigna de reposo (`0 W`) y después
+excluye la batería de las asignaciones automáticas. Los drivers sin registros de
+modo forzado/consigna (por ejemplo Zendure y Anker) reciben su consigna manual
+persistida de carga/descarga mediante `apply_setpoint` en cada ciclo de control;
+una selección manual de reposo (`None`) no se reafirma deliberadamente, para no
+entrar en conflicto con el modo elegido en la aplicación del equipo.
+
 ### Las capacidades reemplazan a los checks de versión
 
 Cada driver reporta un `DriverCapabilities` inmutable una vez; los llamadores lo

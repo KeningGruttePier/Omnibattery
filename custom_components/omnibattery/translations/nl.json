@@ -1333,6 +1333,9 @@
       "battery_allow_discharge": {
         "name": "Ontladen Toestaan"
       },
+      "battery_manual_mode": {
+        "name": "Handmatige batterijregeling"
+      },
       "full_charge_voltage_taper": {
         "name": "100%-Laadbegrenzing op Spanning"
       },
