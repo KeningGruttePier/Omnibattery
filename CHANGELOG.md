@@ -10,6 +10,7 @@
 - **The active-balance blueprint now discovers entities from the selected Marstek device**: standard telemetry and control entities are resolved with `device_entities`, while optional advanced entity-ID overrides cover renamed entities. The user still creates only the persistent run-request `input_boolean`.
 - **Marstek active balancing moved to a Home Assistant blueprint**: the integrated per-battery Active Balance Mode, its runtime state and dashboard controls were removed. The new `blueprints/marstek_active_balance_blueprint.yaml` runs one battery at a time through Battery Manual Mode, validates and cleans up every path, and migrates interrupted legacy runs safely. Normal voltage tapering, weekly full charge and passive monitoring remain integrated.
 - **Marstek force-mode option names are now consistent**: v2, v3, Venus A, Venus D and ESPHome expose `None`, `Charge` and `Discharge`. Existing ESPHome entities using the former lowercase spellings remain readable and writable during migration.
+- **Active-balance blueprint notifications restored their compact visual format**: start and result notifications again use the battery name, status emojis, initial→final delta, improvement and elapsed duration; manual cancellation now keeps the run context long enough to show the same result format.
 
 ### Fixed
 - **Marstek Venus E v2/v3 power caps could be overwritten or displayed as 2500 W**: writes now use the app-supported 800/2500 W hardware values while the integration preserves and displays the user's lower software limit.

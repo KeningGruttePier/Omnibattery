@@ -135,6 +135,23 @@ def test_blueprint_has_one_battery_contract_and_plan_defaults():
     assert "state_attr(max_charge_power, 'min')" not in raw
 
 
+def test_blueprint_restores_the_emoji_balance_notifications():
+    blueprint, raw = _load_blueprint()
+
+    assert blueprint["mode"] == "queued"
+    assert "device_attr(battery_device, 'name_by_user')" in raw
+    assert 'title: "🔋 Active balancing started - {{ battery_name }}"' in raw
+    assert "📊 Initial delta:" in raw
+    assert "🎯 Runs until delta" in raw
+    assert "🚫 Battery paused from normal control while balancing." in raw
+    assert 'title: "{{ cleanup_title }}"' in raw
+    assert "✅ Active balancing finished - {{ battery_name }}" in raw
+    assert "✅ Stopped by user" in raw
+    assert "📊 Delta:" in raw
+    assert "(improvement" in raw
+    assert "⏱️ Duration:" in raw
+
+
 def test_blueprint_matches_home_assistant_schema():
     """Keep the device selector and optional overrides importable by HA."""
     data = yaml_util.load_yaml_dict(BLUEPRINT)
