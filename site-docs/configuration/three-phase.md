@@ -13,6 +13,8 @@ The global **Inverted meter sign** setting is applied to the configured phase me
 
 Once the feature is configured, the system **Three-Phase Current Protection** switch is available on the dashboard. While it is off, the per-battery **Battery Phase** selectors are unavailable; they become live controls as soon as protection is enabled. Changing a battery's phase persists immediately and is used by the next automatic control cycle.
 
+The diagnostic sensor `sensor.omnibattery_three_phase_protection_status` is also created. Its state is `disabled`, `active`, `limiting` or `degraded`. Attributes include `limited_batteries` and `limited_battery_details` (the batteries and power reduced in the latest automatic order), `unassigned_batteries`, `degraded_phases` and the complete per-phase detail under `phases`, including sensor, reading, limit, budgets and requested/assigned power.
+
 The global consumption sensor remains the controller's Grid 0 signal. Phase sensors are safety envelopes only: they do not replace Grid 0 or change the PD target.
 
 ## How the envelope works

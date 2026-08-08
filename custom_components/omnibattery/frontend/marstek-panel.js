@@ -58,7 +58,7 @@ const I18N = {
     gridImport: "Grid imported", gridExport: "Grid exported",
     now: "now", noData: "No data", imported: "Imported", exported: "Exported",
     diagTitle: "Integration status",
-    diagIntegration: "Integration", diagPdState: "PD state", diagNetBalance: "Net balance", diagAlarm: "Alarm",
+    diagIntegration: "Integration", diagPhaseProtection: "Phase protection", diagPdState: "PD state", diagNetBalance: "Net balance", diagAlarm: "Alarm",
     diagActiveBatteries: "Active batteries", diagNonResponsive: "No response",
     diagDischargeWindow: "Discharge window", diagPredictive: "Predictive charging", diagCurtailment: "Smart pre-discharge",
     diagPeak: "Peak shaving", diagWeeklyCharge: "Weekly charge", diagChargeDelay: "Charge delay",
@@ -129,7 +129,7 @@ const I18N = {
     gridImport: "Red importada", gridExport: "Red exportada",
     now: "ahora", noData: "Sin datos", imported: "Importada", exported: "Exportada",
     diagTitle: "Estado de la integración",
-    diagIntegration: "Integración", diagPdState: "Estado PD", diagNetBalance: "Balance neto", diagAlarm: "Alarma",
+    diagIntegration: "Integración", diagPhaseProtection: "Protección trifásica", diagPdState: "Estado PD", diagNetBalance: "Balance neto", diagAlarm: "Alarma",
     diagActiveBatteries: "Baterías activas", diagNonResponsive: "Sin respuesta",
     diagDischargeWindow: "Ventana de descarga", diagPredictive: "Carga predictiva", diagCurtailment: "Predescarga inteligente",
     diagPeak: "Reducción de picos", diagWeeklyCharge: "Carga semanal", diagChargeDelay: "Retardo de carga",
@@ -200,7 +200,7 @@ const I18N = {
     gridImport: "Xarxa importada", gridExport: "Xarxa exportada",
     now: "ara", noData: "Sense dades", imported: "Importada", exported: "Exportada",
     diagTitle: "Estat de la integració",
-    diagIntegration: "Integració", diagPdState: "Estat PD", diagNetBalance: "Balanç net", diagAlarm: "Alarma",
+    diagIntegration: "Integració", diagPhaseProtection: "Protecció trifàsica", diagPdState: "Estat PD", diagNetBalance: "Balanç net", diagAlarm: "Alarma",
     diagActiveBatteries: "Bateries actives", diagNonResponsive: "Sense resposta",
     diagDischargeWindow: "Finestra de descàrrega", diagPredictive: "Càrrega predictiva", diagCurtailment: "Predescàrrega intel·ligent",
     diagPeak: "Reducció de pics", diagWeeklyCharge: "Càrrega setmanal", diagChargeDelay: "Retard de càrrega",
@@ -267,7 +267,7 @@ const I18N = {
     gridImport: "Netzbezug", gridExport: "Netzeinspeisung",
     now: "jetzt", noData: "Keine Daten", imported: "Bezug", exported: "Einspeisung",
     diagTitle: "Integrationsstatus",
-    diagIntegration: "Integration", diagPdState: "PD-Status", diagNetBalance: "Netto-Balance", diagAlarm: "Alarm",
+    diagIntegration: "Integration", diagPhaseProtection: "Phasenschutz", diagPdState: "PD-Status", diagNetBalance: "Netto-Balance", diagAlarm: "Alarm",
     diagActiveBatteries: "Aktive Batterien", diagNonResponsive: "Keine Antwort",
     diagDischargeWindow: "Entladefenster", diagPredictive: "Prädiktives Laden", diagCurtailment: "Intelligente Vorentladung",
     diagPeak: "Spitzenlastkappung", diagWeeklyCharge: "Wöchentliche Ladung", diagChargeDelay: "Ladeverzögerung",
@@ -334,7 +334,7 @@ const I18N = {
     gridImport: "Réseau importé", gridExport: "Réseau exporté",
     now: "maintenant", noData: "Aucune donnée", imported: "Importée", exported: "Exportée",
     diagTitle: "État de l'intégration",
-    diagIntegration: "Intégration", diagPdState: "État PD", diagNetBalance: "Bilan net", diagAlarm: "Alarme",
+    diagIntegration: "Intégration", diagPhaseProtection: "Protection de phase", diagPdState: "État PD", diagNetBalance: "Bilan net", diagAlarm: "Alarme",
     diagActiveBatteries: "Batteries actives", diagNonResponsive: "Sans réponse",
     diagDischargeWindow: "Fenêtre de décharge", diagPredictive: "Charge prédictive", diagCurtailment: "Pré-décharge intelligente",
     diagPeak: "Écrêtement de pointe", diagWeeklyCharge: "Charge hebdomadaire", diagChargeDelay: "Délai de charge",
@@ -401,7 +401,7 @@ const I18N = {
     gridImport: "Net ingevoerd", gridExport: "Net teruggeleverd",
     now: "nu", noData: "Geen gegevens", imported: "Ingevoerd", exported: "Teruggeleverd",
     diagTitle: "Integratiestatus",
-    diagIntegration: "Integratie", diagPdState: "PD-status", diagNetBalance: "Nettosaldo", diagAlarm: "Alarm",
+    diagIntegration: "Integratie", diagPhaseProtection: "Fasebeveiliging", diagPdState: "PD-status", diagNetBalance: "Nettosaldo", diagAlarm: "Alarm",
     diagActiveBatteries: "Actieve batterijen", diagNonResponsive: "Geen reactie",
     diagDischargeWindow: "Ontlaadvenster", diagPredictive: "Voorspellend laden", diagCurtailment: "Slim voorontladen",
     diagPeak: "Piekbegrenzing", diagWeeklyCharge: "Wekelijkse lading", diagChargeDelay: "Laadvertraging",
@@ -511,6 +511,7 @@ const K = {
   activeBatteries: "active_batteries",
   nonResponsive: "non_responsive_batteries",
   integration: "integration_status",
+  phaseProtection: "three_phase_protection_status",
   dischargeWindow: "discharge_window",
   predictiveSwitch: "predictive_charging",
   peakSwitch: "capacity_protection",
@@ -530,6 +531,7 @@ const MPPT_KEYS = ["mppt1_power", "mppt2_power", "mppt3_power", "mppt4_power"];
 // Values are localized at render time via hass.formatEntityState.
 const DIAG_ROWS = [
   { key: K.integration, lk: "diagIntegration" },
+  { key: K.phaseProtection, lk: "diagPhaseProtection" },
   { key: K.sysAlarm, lk: "diagAlarm" },
   { key: K.activeBatteries, lk: "diagActiveBatteries" },
   { key: K.nonResponsive, lk: "diagNonResponsive" },
@@ -2805,6 +2807,15 @@ class MarstekVenusPanel extends HTMLElement {
         if (raw.includes("blocked") || raw.includes("pause") || raw.includes("backup")) tone = "warn";
         else if (raw === "initializing") tone = "neutral";
         return { text: disp, tone };
+      }
+      case K.phaseProtection: {
+        const limited = so.attributes && so.attributes.limited_batteries;
+        const names = Array.isArray(limited) ? limited.join(", ") : "";
+        if (raw === "limiting") {
+          return { text: names ? `${disp}: ${names}` : disp, tone: "warn" };
+        }
+        if (raw === "degraded") return { text: disp, tone: "bad" };
+        return { text: disp, tone: raw === "active" ? "good" : "neutral" };
       }
       default:
         return { text: disp, tone: "neutral" };

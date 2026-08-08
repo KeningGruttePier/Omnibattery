@@ -1396,6 +1396,15 @@
       "active_batteries": {
         "name": "Baterías Activas"
       },
+      "three_phase_protection_status": {
+        "name": "Estado de la Protección Trifásica",
+        "state": {
+          "disabled": "Desactivada",
+          "active": "Activa",
+          "limiting": "Limitando baterías",
+          "degraded": "Degradada / modo seguro"
+        }
+      },
       "system_battery_cell_power": {
         "name": "Potencia de Celda del Sistema"
       },

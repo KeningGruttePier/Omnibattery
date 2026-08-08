@@ -205,6 +205,7 @@ class PhasePowerLimiter:
         self._phase_settings: dict[str, tuple[str | None, float]] = {}
         self._snapshots: dict[str, dict[str, Any]] = {}
         self._planned: dict[Any, tuple[bool, int]] = {}
+        self._limited_batteries: dict[Any, dict[str, Any]] = {}
         self._last_log_signature: dict[str, tuple[Any, ...]] = {}
         self._manual_warning_created = False
         self.refresh_config()
@@ -251,6 +252,7 @@ class PhasePowerLimiter:
     def begin_cycle(self) -> None:
         """Forget distribution plans from the previous control cycle."""
         self._planned.clear()
+        self._limited_batteries.clear()
 
     def _battery_phase(self, coordinator: Any) -> str | None:
         phase = getattr(coordinator, "phase", None)
@@ -400,6 +402,65 @@ class PhasePowerLimiter:
             return max(0.0, float(getattr(coordinator, key, 0)))
         except (TypeError, ValueError):
             return 0.0
+
+    def _record_limited_battery(
+        self,
+        coordinator: Any,
+        phase: str,
+        requested: float,
+        assigned: float,
+        is_charging: bool,
+        reason: str = "phase_limit",
+    ) -> None:
+        """Remember a battery whose automatic order was reduced by this guard."""
+        requested = max(0.0, float(requested))
+        assigned = max(0.0, min(requested, float(assigned)))
+        if phase not in PHASE_VALUES or assigned >= requested:
+            self._limited_batteries.pop(coordinator, None)
+            return
+
+        self._limited_batteries[coordinator] = {
+            "battery": str(getattr(coordinator, "name", coordinator)),
+            "phase": phase,
+            "direction": "charging" if is_charging else "discharging",
+            "requested_power_w": int(requested),
+            "assigned_power_w": int(assigned),
+            "limited_power_w": int(requested - assigned),
+            "reason": reason or "phase_limit",
+        }
+
+    def _record_allocation_limits(
+        self,
+        requested_allocation: dict[Any, float],
+        allocation: dict[Any, int],
+        is_charging: bool,
+    ) -> None:
+        """Record per-battery reductions after overflow has been redistributed."""
+        for coordinator, requested in requested_allocation.items():
+            phase = self._battery_phase(coordinator)
+            requested_power = max(0.0, float(requested))
+            assigned_power = max(0.0, float(allocation.get(coordinator, 0)))
+            if phase not in PHASE_VALUES:
+                self._limited_batteries.pop(coordinator, None)
+                continue
+
+            if assigned_power < requested_power:
+                snapshot = self._snapshots.get(phase) or self.phase_snapshot(phase)
+                reason = (
+                    snapshot.get("reason")
+                    if snapshot.get("degraded")
+                    else "phase_limit"
+                )
+                self._record_limited_battery(
+                    coordinator,
+                    phase,
+                    requested_power,
+                    assigned_power,
+                    is_charging,
+                    reason or "phase_limit",
+                )
+            else:
+                self._limited_batteries.pop(coordinator, None)
 
     def _cap_group_allocation(
         self,
@@ -568,6 +629,11 @@ class PhasePowerLimiter:
             )
             snapshot["assigned_power_w"] = assigned if is_charging else -assigned
 
+        self._record_allocation_limits(
+            requested_allocation,
+            allocation,
+            is_charging,
+        )
         self._planned.update({
             coordinator: (is_charging, value)
             for coordinator, value in allocation.items()
@@ -617,9 +683,20 @@ class PhasePowerLimiter:
                 self._individual_limit(coordinator, is_charging), self.rounding_w
             )
             allowed = _round_down(min(float(requested), own_limit), self.rounding_w)
+            self._limited_batteries.pop(coordinator, None)
             return (allowed, 0) if is_charging else (0, allowed)
         snapshot = self.phase_snapshot(phase)
         if snapshot["degraded"]:
+            snapshot["requested_power_w"] = requested
+            snapshot["assigned_power_w"] = 0
+            self._record_limited_battery(
+                coordinator,
+                phase,
+                requested,
+                0,
+                is_charging,
+                snapshot.get("reason") or "phase_degraded",
+            )
             return 0, 0
 
         own_limit = _round_down(
@@ -630,6 +707,7 @@ class PhasePowerLimiter:
                 min(float(requested), own_limit),
                 self.rounding_w,
             )
+            self._limited_batteries.pop(coordinator, None)
             return (allowed, 0) if is_charging else (0, allowed)
 
         budget = (
@@ -646,10 +724,20 @@ class PhasePowerLimiter:
             min(float(requested), max(0.0, float(budget) - other_power), own_limit),
             self.rounding_w,
         )
-        if allowed < requested:
+        phase_available = max(0.0, float(budget) - other_power)
+        if phase_available < requested:
+            self._record_limited_battery(
+                coordinator,
+                phase,
+                requested,
+                allowed,
+                is_charging,
+            )
             snapshot["requested_power_w"] = requested
             snapshot["assigned_power_w"] = allowed if is_charging else -allowed
             self._log_limit(snapshot, requested, allowed)
+        else:
+            self._limited_batteries.pop(coordinator, None)
         return (allowed, 0) if is_charging else (0, allowed)
 
     def _log_state_change(self, snapshot: dict[str, Any]) -> None:
@@ -710,9 +798,52 @@ class PhasePowerLimiter:
     def diagnostics(self) -> dict[str, Any]:
         """Return configuration and current per-phase safety state."""
         phases = self.all_snapshots()
+        phase_batteries = {phase: [] for phase in PHASE_VALUES}
+        unassigned_batteries: list[str] = []
+        coordinators = list(getattr(self.controller, "coordinators", []) or [])
+        for coordinator in coordinators:
+            name = str(getattr(coordinator, "name", coordinator))
+            phase = self._battery_phase(coordinator)
+            if phase in phase_batteries:
+                phase_batteries[phase].append(name)
+            else:
+                unassigned_batteries.append(name)
+
+        for phase, snapshot in phases.items():
+            snapshot["batteries"] = phase_batteries.get(phase, [])
+
+        limited_details = [
+            dict(self._limited_batteries[coordinator])
+            for coordinator in coordinators
+            if coordinator in self._limited_batteries
+        ]
+        degraded_phases = [
+            phase
+            for phase, snapshot in phases.items()
+            if snapshot.get("degraded")
+            and (snapshot.get("configured") or phase_batteries.get(phase))
+        ]
+        if not self.enabled:
+            state = "disabled"
+            limited_details = []
+        elif degraded_phases:
+            state = "degraded"
+        elif limited_details:
+            state = "limiting"
+        else:
+            state = "active"
+
         return {
+            "state": state,
             "enabled": self.enabled,
+            "protection_enabled": self.enabled,
             "meter_inverted": self.meter_inverted,
+            "limited_batteries": [
+                detail["battery"] for detail in limited_details
+            ],
+            "limited_battery_details": limited_details,
+            "unassigned_batteries": unassigned_batteries,
+            "degraded_phases": degraded_phases,
             "sensors": {
                 PHASE_SENSOR_KEYS[phase]: self._phase_settings.get(phase, (None, 0.0))[0]
                 for phase in PHASE_VALUES

@@ -1396,6 +1396,15 @@
       "active_batteries": {
         "name": "Aktive Batterien"
       },
+      "three_phase_protection_status": {
+        "name": "Status des Phasenschutzes",
+        "state": {
+          "disabled": "Deaktiviert",
+          "active": "Aktiv",
+          "limiting": "Batterien werden begrenzt",
+          "degraded": "Eingeschränkt / Ausfallschutz"
+        }
+      },
       "system_battery_cell_power": {
         "name": "System-Batteriezellenleistung"
       },

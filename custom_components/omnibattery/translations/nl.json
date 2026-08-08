@@ -1396,6 +1396,15 @@
       "active_batteries": {
         "name": "Actieve Batterijen"
       },
+      "three_phase_protection_status": {
+        "name": "Status Driefasige Beveiliging",
+        "state": {
+          "disabled": "Uitgeschakeld",
+          "active": "Actief",
+          "limiting": "Batterijen begrensd",
+          "degraded": "Gedegradeerd / veilige modus"
+        }
+      },
       "system_battery_cell_power": {
         "name": "Systeem Batterijcelvermogen"
       },

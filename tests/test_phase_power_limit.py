@@ -35,6 +35,7 @@ from custom_components.omnibattery.config_flow import (
     _phase_protection_schema,
     _validate_phase_protection,
 )
+from custom_components.omnibattery.sensor import ThreePhaseProtectionSensor
 
 
 class FakeStates:
@@ -423,6 +424,79 @@ def test_unassigned_battery_is_exempt_and_valid_phase_is_capped():
     assert limiter.limit_single_command(unassigned, 1000, 0) == (1000, 0)
     assert limiter.limit_allocation({unassigned: 1500}, True) == {unassigned: 1500}
     assert limiter.has_degraded_phase() is False
+
+
+def test_protection_diagnostics_report_limited_and_unassigned_batteries():
+    now = datetime.now(timezone.utc)
+    l1_battery = FakeCoordinator("L1 battery", PHASE_L1)
+    l2_battery = FakeCoordinator("L2 battery", PHASE_L2)
+    unassigned = FakeCoordinator("Unassigned", PHASE_UNASSIGNED)
+    limiter = _limiter(
+        {
+            "sensor.l1": _state(20, now=now),
+            "sensor.l2": _state(5, now=now),
+            "sensor.l3": _state(0, now=now),
+        },
+        [l1_battery, l2_battery, unassigned],
+    )
+
+    limiter.limit_allocation(
+        {l1_battery: 2000, l2_battery: 2000},
+        True,
+        [l1_battery, l2_battery],
+    )
+    details = limiter.diagnostics()
+
+    assert details["state"] == "limiting"
+    assert details["protection_enabled"] is True
+    assert details["limited_batteries"] == ["L1 battery"]
+    assert details["limited_battery_details"] == [
+        {
+            "battery": "L1 battery",
+            "phase": PHASE_L1,
+            "direction": "charging",
+            "requested_power_w": 2000,
+            "assigned_power_w": 1035,
+            "limited_power_w": 965,
+            "reason": "phase_limit",
+        }
+    ]
+    assert details["phases"][PHASE_L1]["batteries"] == ["L1 battery"]
+    assert details["unassigned_batteries"] == ["Unassigned"]
+
+    limiter.begin_cycle()
+    limiter.limit_allocation({l1_battery: 100}, True, [l1_battery])
+    assert limiter.diagnostics()["state"] == "active"
+
+    limiter.enabled = False
+    disabled = limiter.diagnostics()
+    assert disabled["state"] == "disabled"
+    assert disabled["limited_batteries"] == []
+
+
+def test_three_phase_protection_sensor_exposes_status_and_attributes():
+    now = datetime.now(timezone.utc)
+    battery = FakeCoordinator("L1 battery", PHASE_L1)
+    limiter = _limiter(
+        {
+            "sensor.l1": _state(20, now=now),
+            "sensor.l2": _state(0, now=now),
+            "sensor.l3": _state(0, now=now),
+        },
+        [battery],
+    )
+    limiter.limit_single_command(battery, 2000, 0)
+    limiter.controller._phase_power_limiter = limiter
+    sensor = ThreePhaseProtectionSensor(
+        limiter.hass,
+        limiter.config_entry,
+        limiter.controller,
+    )
+
+    assert sensor.entity_id == "sensor.omnibattery_three_phase_protection_status"
+    assert sensor.native_value == "limiting"
+    assert sensor.extra_state_attributes["limited_batteries"] == ["L1 battery"]
+    assert sensor.extra_state_attributes["phases"][PHASE_L1]["reading_a"] == 20
 
 
 def test_config_validation_rejects_duplicate_sensors_and_bad_units():

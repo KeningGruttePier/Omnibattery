@@ -13,6 +13,8 @@ El ajuste global **Signo del medidor invertido** se aplica a los medidores de fa
 
 Una vez configurada la función, el switch de sistema **Protección de corriente trifásica** aparece en el dashboard. Mientras está apagado, los selectores de **Fase de la batería** no están disponibles; se convierten en controles en vivo al activar la protección. El cambio de fase de una batería se guarda inmediatamente y se utiliza en el siguiente ciclo de control automático.
 
+También se crea el sensor de diagnóstico `sensor.omnibattery_three_phase_protection_status`. Su estado es `Desactivada`, `Activa`, `Limitando baterías` o `Degradada / modo seguro`. Los atributos incluyen `limited_batteries` y `limited_battery_details` (baterías y potencia recortada en la última orden automática), `unassigned_batteries`, `degraded_phases` y el detalle completo de cada fase en `phases`, con sensor, lectura, límite, presupuestos y potencia solicitada/asignada.
+
 El sensor global de consumo sigue siendo la señal Grid 0 del controlador. Los sensores de fase son solo envolventes de seguridad: no sustituyen Grid 0 ni cambian el objetivo del controlador PD.
 
 ## Funcionamiento

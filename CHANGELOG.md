@@ -2,6 +2,9 @@
 
 ## [1.3.0b5] - 2026-08-07
 
+### Added
+- **Three-phase protection status sensor**: adds `sensor.omnibattery_three_phase_protection_status` with `disabled`, `active`, `limiting` and `degraded` states. Its attributes expose the protection flag, currently limited batteries and their requested/assigned power, unassigned batteries, degraded phases and detailed per-phase telemetry/budgets; the custom dashboard includes the sensor in its diagnostics view.
+
 ### Fixed
 - **Marstek Venus E v2/v3 power caps could be overwritten or displayed as 2500 W**: writes now use the app-supported 800/2500 W hardware values while the integration preserves and displays the user's lower software limit.
 

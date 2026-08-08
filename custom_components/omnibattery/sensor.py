@@ -123,6 +123,10 @@ async def async_setup_entry(
     if controller:
         entities.append(ActiveBatteriesSensor(hass, entry, controller, coordinators))
 
+    # Add the three-phase protection status and per-phase diagnostic sensor.
+    if controller:
+        entities.append(ThreePhaseProtectionSensor(hass, entry, controller))
+
     # Add weekly full charge status sensor (when weekly charge is enabled)
     if controller and controller.weekly_full_charge_enabled:
         entities.append(WeeklyFullChargeSensor(hass, entry, controller))
@@ -451,6 +455,62 @@ class ActiveBatteriesSensor(SensorEntity):
                 attrs[f"{c.name}_total_charged"] = f"{charge_kwh} kWh"
 
         return attrs
+
+    @property
+    def device_info(self):
+        """Return device information for the system."""
+        return {
+            "identifiers": {(DOMAIN, "marstek_venus_system")},
+            "name": "Omnibattery System",
+            "manufacturer": "Omnibattery",
+            "model": "Multi-Battery System",
+        }
+
+
+class ThreePhaseProtectionSensor(SensorEntity):
+    """Diagnostic sensor showing the live three-phase protection envelope."""
+
+    def __init__(self, hass: HomeAssistant, entry: ConfigEntry, controller) -> None:
+        """Initialize the three-phase protection status sensor."""
+        self.hass = hass
+        self.entry = entry
+        self._controller = controller
+
+        self._attr_has_entity_name = True
+        self._attr_translation_key = "three_phase_protection_status"
+        self._attr_unique_id = f"{SYSTEM_UNIQUE_ID_PREFIX}three_phase_protection_status"
+        self.entity_id = system_entity_id("sensor", "three_phase_protection_status")
+        self._attr_icon = "mdi:transmission-tower-shield"
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_should_poll = True
+
+    def _diagnostics(self) -> dict:
+        """Return a fresh snapshot so HA attributes reflect the latest readings."""
+        limiter = getattr(self._controller, "_phase_power_limiter", None)
+        if limiter is None:
+            return {
+                "state": "disabled",
+                "enabled": False,
+                "protection_enabled": False,
+                "limited_batteries": [],
+                "limited_battery_details": [],
+                "unassigned_batteries": [],
+                "degraded_phases": [],
+                "phases": {},
+            }
+        return limiter.diagnostics()
+
+    @property
+    def native_value(self) -> str:
+        """Return the translated protection status key."""
+        return str(self._diagnostics().get("state", "disabled"))
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        """Return configuration, phase budgets and limited-battery details."""
+        details = self._diagnostics()
+        details.pop("state", None)
+        return details
 
     @property
     def device_info(self):
