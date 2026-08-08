@@ -301,6 +301,27 @@ async def test_skip_when_charge_unchanged():
     coord.apply_power.assert_not_called()
 
 
+async def test_power_write_is_capped_to_live_charge_limit():
+    coord = _Coord({
+        "force_mode": 0,
+        "set_charge_power": 0,
+        "set_discharge_power": 0,
+        "battery_power": 1500,
+    })
+    coord.max_charge_power = 1500
+    coord.apply_power = AsyncMock(
+        return_value=_ok(1500, battery_power_w=1500)
+    )
+    ctrl = _controller()
+
+    result = await ChargeDischargeController._set_battery_power(
+        ctrl, coord, 2500, 0, bypass_blockers=True
+    )
+
+    assert result is True
+    coord.apply_power.assert_awaited_once_with(1500, read_back=True)
+
+
 async def test_no_skip_when_charge_unchanged_but_not_delivering():
     """The v3 may keep echoing charge set-points after RS485 control drops."""
     coord = _Coord({

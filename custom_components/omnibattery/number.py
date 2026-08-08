@@ -54,6 +54,19 @@ from .infra.entity_naming import (
 _LOGGER = logging.getLogger(__name__)
 
 
+def _effective_setpoint_max(
+    coordinator: MarstekVenusDataUpdateCoordinator,
+    kind: str,
+    hardware_max: int,
+) -> int:
+    """Return the current per-direction ceiling for a manual setpoint."""
+    try:
+        configured_max = int(getattr(coordinator, f"max_{kind}_power"))
+    except (AttributeError, TypeError, ValueError):
+        configured_max = int(hardware_max)
+    return max(0, min(int(hardware_max), configured_max))
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -166,6 +179,20 @@ class MarstekVenusNumber(CoordinatorEntity, NumberEntity):
         self._scale = definition.get("scale", 1.0)  # Scale factor for register conversion
 
     @property
+    def native_max_value(self):
+        """Expose the configured max power as the setpoint slider ceiling."""
+        key = self.definition["key"]
+        if key == "set_charge_power":
+            return _effective_setpoint_max(
+                self.coordinator, "charge", self.definition["max"]
+            )
+        if key == "set_discharge_power":
+            return _effective_setpoint_max(
+                self.coordinator, "discharge", self.definition["max"]
+            )
+        return self.definition["max"]
+
+    @property
     def native_value(self):
         """Return the configured value represented by the number entity.
 
@@ -182,13 +209,26 @@ class MarstekVenusNumber(CoordinatorEntity, NumberEntity):
                 return float(self.coordinator.user_max_discharge_power)
         if self.coordinator.data is None:
             return None
-        return self.coordinator.data.get(key)
+        value = self.coordinator.data.get(key)
+        if value is None:
+            return None
+        if key == "set_charge_power":
+            return min(float(value), float(self.native_max_value))
+        if key == "set_discharge_power":
+            return min(float(value), float(self.native_max_value))
+        return value
 
     async def async_set_native_value(self, value: float) -> None:
         """Set the value of the number."""
         from logging import getLogger
         _LOGGER = getLogger(__name__)
         
+        key = self.definition["key"]
+        if key == "set_charge_power":
+            value = max(0.0, min(float(value), float(self.native_max_value)))
+        elif key == "set_discharge_power":
+            value = max(0.0, min(float(value), float(self.native_max_value)))
+
         # Convert value using scale factor if needed
         # For example: 95% with scale=0.1 -> write 950 to register
         register_value = int(value / self._scale)
@@ -203,7 +243,6 @@ class MarstekVenusNumber(CoordinatorEntity, NumberEntity):
         # while the polling path also sees the device's hardware cap. Keep the
         # user value current before the write triggers an immediate refresh; the
         # wire value itself remains owned by the driver.
-        key = self.definition["key"]
         if key == "max_charge_power" and getattr(
             self.coordinator, "needs_software_power_cap", False
         ):
@@ -873,21 +912,37 @@ class MarstekManualSetPowerNumber(CoordinatorEntity, NumberEntity):
             self._attr_translation_key = "set_charge_power"
             self._attr_unique_id = f"{coordinator.device_key}_set_charge_power"
             self._attr_icon = "mdi:battery-arrow-up-outline"
-            self._attr_native_max_value = coordinator.capabilities.max_charge_power_w
+            self._hardware_max = coordinator.capabilities.max_charge_power_w
+            self._attr_native_max_value = self._hardware_max
         else:
             self._attr_translation_key = "set_discharge_power"
             self._attr_unique_id = f"{coordinator.device_key}_set_discharge_power"
             self._attr_icon = "mdi:battery-arrow-down-outline"
-            self._attr_native_max_value = coordinator.capabilities.max_discharge_power_w
+            self._hardware_max = coordinator.capabilities.max_discharge_power_w
+            self._attr_native_max_value = self._hardware_max
         self.entity_id = english_entity_id("number", coordinator.name, self._attr_translation_key)
+
+    @property
+    def native_max_value(self):
+        """Keep software manual controls below the live configured ceiling."""
+        hardware_max = getattr(
+            self,
+            "_hardware_max",
+            self.coordinator.capabilities.max_charge_power_w
+            if self._kind == "charge"
+            else self.coordinator.capabilities.max_discharge_power_w,
+        )
+        return _effective_setpoint_max(self.coordinator, self._kind, hardware_max)
 
     @property
     def native_value(self) -> float:
         """Return the live commanded power (mirrors the active setpoint, like the
         Marstek register entity)."""
         if self._kind == "charge":
-            return float(self.coordinator.commanded_charge_power)
-        return float(self.coordinator.commanded_discharge_power)
+            value = self.coordinator.commanded_charge_power
+        else:
+            value = self.coordinator.commanded_discharge_power
+        return min(float(value), float(self.native_max_value))
 
     async def async_set_native_value(self, value: float) -> None:
         """Store the manual target (used in manual mode) and reflect it now.
@@ -895,7 +950,7 @@ class MarstekManualSetPowerNumber(CoordinatorEntity, NumberEntity):
         The optimistic commanded update avoids the slider snapping back to the
         old value before the next control cycle re-asserts it.
         """
-        new_value = int(value)
+        new_value = max(0, min(int(value), int(self.native_max_value)))
         if self._kind == "charge":
             self.coordinator.manual_set_charge_power = new_value
             self.coordinator.persist_battery_config("manual_set_charge_power", new_value)

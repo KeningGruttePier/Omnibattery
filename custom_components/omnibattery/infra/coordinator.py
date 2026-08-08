@@ -997,6 +997,22 @@ class MarstekVenusDataUpdateCoordinator(DataUpdateCoordinator):
         interleave), health bookkeeping and the optional immediate refresh — that
         the former register-level ``write_register`` carried.
         """
+        # Keep direct writes to the manual setpoint entities below the live
+        # configured ceiling as well as below the driver's static capability.
+        # The number entity exposes the same limit in its slider metadata, but
+        # this boundary also protects service calls and restored values.
+        if key in ("set_charge_power", "set_discharge_power"):
+            limit_attr = (
+                "max_charge_power"
+                if key == "set_charge_power"
+                else "max_discharge_power"
+            )
+            try:
+                limit = max(0, int(getattr(self, limit_attr)))
+                value = min(max(0, int(value)), limit)
+            except (AttributeError, TypeError, ValueError):
+                value = int(value)
+
         success = False
         async with self.lock:
             try:
@@ -1034,6 +1050,21 @@ class MarstekVenusDataUpdateCoordinator(DataUpdateCoordinator):
         When ``read_back`` is False the set-points are applied optimistically and
         the regular poll refreshes ``battery_power``.
         """
+        # ``apply_power`` is also used by manual time slots and software-manual
+        # drivers, which do not go through a setpoint number entity. Enforce the
+        # same effective per-direction ceiling at this common command boundary.
+        try:
+            if net_power_w > 0:
+                net_power_w = min(
+                    int(net_power_w), max(0, int(self.max_charge_power))
+                )
+            elif net_power_w < 0:
+                net_power_w = -min(
+                    -int(net_power_w), max(0, int(self.max_discharge_power))
+                )
+        except (AttributeError, TypeError, ValueError):
+            net_power_w = int(net_power_w)
+
         async with self.lock:
             try:
                 result = await self.driver.apply_setpoint(net_power_w, read_back=read_back)

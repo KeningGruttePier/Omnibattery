@@ -13,6 +13,7 @@
 
 ### Fixed
 - **Marstek Venus E v2/v3 power caps could be overwritten or displayed as 2500 W**: writes now use the app-supported 800/2500 W hardware values while the integration preserves and displays the user's lower software limit.
+- **Manual charge/discharge sliders could exceed their configured maximums**: the setpoint sliders now follow the live `max_charge_power` / `max_discharge_power` limits, and direct/manual commands are capped at the same boundary.
 
 ## [1.3.0b4] - 2026-08-07
 

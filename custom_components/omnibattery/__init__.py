@@ -3769,6 +3769,35 @@ class ChargeDischargeController:
             )
             return False
 
+        # Enforce the live per-battery ceilings at the final controller write
+        # boundary too. Most automatic paths are already allocated below these
+        # limits, but software-manual and recovery paths deliberately bypass
+        # normal blockers and can otherwise carry an old/persisted setpoint.
+        try:
+            charge_limit = max(0, int(coordinator.max_charge_power))
+            discharge_limit = max(0, int(coordinator.max_discharge_power))
+            original_charge_power = charge_power
+            original_discharge_power = discharge_power
+            charge_power = min(charge_power, charge_limit)
+            discharge_power = min(discharge_power, discharge_limit)
+            if (
+                charge_power != original_charge_power
+                or discharge_power != original_discharge_power
+            ):
+                _LOGGER.debug(
+                    "[%s] Power command capped to configured limits: charge=%.0fW "
+                    "discharge=%.0fW (limits: %dW/%dW)",
+                    coordinator.name,
+                    charge_power,
+                    discharge_power,
+                    charge_limit,
+                    discharge_limit,
+                )
+        except (AttributeError, TypeError, ValueError):
+            # Lightweight third-party/test coordinators may not expose the
+            # optional live limits; the driver still enforces its hardware cap.
+            pass
+
         if bypass_blockers:
             charge_blockers = {}
             discharge_blockers = {}
