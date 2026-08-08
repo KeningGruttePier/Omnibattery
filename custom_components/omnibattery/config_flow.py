@@ -2783,25 +2783,15 @@ class OptionsFlowHandler(OptionsFlow):
                         )
                     }
                 )
-                was_enabled = bool(
-                    current.get(
-                        CONF_THREE_PHASE_ENABLED,
-                        DEFAULT_THREE_PHASE_ENABLED,
-                    )
-                )
                 self.config_data[CONF_THREE_PHASE_ENABLED] = True
                 batteries = [dict(b) for b in current.get("batteries", [])]
-                if not was_enabled and batteries:
-                    # Enabling protection is deliberately a two-step operation:
-                    # all physical assignments are confirmed before the entry is
-                    # reloaded, so runtime never sees a partial configuration.
-                    self._phase_assignment_batteries = batteries
-                    self._phase_assignment_index = 0
-                    return await self.async_step_phase_assignments()
-                if batteries and any(
-                    not _phase_assignment_is_valid(b.get(CONF_BATTERY_PHASE))
-                    for b in batteries
-                ):
+                if batteries:
+                    # Protection configuration is deliberately a two-step
+                    # operation: every physical assignment is confirmed after
+                    # the current sensors, even when an older assignment is
+                    # already saved. This makes the wiring explicit whenever
+                    # the protection settings are edited, while keeping the
+                    # saved phase as the form's initial selection.
                     self._phase_assignment_batteries = batteries
                     self._phase_assignment_index = 0
                     return await self.async_step_phase_assignments()
