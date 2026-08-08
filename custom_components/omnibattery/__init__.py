@@ -47,6 +47,7 @@ from .const import (
     CONF_PHASE_2_CURRENT_SENSOR,
     CONF_PHASE_3_CURRENT_SENSOR,
     CONF_BATTERY_PHASE,
+    normalize_battery_phase,
     DEFAULT_THREE_PHASE_ENABLED,
     DEFAULT_BASE_CONSUMPTION_KWH,
     SOC_REEVALUATION_THRESHOLD,
@@ -6545,7 +6546,9 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         new_data["batteries"] = [
             {
                 **dict(battery),
-                CONF_BATTERY_PHASE: battery.get(CONF_BATTERY_PHASE, ""),
+                CONF_BATTERY_PHASE: normalize_battery_phase(
+                    battery.get(CONF_BATTERY_PHASE)
+                ),
             }
             for battery in new_data.get("batteries", [])
         ]
@@ -6656,7 +6659,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
         # Physical phase is metadata for the safety limiter only.  It is never
         # used as an input to the global Grid 0 controller.
-        coordinator.phase = battery_config.get(CONF_BATTERY_PHASE, "")
+        coordinator.phase = normalize_battery_phase(
+            battery_config.get(CONF_BATTERY_PHASE)
+        )
 
         # Restore persisted RS485 user preference and store entry reference for future persistence
         coordinator._config_entry = entry
@@ -6906,9 +6911,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         ))
         entry.async_on_unload(unsub_consumption_reported)
 
-    # Phase meters are safety inputs only.  Their events trigger an immediate
+    # Phase meters are safety inputs only. Their events trigger an immediate
     # review but deliberately do not enter the main-sensor cadence detector or
-    # alter sensor_actual / active_target / Grid 0.
+    # alter sensor_actual / active_target / Grid 0. Subscribe even when the
+    # protection switch is currently off so enabling it from the dashboard does
+    # not require an integration reload; the limiter ignores them while off.
     phase_sensors = list(
         dict.fromkeys(
             entry.data.get(key)
@@ -6917,8 +6924,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 CONF_PHASE_2_CURRENT_SENSOR,
                 CONF_PHASE_3_CURRENT_SENSOR,
             )
-            if entry.data.get(CONF_THREE_PHASE_ENABLED, DEFAULT_THREE_PHASE_ENABLED)
-            and entry.data.get(key)
+            if entry.data.get(key)
         )
     )
     unsub_phase = None

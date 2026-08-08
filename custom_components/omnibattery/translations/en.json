@@ -65,7 +65,7 @@
       },
       "phase_assignments": {
         "title": "Battery {battery_num} phase assignment",
-        "description": "Select the physical AC phase where {battery_name} is connected. Omnibattery cannot discover this wiring automatically.",
+        "description": "Select the physical AC phase where {battery_name} is connected, or choose Unassigned if it is not connected to a protected phase. Omnibattery cannot discover this wiring automatically.",
         "data": {
           "battery_phase": "Physical battery phase"
         }
@@ -162,7 +162,7 @@
           "backup_offgrid_threshold": "Offgrid load above this value is treated as an active backup event, excluding the battery from PD control. Set higher if you have permanent loads (router, cameras) on the offgrid port.",
           "full_charge_voltage_taper_enabled": "When the target is 100%, limit charge to 200 W from 3.48 V max cell voltage and stop at 3.60 V to measure imbalance after 60 seconds.",
           "battery_capacity_kwh": "Nominal usable capacity of the battery pack. Used to calculate stored energy and efficiency from SOC. Sessy requires its actual capacity; for other batteries, leave at 0 if unknown.",
-          "battery_phase": "Physical AC phase (L1/L2/L3) where this battery is wired. Required when three-phase protection is enabled."
+          "battery_phase": "Physical AC phase (L1/L2/L3) where this battery is wired, or Unassigned when it is outside the protected phase layout. An unassigned battery receives 0 W for automatic commands while protection is active."
         }
       },
       "time_slots": {
@@ -720,7 +720,7 @@
       },
       "phase_assignments": {
         "title": "Battery {battery_num} phase assignment",
-        "description": "Select the physical AC phase where {battery_name} is connected. Omnibattery cannot discover this wiring automatically.",
+        "description": "Select the physical AC phase where {battery_name} is connected, or choose Unassigned if it is not connected to a protected phase. Omnibattery cannot discover this wiring automatically.",
         "data": {
           "battery_phase": "Physical battery phase"
         }
@@ -811,7 +811,7 @@
           "backup_offgrid_threshold": "Offgrid load above this value is treated as an active backup event, excluding the battery from PD control. Set higher if you have permanent loads (router, cameras) on the offgrid port.",
           "full_charge_voltage_taper_enabled": "When the target is 100%, limit charge to 200 W from 3.48 V max cell voltage and stop at 3.60 V to measure imbalance after 60 seconds.",
           "battery_capacity_kwh": "Nominal usable capacity of the battery pack. Used to calculate stored energy and efficiency from SOC. Sessy requires its actual capacity; for other batteries, leave at 0 if unknown.",
-          "battery_phase": "Physical AC phase (L1/L2/L3) where this battery is wired. Required when three-phase protection is enabled."
+          "battery_phase": "Physical AC phase (L1/L2/L3) where this battery is wired, or Unassigned when it is outside the protected phase layout. An unassigned battery receives 0 W for automatic commands while protection is active."
         }
       },
       "time_slots": {
@@ -1246,6 +1246,7 @@
     },
     "battery_phase": {
       "options": {
+        "unassigned": "Unassigned",
         "l1": "L1",
         "l2": "L2",
         "l3": "L3"
@@ -1298,6 +1299,9 @@
       },
       "manual_mode": {
         "name": "Manual Mode"
+      },
+      "three_phase_protection": {
+        "name": "Three-Phase Current Protection"
       },
       "no_pd_mode": {
         "name": "No-PD Direct Tracking"
@@ -1708,6 +1712,15 @@
     "select": {
       "force_mode": {
         "name": "Force Mode"
+      },
+      "battery_phase": {
+        "name": "Battery Phase",
+        "state": {
+          "unassigned": "Unassigned",
+          "l1": "L1",
+          "l2": "L2",
+          "l3": "L3"
+        }
       },
       "grid_off_mode": {
         "name": "Off-Grid Mode",

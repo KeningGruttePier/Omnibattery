@@ -12,6 +12,7 @@ from custom_components.omnibattery.const import (
     CONF_THREE_PHASE_ENABLED,
     PHASE_L1,
     PHASE_L2,
+    PHASE_UNASSIGNED,
 )
 
 
@@ -63,8 +64,10 @@ async def test_options_flow_reasks_battery_phases_when_already_enabled():
     }
 
     result = await flow.async_step_phase_assignments(
-        {CONF_BATTERY_PHASE: PHASE_L2}
+        {CONF_BATTERY_PHASE: PHASE_UNASSIGNED}
     )
+
+    assert flow._phase_assignment_batteries[0][CONF_BATTERY_PHASE] == PHASE_UNASSIGNED
 
     assert result["step_id"] == "phase_assignments"
     assert result["description_placeholders"] == {

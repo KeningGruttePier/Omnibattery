@@ -37,6 +37,7 @@ from ..const import (
     PHASE_L2,
     PHASE_L3,
     PHASE_NOMINAL_VOLTAGE_V,
+    PHASE_UNASSIGNED,
     PHASE_VALUES,
     SLOT_MODE_MANUAL,
 )
@@ -242,7 +243,10 @@ class PhasePowerLimiter:
                     None,
                 )
                 if battery_data is not None:
-                    coordinator.phase = battery_data.get(CONF_BATTERY_PHASE, "")
+                    phase = battery_data.get(CONF_BATTERY_PHASE)
+                    coordinator.phase = (
+                        phase if phase in PHASE_VALUES else PHASE_UNASSIGNED
+                    )
 
     def begin_cycle(self) -> None:
         """Forget distribution plans from the previous control cycle."""
@@ -633,7 +637,7 @@ class PhasePowerLimiter:
     def _set_degraded_reason(self, coordinator: Any, reason: str) -> None:
         phase = self._battery_phase(coordinator)
         if phase not in PHASE_VALUES:
-            phase = "unassigned"
+            phase = PHASE_UNASSIGNED
         snapshot = self._snapshots.setdefault(
             phase,
             {

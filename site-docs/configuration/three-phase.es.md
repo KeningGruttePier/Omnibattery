@@ -9,7 +9,9 @@ Activa la función y selecciona un sensor de corriente RMS con signo en tiempo r
 - positivo = importación de red
 - negativo = exportación a red
 
-El ajuste global **Signo del medidor invertido** se aplica a los medidores de fase configurados y a Grid 0. Configura un límite positivo y simétrico en amperios para cada fase configurada, preferiblemente inferior al valor nominal del fusible para dejar margen. La asignación física (`L1`, `L2` o `L3`) es obligatoria para cada batería; Omnibattery no puede descubrir a qué fase está cableada. Una batería asignada a una fase sin sensor ni límite funciona normalmente, sin límite de protección de fase.
+El ajuste global **Signo del medidor invertido** se aplica a los medidores de fase configurados y a Grid 0. Configura un límite positivo y simétrico en amperios para cada fase configurada, preferiblemente inferior al valor nominal del fusible para dejar margen. La asignación física puede ser `L1`, `L2`, `L3` o **Sin asignar** para cada batería; Omnibattery no puede descubrir a qué fase está cableada. Una batería sin asignar recibe 0 W en las órdenes automáticas mientras la protección está activa, por lo que no puede controlarse con seguridad mediante la envolvente hasta asignarle una fase. Una batería asignada a una fase sin sensor ni límite funciona normalmente, sin límite de protección de fase.
+
+Una vez configurada la función, el switch de sistema **Protección de corriente trifásica** aparece en el dashboard. Mientras está apagado, los selectores de **Fase de la batería** no están disponibles; se convierten en controles en vivo al activar la protección. El cambio de fase de una batería se guarda inmediatamente y se utiliza en el siguiente ciclo de control automático.
 
 El sensor global de consumo sigue siendo la señal Grid 0 del controlador. Los sensores de fase son solo envolventes de seguridad: no sustituyen Grid 0 ni cambian el objetivo del controlador PD.
 

@@ -96,6 +96,10 @@ PHASE_L1 = "l1"
 PHASE_L2 = "l2"
 PHASE_L3 = "l3"
 PHASE_VALUES = (PHASE_L1, PHASE_L2, PHASE_L3)
+# Explicit selector value for a battery that is outside the protected phase
+# layout. Runtime treats it as unassigned and fails safe while protection is on.
+PHASE_UNASSIGNED = "unassigned"
+PHASE_ASSIGNMENT_VALUES = (PHASE_UNASSIGNED, *PHASE_VALUES)
 PHASE_CONFIG = {
     PHASE_L1: (CONF_PHASE_1_CURRENT_SENSOR, CONF_PHASE_1_FUSE_SIZE),
     PHASE_L2: (CONF_PHASE_2_CURRENT_SENSOR, CONF_PHASE_2_FUSE_SIZE),
@@ -103,6 +107,12 @@ PHASE_CONFIG = {
 }
 DEFAULT_THREE_PHASE_ENABLED = False
 DEFAULT_PHASE_FUSE_SIZE_A = 25
+
+
+def normalize_battery_phase(value: object) -> str:
+    """Normalize legacy/missing battery phase data to the selector value."""
+    return value if value in PHASE_VALUES else PHASE_UNASSIGNED
+
 
 # Battery set-points are expressed in active watts, while phase protection is
 # measured in RMS amperes.  Use a conservative fixed conversion for the

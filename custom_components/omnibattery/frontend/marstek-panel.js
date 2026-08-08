@@ -85,7 +85,8 @@ const I18N = {
     bcChargePower: "Charge power", bcDischargePower: "Discharge power",
     bcMaxCharge: "Max charge", bcMaxDischarge: "Max discharge",
     bcChargeToSoc: "Charge to SOC", bcChargeHysteresis: "Charge hysteresis", bcBackup: "Backup function", bcOffgridMode: "Off-grid mode",
-    bcBackupThreshold: "Backup threshold", bcVoltageTaper: "100% charge taper", bcActiveBalance: "Active balance",
+    bcBackupThreshold: "Backup threshold", bcVoltageTaper: "100% charge taper", bcActiveBalance: "Active balance", bcBatteryPhase: "Battery phase",
+    secPhaseProtection: "Three-phase protection", threePhaseProtection: "Three-phase current protection",
     secManual: "Manual mode", itemEnable: "Enable",
     secTempLimit: "Temperature charge limit", itemTempLimitC: "Temperature limit", itemTempLimitBand: "Ramp band", itemTempLimitFloor: "Minimum charge power", itemTempApplyDischarge: "Also throttle discharge",
     itemMaxContracted: "Max contracted power", itemSolarSafety: "Solar safety margin", itemGridChargeMargin: "Grid charge margin", itemMinSocFloorEnable: "SOC floor", itemMinSocFloor: "Guaranteed minimum SOC",
@@ -155,7 +156,8 @@ const I18N = {
     bcChargePower: "Potencia de carga", bcDischargePower: "Potencia de descarga",
     bcMaxCharge: "Máx. carga", bcMaxDischarge: "Máx. descarga",
     bcChargeToSoc: "Cargar hasta SOC", bcChargeHysteresis: "Histéresis de carga", bcBackup: "Función de respaldo", bcOffgridMode: "Modo off-grid",
-    bcBackupThreshold: "Umbral de respaldo", bcVoltageTaper: "Reducción carga 100%", bcActiveBalance: "Balanceo activo",
+    bcBackupThreshold: "Umbral de respaldo", bcVoltageTaper: "Reducción carga 100%", bcActiveBalance: "Balanceo activo", bcBatteryPhase: "Fase de la batería",
+    secPhaseProtection: "Protección trifásica", threePhaseProtection: "Protección de corriente trifásica",
     secManual: "Modo manual", itemEnable: "Activar",
     secTempLimit: "Límite de carga por temperatura", itemTempLimitC: "Límite de temperatura", itemTempLimitBand: "Banda de reducción", itemTempLimitFloor: "Potencia de carga mínima", itemTempApplyDischarge: "Reducir también la descarga",
     itemMaxContracted: "Potencia contratada máx.", itemSolarSafety: "Margen de seguridad solar", itemGridChargeMargin: "Margen de carga de red", itemMinSocFloorEnable: "Suelo de SOC", itemMinSocFloor: "SOC mínimo garantizado",
@@ -572,6 +574,7 @@ const BAT_CONTROLS = [
   { key: "backup_function", domain: "switch", lk: "bcBackup", icon: "mdi:home-battery-outline" },
   // Offgrid load threshold for the backup output (software-only, no register).
   { key: "backup_offgrid_threshold", domain: "number", lk: "bcBackupThreshold", icon: "mdi:transmission-tower-off" },
+  { key: "battery_phase", domain: "select", lk: "bcBatteryPhase", icon: "mdi:transmission-tower" },
   // Zendure off-grid output port mode (select: normal/economy/off). Distinct from
   // the Marstek backup_function switch; only one exists per device.
   { key: "grid_off_mode", domain: "select", lk: "bcOffgridMode", icon: "mdi:transmission-tower-off" },
@@ -591,6 +594,13 @@ const BAT_CONTROLS = [
 // `tk`/`lk` are i18n keys resolved at render time (see _t). labelFn/titleFn
 // receive the live state and a translator `t` so dynamic text is localized too.
 const SYS_SECTIONS = [
+  {
+    tk: "secPhaseProtection",
+    icon: "mdi:transmission-tower-shield",
+    items: [
+      { key: "three_phase_protection", domain: "switch", lk: "threePhaseProtection", icon: "mdi:transmission-tower-shield" },
+    ],
+  },
   {
     tk: "secManual",
     icon: "mdi:hand-back-right-outline",
@@ -799,7 +809,8 @@ const SYS_SECTIONS = [
 const SYS_LAYOUT = [
   {
     pair: [
-      ["secManual", "secWeeklyFull"],
+      ["secPhaseProtection", "secManual"],
+      ["secWeeklyFull", null],
       ["diagPredictive", "diagChargeDelay"],
       ["secHourly", "secSysLimits"],
       ["diagPeak", "secTempLimit"],
@@ -827,6 +838,9 @@ const DEFAULT_SYS_ORDER = (() => {
 // Shown as a hover title + tap popover. English is the fallback (see _help).
 const SYS_HELP = {
   en: {
+    secPhaseProtection: "Master switch for three-phase current protection. When OFF, phase limits are ignored and battery phase selectors are unavailable. When ON, a battery without a phase is held at 0 W for automatic commands.",
+    three_phase_protection: "Enable or disable the three-phase current protection envelope.",
+    battery_phase: "Select the physical AC phase for this battery. Choose Unassigned when it is not connected to a protected phase; automatic commands then remain at 0 W while protection is active.",
     secManual: "When ON, automatic control (PD, predictive charging, time slots, peak shaving…) is paused and every battery is set to 0 W (idle). Turn it OFF to resume automatic control.",
     secWeeklyFull: "Select the day of the week when batteries should charge to 100% for cell balancing. After reaching 100%, the system reverts to your configured maximum charge limit.",
     secSlots: "Define when and how the batteries are allowed to operate. The ticks control each direction, SOC and power. Manual mode forces an exact power, bypassing the PD algorithm.",
@@ -897,6 +911,9 @@ const SYS_HELP = {
     round_trip_efficiency: "Battery round-trip efficiency (kWh out / kWh in) used to value stored energy for the arbitrage margin. Lower values make the gate stricter. Only used when a minimum arbitrage margin is set.",
   },
   es: {
+    secPhaseProtection: "Interruptor general de la protección de corriente trifásica. Al desactivarlo se ignoran los límites de fase y los selectores de fase de las baterías no están disponibles. Al activarlo, una batería sin fase queda a 0 W para las órdenes automáticas.",
+    three_phase_protection: "Activa o desactiva la envolvente de protección de corriente trifásica.",
+    battery_phase: "Selecciona la fase física de CA de esta batería. Elige Sin asignar si no está conectada a una fase protegida; sus órdenes automáticas permanecerán a 0 W mientras la protección esté activa.",
     secManual: "Cuando está ACTIVADO, el control automático (PD, carga predictiva, franjas horarias, reducción de picos…) se pausa y todas las baterías se ponen a 0 W (en reposo). DESACTÍVALO para reanudar el control automático.",
     secWeeklyFull: "Selecciona el día de la semana en el que las baterías deben cargarse al 100% para el balanceo de celdas. Una vez alcanzado el 100%, el sistema revertirá al límite de carga máximo configurado.",
     secSlots: "Define cuándo y cómo se permite operar a las baterías. Los ticks permiten controlar cada dirección, el SOC y la potencia. El modo manual fuerza una potencia exacta ignorando el algoritmo PD.",

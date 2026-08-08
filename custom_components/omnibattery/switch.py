@@ -42,6 +42,7 @@ from .const import (
     CONF_SYSTEM_MAX_DISCHARGE_POWER,
     CONF_ENABLE_MIN_SOC_FLOOR,
     CONF_ENABLE_PREDICTIVE_CHARGING,
+    CONF_THREE_PHASE_ENABLED,
     NOTIFICATION_ID_PREFIX,
 )
 from .infra.coordinator import MarstekVenusDataUpdateCoordinator
@@ -82,6 +83,9 @@ async def async_setup_entry(
     if controller:
         entities.append(ManualModeSwitch(hass, entry, controller))
         entities.append(NoPdModeSwitch(hass, entry, controller))
+        # Keep the protection toggle present even when currently disabled so it
+        # can be enabled live from the dashboard without reloading the entry.
+        entities.append(ThreePhaseProtectionSwitch(hass, entry, controller))
         # Weekly full charge enable/disable (system-level, always present so it can
         # be turned on from the dashboard even if configured off at setup).
         entities.append(WeeklyFullChargeEnableSwitch(hass, entry, controller))
@@ -1453,6 +1457,55 @@ class ManualModeSwitch(SwitchEntity):
         }
 
 
+class ThreePhaseProtectionSwitch(SwitchEntity):
+    """Switch to enable or disable the live three-phase current envelope."""
+
+    def __init__(self, hass: HomeAssistant, entry: ConfigEntry, controller) -> None:
+        """Initialize the three-phase protection switch."""
+        self.hass = hass
+        self.entry = entry
+        self.controller = controller
+
+        self._attr_has_entity_name = True
+        self._attr_translation_key = "three_phase_protection"
+        self._attr_unique_id = f"{SYSTEM_UNIQUE_ID_PREFIX}three_phase_protection"
+        self.entity_id = system_entity_id("switch", "three_phase_protection")
+        self._attr_icon = "mdi:transmission-tower-shield"
+        self._attr_should_poll = False
+
+    @property
+    def is_on(self) -> bool:
+        """Return whether the phase safety envelope is active."""
+        return bool(self.controller._phase_power_limiter.enabled)
+
+    async def _set_enabled(self, enabled: bool) -> None:
+        """Apply and persist the protection flag without reloading platforms."""
+        self.controller._phase_power_limiter.enabled = enabled
+        new_data = dict(self.entry.data)
+        new_data[CONF_THREE_PHASE_ENABLED] = enabled
+        self.hass.config_entries.async_update_entry(self.entry, data=new_data)
+        _LOGGER.info("Three-phase current protection %s", "ENABLED" if enabled else "DISABLED")
+        self.async_write_ha_state()
+
+    async def async_turn_on(self, **kwargs) -> None:
+        """Enable the three-phase current protection envelope."""
+        await self._set_enabled(True)
+
+    async def async_turn_off(self, **kwargs) -> None:
+        """Disable the three-phase current protection envelope."""
+        await self._set_enabled(False)
+
+    @property
+    def device_info(self):
+        """Return device information for the system."""
+        return {
+            "identifiers": {(DOMAIN, "marstek_venus_system")},
+            "name": "Omnibattery System",
+            "manufacturer": "Omnibattery",
+            "model": "Multi-Battery System",
+        }
+
+
 class NoPdModeSwitch(SwitchEntity):
     """Switch to enable no-PD direct-tracking mode.
 
@@ -1902,5 +1955,4 @@ class NegativePriceChargingSwitch(SwitchEntity):
             "manufacturer": "Omnibattery",
             "model": "Multi-Battery System",
         }
-
 

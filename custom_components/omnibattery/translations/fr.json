@@ -65,7 +65,7 @@
       },
       "phase_assignments": {
         "title": "Affectation de phase de la batterie {battery_num}",
-        "description": "Sélectionnez la phase physique à laquelle {battery_name} est raccordée.",
+        "description": "Sélectionnez la phase physique à laquelle {battery_name} est raccordée, ou Non assignée si aucune phase protégée n'est utilisée.",
         "data": {"battery_phase": "Phase physique de la batterie"}
       },
       "batteries": {
@@ -160,7 +160,7 @@
           "backup_offgrid_threshold": "Une charge hors réseau supérieure à cette valeur est traitée comme un événement de secours actif, excluant la batterie du contrôle PD. Augmenter si des charges permanentes (routeur, caméras) sont connectées au port hors réseau.",
           "full_charge_voltage_taper_enabled": "Lorsque la cible est 100%, limite la charge à 200 W à partir de 3.48 V de tension maximale de cellule et s'arrête à 3.60 V pour mesurer le déséquilibre après 60 secondes.",
           "battery_capacity_kwh": "Capacité utilisable nominale du pack de batteries. Elle sert à calculer l'énergie stockée et l'efficacité à partir du SOC. Pour Sessy, saisissez la capacité réelle ; pour les autres batteries, laissez 0 si elle est inconnue.",
-          "battery_phase": "Phase AC physique (L1/L2/L3) à laquelle cette batterie est raccordée ; obligatoire avec la protection triphasée."
+          "battery_phase": "Phase AC physique (L1/L2/L3) à laquelle cette batterie est raccordée, ou Non assignée hors du schéma de phases protégées. Une batterie sans phase reçoit 0 W pour les commandes automatiques lorsque la protection est active."
         }
       },
       "time_slots": {
@@ -687,7 +687,7 @@
       },
       "phase_assignments": {
         "title": "Affectation de phase de la batterie {battery_num}",
-        "description": "Sélectionnez la phase physique à laquelle {battery_name} est raccordée.",
+        "description": "Sélectionnez la phase physique à laquelle {battery_name} est raccordée, ou Non assignée si aucune phase protégée n'est utilisée.",
         "data": {"battery_phase": "Phase physique de la batterie"}
       },
       "init": {
@@ -813,7 +813,7 @@
           "backup_offgrid_threshold": "Une charge hors réseau supérieure à cette valeur est traitée comme un événement de secours actif, excluant la batterie du contrôle PD. Augmenter si des charges permanentes (routeur, caméras) sont connectées au port hors réseau.",
           "full_charge_voltage_taper_enabled": "Lorsque la cible est 100%, limite la charge à 200 W à partir de 3.48 V de tension maximale de cellule et s'arrête à 3.60 V pour mesurer le déséquilibre après 60 secondes.",
           "battery_capacity_kwh": "Capacité utilisable nominale du pack de batteries. Elle sert à calculer l'énergie stockée et l'efficacité à partir du SOC. Pour Sessy, saisissez la capacité réelle ; pour les autres batteries, laissez 0 si elle est inconnue.",
-          "battery_phase": "Phase AC physique (L1/L2/L3) à laquelle cette batterie est raccordée ; obligatoire avec la protection triphasée."
+          "battery_phase": "Phase AC physique (L1/L2/L3) à laquelle cette batterie est raccordée, ou Non assignée hors du schéma de phases protégées. Une batterie sans phase reçoit 0 W pour les commandes automatiques lorsque la protection est active."
         }
       },
       "time_slots": {
@@ -1231,7 +1231,7 @@
   },
   "selector": {
     "battery_phase": {
-      "options": {"l1": "L1", "l2": "L2", "l3": "L3"}
+      "options": {"unassigned": "Non assignée", "l1": "L1", "l2": "L2", "l3": "L3"}
     },
     "weekday": {
       "options": {
@@ -1284,6 +1284,9 @@
     "switch": {
       "manual_mode": {
         "name": "Mode Manuel"
+      },
+      "three_phase_protection": {
+        "name": "Protection de courant triphasé"
       },
       "no_pd_mode": {
         "name": "Suivi Direct sans PD"
@@ -1712,6 +1715,15 @@
     "select": {
       "force_mode": {
         "name": "Mode Forcé"
+      },
+      "battery_phase": {
+        "name": "Phase de la batterie",
+        "state": {
+          "unassigned": "Non assignée",
+          "l1": "L1",
+          "l2": "L2",
+          "l3": "L3"
+        }
       },
       "user_work_mode": {
         "name": "Mode de Fonctionnement",

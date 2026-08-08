@@ -9,7 +9,9 @@ Enable the feature and select one real-time signed RMS current sensor and one fu
 - positive = grid import
 - negative = grid export
 
-The global **Inverted meter sign** setting is applied to the configured phase meters and Grid 0. Set one positive symmetric fuse-size/current limit in amperes for each configured phase, preferably below the fuse nameplate rating to leave operating margin. The physical phase assignment (`L1`, `L2` or `L3`) is required for every battery; Omnibattery cannot discover which AC phase a battery is wired to. A battery assigned to a phase without a sensor and limit operates normally, without a phase protection cap.
+The global **Inverted meter sign** setting is applied to the configured phase meters and Grid 0. Set one positive symmetric fuse-size/current limit in amperes for each configured phase, preferably below the fuse nameplate rating to leave operating margin. The physical phase assignment can be `L1`, `L2`, `L3` or **Unassigned** for each battery; Omnibattery cannot discover which AC phase a battery is wired to. An unassigned battery receives 0 W for automatic commands while protection is enabled, so it cannot be controlled safely by the phase envelope until it is assigned. A battery assigned to a phase without a sensor and limit operates normally, without a phase protection cap.
+
+Once the feature is configured, the system **Three-Phase Current Protection** switch is available on the dashboard. While it is off, the per-battery **Battery Phase** selectors are unavailable; they become live controls as soon as protection is enabled. Changing a battery's phase persists immediately and is used by the next automatic control cycle.
 
 The global consumption sensor remains the controller's Grid 0 signal. Phase sensors are safety envelopes only: they do not replace Grid 0 or change the PD target.
 

@@ -65,7 +65,7 @@
       },
       "phase_assignments": {
         "title": "Assignació de fase de la bateria {battery_num}",
-        "description": "Selecciona la fase física on està connectada {battery_name}.",
+        "description": "Selecciona la fase física on està connectada {battery_name}, o tria Sense assignar si no està connectada a una fase protegida.",
         "data": {"battery_phase": "Fase física de la bateria"}
       },
       "batteries": {
@@ -160,7 +160,7 @@
           "backup_offgrid_threshold": "Una càrrega offgrid superior a aquest valor es considera un esdeveniment de backup actiu, excloent la bateria del control PD. Augmenta'l si tens càrregues permanents (router, càmeres) al port offgrid.",
           "full_charge_voltage_taper_enabled": "Quan l'objectiu és 100%, limita la càrrega a 200 W des de 3,48 V de cel·la màxima i s'atura a 3,60 V per mesurar el desbalanç durant 60 segons.",
           "battery_capacity_kwh": "Capacitat útil nominal del pack de bateries. Es fa servir per calcular energia emmagatzemada i eficiència a partir del SOC. Per a Sessy, introdueix la capacitat real; per a altres bateries, deixa 0 si no la coneixes.",
-          "battery_phase": "Fase AC física (L1/L2/L3) on està cablejada aquesta bateria; obligatòria amb la protecció trifàsica."
+          "battery_phase": "Fase AC física (L1/L2/L3) on està cablejada aquesta bateria, o Sense assignar si queda fora de l'esquema de fases protegides. Una bateria sense fase rep 0 W en ordres automàtiques mentre la protecció està activa."
         }
       },
       "time_slots": {
@@ -687,7 +687,7 @@
       },
       "phase_assignments": {
         "title": "Assignació de fase de la bateria {battery_num}",
-        "description": "Selecciona la fase física on està connectada {battery_name}.",
+        "description": "Selecciona la fase física on està connectada {battery_name}, o tria Sense assignar si no està connectada a una fase protegida.",
         "data": {"battery_phase": "Fase física de la bateria"}
       },
       "init": {
@@ -813,7 +813,7 @@
           "backup_offgrid_threshold": "Una càrrega offgrid superior a aquest valor es considera un esdeveniment de backup actiu, excloent la bateria del control PD. Augmenta'l si tens càrregues permanents (router, càmeres) al port offgrid.",
           "full_charge_voltage_taper_enabled": "Quan l'objectiu és 100%, limita la càrrega a 200 W des de 3,48 V de cel·la màxima i s'atura a 3,60 V per mesurar el desbalanç durant 60 segons.",
           "battery_capacity_kwh": "Capacitat útil nominal del pack de bateries. Es fa servir per calcular energia emmagatzemada i eficiència a partir del SOC. Per a Sessy, introdueix la capacitat real; per a altres bateries, deixa 0 si no la coneixes.",
-          "battery_phase": "Fase AC física (L1/L2/L3) on està cablejada aquesta bateria; obligatòria amb la protecció trifàsica."
+          "battery_phase": "Fase AC física (L1/L2/L3) on està cablejada aquesta bateria, o Sense assignar si queda fora de l'esquema de fases protegides. Una bateria sense fase rep 0 W en ordres automàtiques mentre la protecció està activa."
         }
       },
       "time_slots": {
@@ -1231,7 +1231,7 @@
   },
   "selector": {
     "battery_phase": {
-      "options": {"l1": "L1", "l2": "L2", "l3": "L3"}
+      "options": {"unassigned": "Sense assignar", "l1": "L1", "l2": "L2", "l3": "L3"}
     },
     "weekday": {
       "options": {
@@ -1284,6 +1284,9 @@
     "switch": {
       "manual_mode": {
         "name": "Mode Manual"
+      },
+      "three_phase_protection": {
+        "name": "Protecció de corrent trifàsic"
       },
       "no_pd_mode": {
         "name": "Seguiment Directe sense PD"
@@ -1712,6 +1715,15 @@
     "select": {
       "force_mode": {
         "name": "Mode Forçat"
+      },
+      "battery_phase": {
+        "name": "Fase de la bateria",
+        "state": {
+          "unassigned": "Sense assignar",
+          "l1": "L1",
+          "l2": "L2",
+          "l3": "L3"
+        }
       },
       "user_work_mode": {
         "name": "Mode de Treball",

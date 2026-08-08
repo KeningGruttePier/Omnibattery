@@ -65,6 +65,8 @@ from .const import (
     PHASE_L2,
     PHASE_L3,
     PHASE_VALUES,
+    PHASE_UNASSIGNED,
+    normalize_battery_phase,
     DEFAULT_THREE_PHASE_ENABLED,
     CONF_ENABLE_WEEKLY_FULL_CHARGE,
     CONF_WEEKLY_FULL_CHARGE_DAY,
@@ -268,13 +270,14 @@ def _phase_protection_schema(defaults: dict[str, Any] | None = None) -> vol.Sche
 
 
 def _battery_phase_schema(default: str | None = None):
-    """Return the required L1/L2/L3 selector used by battery limit forms."""
+    """Return the phase selector used by battery limit and assignment forms."""
     return vol.Required(
         CONF_BATTERY_PHASE,
-        default=default or PHASE_L1,
+        default=normalize_battery_phase(default),
     ), SelectSelector(
         SelectSelectorConfig(
             options=[
+                {"value": PHASE_UNASSIGNED, "label": "Unassigned"},
                 {"value": PHASE_L1, "label": "L1"},
                 {"value": PHASE_L2, "label": "L2"},
                 {"value": PHASE_L3, "label": "L3"},
@@ -348,7 +351,9 @@ def _validate_phase_protection(hass, user_input: dict[str, Any]) -> dict[str, st
 
 def _phase_assignment_is_valid(value: Any) -> bool:
     """Return whether a stored battery phase is normalized and usable."""
-    return value in PHASE_VALUES
+    # Empty values are accepted for legacy entries and normalized to the
+    # explicit selector value when the form is submitted.
+    return value in PHASE_VALUES or value == PHASE_UNASSIGNED or value in (None, "")
 
 
 def _soc_selector_limits(brand: str) -> tuple[int, int, int, int, int, int]:
@@ -1376,7 +1381,7 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
                 merged["max_soc"] = int(user_input["max_soc"])
                 merged["min_soc"] = int(user_input["min_soc"])
                 if self.config_data.get(CONF_THREE_PHASE_ENABLED):
-                    merged[CONF_BATTERY_PHASE] = phase
+                    merged[CONF_BATTERY_PHASE] = normalize_battery_phase(phase)
                 _seed_software_power_limits(merged, brand)
                 # Hysteresis is mandatory; floor the percent against SOC drift.
                 merged["enable_charge_hysteresis"] = True
@@ -1436,7 +1441,9 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
                 NumberSelectorConfig(min=0.01 if brand == "hoymiles" else 0, max=100, step=0.01, unit_of_measurement="kWh", mode=NumberSelectorMode.BOX)
             )
         if self.config_data.get(CONF_THREE_PHASE_ENABLED):
-            phase_field, phase_selector = _battery_phase_schema()
+            # Keep the established L1 suggestion for a brand-new setup while
+            # allowing the explicit Unassigned option when needed.
+            phase_field, phase_selector = _battery_phase_schema(PHASE_L1)
             _schema[phase_field] = phase_selector
         return self.async_show_form(
             step_id="battery_limits",
@@ -2819,13 +2826,15 @@ class OptionsFlowHandler(OptionsFlow):
             if not _phase_assignment_is_valid(phase):
                 errors[CONF_BATTERY_PHASE] = "battery_phase_required"
             else:
-                batteries[index][CONF_BATTERY_PHASE] = phase
+                batteries[index][CONF_BATTERY_PHASE] = normalize_battery_phase(phase)
                 self._phase_assignment_index = index + 1
                 return await self.async_step_phase_assignments()
 
         current = batteries[index]
         phase_field, phase_selector = _battery_phase_schema(
-            current.get(CONF_BATTERY_PHASE) if _phase_assignment_is_valid(current.get(CONF_BATTERY_PHASE)) else PHASE_L1
+            current.get(CONF_BATTERY_PHASE)
+            if _phase_assignment_is_valid(current.get(CONF_BATTERY_PHASE))
+            else PHASE_UNASSIGNED
         )
         return self.async_show_form(
             step_id="phase_assignments",
@@ -3314,7 +3323,7 @@ class OptionsFlowHandler(OptionsFlow):
                     CONF_THREE_PHASE_ENABLED,
                     self.config_data.get(CONF_THREE_PHASE_ENABLED, DEFAULT_THREE_PHASE_ENABLED),
                 ):
-                    merged[CONF_BATTERY_PHASE] = phase
+                    merged[CONF_BATTERY_PHASE] = normalize_battery_phase(phase)
                 _seed_software_power_limits(merged, brand)
                 # Hysteresis is mandatory; floor the percent against SOC drift.
                 merged["enable_charge_hysteresis"] = True
@@ -3355,7 +3364,9 @@ class OptionsFlowHandler(OptionsFlow):
                         DEFAULT_FULL_CHARGE_VOLTAGE_TAPER_ENABLED,
                     ),
                     "battery_capacity_kwh": current_battery.get("battery_capacity_kwh", 2.24 if brand == "hoymiles" else 0.0),
-                    CONF_BATTERY_PHASE: current_battery.get(CONF_BATTERY_PHASE, PHASE_L1),
+                    CONF_BATTERY_PHASE: normalize_battery_phase(
+                        current_battery.get(CONF_BATTERY_PHASE, PHASE_UNASSIGNED)
+                    ),
                 }
             else:
                 defaults = {
@@ -3379,7 +3390,7 @@ class OptionsFlowHandler(OptionsFlow):
                     "backup_offgrid_threshold": 50,
                     CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED: DEFAULT_FULL_CHARGE_VOLTAGE_TAPER_ENABLED,
                     "battery_capacity_kwh": 2.24 if brand == "hoymiles" else 0.0,
-                    CONF_BATTERY_PHASE: PHASE_L1,
+                    CONF_BATTERY_PHASE: PHASE_UNASSIGNED,
                 }
         except Exception as e:
             _LOGGER.error("Error in options flow battery_limits step: %s", e, exc_info=True)
@@ -3424,7 +3435,7 @@ class OptionsFlowHandler(OptionsFlow):
             self.config_data.get(CONF_THREE_PHASE_ENABLED, DEFAULT_THREE_PHASE_ENABLED),
         ):
             phase_field, phase_selector = _battery_phase_schema(
-                defaults.get(CONF_BATTERY_PHASE, PHASE_L1)
+                defaults.get(CONF_BATTERY_PHASE, PHASE_UNASSIGNED)
             )
             _schema[phase_field] = phase_selector
         return self.async_show_form(
