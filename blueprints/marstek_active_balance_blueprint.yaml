@@ -372,6 +372,14 @@ variables:
   force_mode_idle: >-
     {% set options = state_attr(force_mode, 'options') or [] %}
     {{ 'None' if 'None' in options else 'stop' if 'stop' in options else 'none' if 'none' in options else 'standby' }}
+  # A pure template result of the canonical option "None" is parsed by Home
+  # Assistant as Python None. The service actions therefore use a static
+  # "None" value when that option is advertised and only template aliases.
+  force_mode_has_canonical_idle: >-
+    {{ 'None' in (state_attr(force_mode, 'options') or []) }}
+  force_mode_idle_alias: >-
+    {% set options = state_attr(force_mode, 'options') or [] %}
+    {{ 'stop' if 'stop' in options else 'none' if 'none' in options else 'standby' }}
   force_mode_charge: >-
     {% set options = state_attr(force_mode, 'options') or [] %}
     {{ 'Charge' if 'Charge' in options else 'charge' if 'charge' in options else 'Charge' }}
@@ -432,12 +440,24 @@ action:
             data:
               value: 0
             continue_on_error: true
-          - service: select.select_option
-            target:
-              entity_id: "{{ force_mode }}"
-            data:
-              option: "{{ force_mode_idle }}"
-            continue_on_error: true
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ force_mode_has_canonical_idle }}"
+                sequence:
+                  - service: select.select_option
+                    target:
+                      entity_id: "{{ force_mode }}"
+                    data:
+                      option: "None"
+                    continue_on_error: true
+            default:
+              - service: select.select_option
+                target:
+                  entity_id: "{{ force_mode }}"
+                data:
+                  option: "{{ force_mode_idle_alias }}"
+                continue_on_error: true
           - delay:
               seconds: 2
           - variables:
@@ -631,12 +651,24 @@ action:
     data:
       value: 0
     continue_on_error: true
-  - service: select.select_option
-    target:
-      entity_id: "{{ force_mode }}"
-    data:
-      option: "{{ force_mode_idle }}"
-    continue_on_error: true
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ force_mode_has_canonical_idle }}"
+        sequence:
+          - service: select.select_option
+            target:
+              entity_id: "{{ force_mode }}"
+            data:
+              option: "None"
+            continue_on_error: true
+    default:
+      - service: select.select_option
+        target:
+          entity_id: "{{ force_mode }}"
+        data:
+          option: "{{ force_mode_idle_alias }}"
+        continue_on_error: true
   - delay:
       seconds: 2
   - service: number.set_value
@@ -858,12 +890,24 @@ action:
                           data:
                             value: 0
                           continue_on_error: true
-                        - service: select.select_option
-                          target:
-                            entity_id: "{{ force_mode }}"
-                          data:
-                            option: "{{ force_mode_idle }}"
-                          continue_on_error: true
+                        - choose:
+                            - conditions:
+                                - condition: template
+                                  value_template: "{{ force_mode_has_canonical_idle }}"
+                              sequence:
+                                - service: select.select_option
+                                  target:
+                                    entity_id: "{{ force_mode }}"
+                                  data:
+                                    option: "None"
+                                  continue_on_error: true
+                          default:
+                            - service: select.select_option
+                              target:
+                                entity_id: "{{ force_mode }}"
+                              data:
+                                option: "{{ force_mode_idle_alias }}"
+                              continue_on_error: true
                         - delay:
                             seconds: "{{ measurement_wait_s | int(60) }}"
                         - choose:
@@ -1033,12 +1077,24 @@ action:
     data:
       value: 0
     continue_on_error: true
-  - service: select.select_option
-    target:
-      entity_id: "{{ force_mode }}"
-    data:
-      option: "{{ force_mode_idle }}"
-    continue_on_error: true
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ force_mode_has_canonical_idle }}"
+        sequence:
+          - service: select.select_option
+            target:
+              entity_id: "{{ force_mode }}"
+            data:
+              option: "None"
+            continue_on_error: true
+    default:
+      - service: select.select_option
+        target:
+          entity_id: "{{ force_mode }}"
+        data:
+          option: "{{ force_mode_idle_alias }}"
+        continue_on_error: true
   - delay:
       seconds: 2
   - variables:

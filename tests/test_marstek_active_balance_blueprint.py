@@ -117,6 +117,8 @@ def test_blueprint_has_one_battery_contract_and_plan_defaults():
     assert "device_entities(battery_device)" in raw
     assert "charging_cutoff_capacity" in raw
     assert "entity_id: !input battery_" not in raw
+    assert 'option: "{{ force_mode_idle }}"' not in raw
+    assert 'option: "None"' in raw
     assert "state_attr(set_charge_power, 'min')" in raw
     assert "state_attr(max_charge_power, 'min')" not in raw
 
