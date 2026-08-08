@@ -1473,7 +1473,7 @@ class ThreePhaseProtectionSwitch(SwitchEntity):
         self._attr_translation_key = "three_phase_protection"
         self._attr_unique_id = f"{SYSTEM_UNIQUE_ID_PREFIX}three_phase_protection"
         self.entity_id = system_entity_id("switch", "three_phase_protection")
-        self._attr_icon = "mdi:transmission-tower-shield"
+        self._attr_icon = "mdi:shield-check-outline"
         self._attr_should_poll = False
 
     @property

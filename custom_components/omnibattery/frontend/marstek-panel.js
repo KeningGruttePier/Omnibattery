@@ -597,9 +597,9 @@ const BAT_CONTROLS = [
 const SYS_SECTIONS = [
   {
     tk: "secPhaseProtection",
-    icon: "mdi:transmission-tower-shield",
+    icon: "mdi:shield-check-outline",
     items: [
-      { key: "three_phase_protection", domain: "switch", lk: "threePhaseProtection", icon: "mdi:transmission-tower-shield" },
+      { key: "three_phase_protection", domain: "switch", lk: "threePhaseProtection", icon: "mdi:shield-check-outline" },
     ],
   },
   {

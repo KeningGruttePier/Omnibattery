@@ -13,6 +13,7 @@ from custom_components.omnibattery.const import (
     PHASE_UNASSIGNED,
 )
 from custom_components.omnibattery.select import BatteryPhaseSelect
+from custom_components.omnibattery.sensor import ThreePhaseProtectionSensor
 from custom_components.omnibattery.switch import (
     ThreePhaseProtectionSwitch,
     async_setup_entry,
@@ -76,6 +77,7 @@ def test_three_phase_protection_switch_changes_runtime_and_config():
     entity, limiter, entry = _protection_switch()
 
     assert entity.is_on is False
+    assert entity.icon == "mdi:shield-check-outline"
     asyncio.run(entity.async_turn_on())
     assert limiter.enabled is True
     assert entry.data[CONF_THREE_PHASE_ENABLED] is True
@@ -84,6 +86,17 @@ def test_three_phase_protection_switch_changes_runtime_and_config():
     asyncio.run(entity.async_turn_off())
     assert limiter.enabled is False
     assert entry.data[CONF_THREE_PHASE_ENABLED] is False
+
+
+def test_three_phase_protection_sensor_has_a_valid_icon():
+    controller = SimpleNamespace(
+        _phase_power_limiter=SimpleNamespace(
+            diagnostics=lambda: {"state": "disabled"}
+        )
+    )
+    entity = ThreePhaseProtectionSensor(SimpleNamespace(), SimpleNamespace(), controller)
+
+    assert entity.icon == "mdi:shield-check-outline"
 
 
 def test_three_phase_protection_switch_is_created_when_disabled():

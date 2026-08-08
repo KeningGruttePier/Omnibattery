@@ -490,7 +490,7 @@ class ThreePhaseProtectionSensor(SensorEntity):
         self._attr_translation_key = "three_phase_protection_status"
         self._attr_unique_id = f"{SYSTEM_UNIQUE_ID_PREFIX}three_phase_protection_status"
         self.entity_id = system_entity_id("sensor", "three_phase_protection_status")
-        self._attr_icon = "mdi:transmission-tower-shield"
+        self._attr_icon = "mdi:shield-check-outline"
         self._attr_entity_category = EntityCategory.DIAGNOSTIC
         self._attr_should_poll = True
 
