@@ -50,6 +50,9 @@ _LOGGER = logging.getLogger(__name__)
 class MaxSocChargeManager:
     """Top-of-charge taper, SOC recalibration and cell-delta measurement."""
 
+    _BMS_CUTOFF_MEASUREMENT_PENDING = "pending"
+    _BMS_CUTOFF_MEASUREMENT_DONE = "done"
+
     def __init__(self, hass: "HomeAssistant", controller: Any) -> None:
         self._hass = hass
         self._controller = controller
@@ -147,6 +150,15 @@ class MaxSocChargeManager:
                 return False
 
         if self._bms_cutoff_confirmed(coordinator):
+            return False
+
+        measurement_state = getattr(
+            self._controller, "_normal_balance_bms_cutoff_measurement", {}
+        ).get(coordinator)
+        if measurement_state in {
+            self._BMS_CUTOFF_MEASUREMENT_PENDING,
+            self._BMS_CUTOFF_MEASUREMENT_DONE,
+        }:
             return False
 
         active = getattr(
@@ -366,12 +378,18 @@ class MaxSocChargeManager:
                 getattr(c, "_normal_balance_bms_cutoff_active", {}).pop(
                     coordinator, None
                 )
+                getattr(c, "_normal_balance_bms_cutoff_measurement", {}).pop(
+                    coordinator, None
+                )
                 self._clear_recal_state(coordinator)
                 continue
 
             if not data:
                 c._normal_balance_voltage_tapered.pop(coordinator, None)
                 getattr(c, "_normal_balance_bms_cutoff_active", {}).pop(
+                    coordinator, None
+                )
+                getattr(c, "_normal_balance_bms_cutoff_measurement", {}).pop(
                     coordinator, None
                 )
                 c._normal_balance_recal_override.pop(coordinator, None)
@@ -412,7 +430,27 @@ class MaxSocChargeManager:
                 if bms_cutoff_state is None:
                     bms_cutoff_state = {}
                     c._normal_balance_bms_cutoff_active = bms_cutoff_state
-                if not in_zone or self._bms_cutoff_confirmed(coordinator):
+                measurement_state = getattr(
+                    c, "_normal_balance_bms_cutoff_measurement", None
+                )
+                if measurement_state is None:
+                    measurement_state = {}
+                    c._normal_balance_bms_cutoff_measurement = measurement_state
+                bms_cutoff_confirmed = self._bms_cutoff_confirmed(coordinator)
+                if bms_cutoff_confirmed:
+                    bms_cutoff_state.pop(coordinator, None)
+                    measurement_state.setdefault(
+                        coordinator, self._BMS_CUTOFF_MEASUREMENT_PENDING
+                    )
+                else:
+                    try:
+                        battery_power = float(data.get("battery_power"))
+                    except (TypeError, ValueError):
+                        battery_power = None
+                    if battery_power is not None and battery_power > 10:
+                        # A new accepted charge starts a new BMS-cutoff cycle.
+                        measurement_state.pop(coordinator, None)
+                if not in_zone or bms_cutoff_confirmed:
                     bms_cutoff_state.pop(coordinator, None)
                 elif (
                     bms_cutoff_state.get(coordinator, False)
@@ -498,6 +536,9 @@ class MaxSocChargeManager:
                 ).get(
                     coordinator, False
                 ),
+                "bms_cutoff_measurement": getattr(
+                    c, "_normal_balance_bms_cutoff_measurement", {}
+                ).get(coordinator),
                 "normal_balance_phase": c._normal_balance_phases.get(coordinator),
                 "soc_recal_active": c._normal_balance_recal_override.get(coordinator, False),
                 "soc_recal_bms_cutoff": c._normal_balance_recal_latched.get(coordinator, False),
@@ -526,7 +567,8 @@ class MaxSocChargeManager:
         # while vmax >= pause voltage) would otherwise cap the cell at 3.60 V and
         # stall an imbalanced pack there forever — it relaxes below 3.60 V at 0 W,
         # resumes, climbs back, and ping-pongs without ever reaching the cutoff.
-        # The delta-V diagnostic is still captured once at completion.
+        # The normal and weekly paths keep their own best-effort completion
+        # snapshot; Venus A/D post-cutoff measurements are handled below.
         weekly_active = (
             hasattr(c, "_weekly_charge_mgr") and c._weekly_full_charge_unlocked()
         )
@@ -534,19 +576,28 @@ class MaxSocChargeManager:
         for coordinator in c.coordinators:
             if coordinator.data is None or not self._taper_applies(coordinator):
                 continue
+            post_bms_measurement = False
             if self._uses_bms_cutoff_at_top(coordinator):
-                # Coupled Venus A/D packs must continue through the top-cell
-                # reading; only their BMS may end the charge. No 60 s integration
-                # hold or balance measurement is taken on this path.
-                c._normal_balance_phases.pop(coordinator, None)
-                c._normal_balance_measure_started.pop(coordinator, None)
-                continue
-            if weekly_active:
+                measurement_state = getattr(
+                    c, "_normal_balance_bms_cutoff_measurement", {}
+                ).get(coordinator)
+                if measurement_state == self._BMS_CUTOFF_MEASUREMENT_PENDING:
+                    # After the BMS cutoff, wait without charging and take one
+                    # 60 s top-balance measurement. This does not impose the
+                    # pre-cutoff 3.60 V integration stop.
+                    post_bms_measurement = True
+                else:
+                    # Before BMS cutoff, coupled Venus A/D packs must continue
+                    # through the top-cell reading without an integration hold.
+                    c._normal_balance_phases.pop(coordinator, None)
+                    c._normal_balance_measure_started.pop(coordinator, None)
+                    continue
+            if weekly_active and not post_bms_measurement:
                 # Let the weekly taper charge to the BMS cutoff; don't hold/measure.
                 c._normal_balance_phases.pop(coordinator, None)
                 c._normal_balance_measure_started.pop(coordinator, None)
                 continue
-            if c._normal_balance_recal_override.get(coordinator):
+            if c._normal_balance_recal_override.get(coordinator) and not post_bms_measurement:
                 # SOC recalibration in progress: let PD keep charging to the BMS
                 # cutoff instead of holding/measuring at the top voltage.
                 c._normal_balance_phases.pop(coordinator, None)
@@ -559,7 +610,7 @@ class MaxSocChargeManager:
                 vmax = float(coordinator.data.get("max_cell_voltage"))
             except (TypeError, ValueError):
                 continue
-            if vmax >= NORMAL_BALANCE_PAUSE_CELL_VOLTAGE:
+            if post_bms_measurement or vmax >= NORMAL_BALANCE_PAUSE_CELL_VOLTAGE:
                 c._normal_balance_phases[coordinator] = "WAIT_MEASURE"
                 c._normal_balance_measure_started[coordinator] = dt_util.utcnow()
                 active_coordinators.add(coordinator)
@@ -594,19 +645,33 @@ class MaxSocChargeManager:
                     c._normal_balance_last_delta_v[coordinator] = delta_v
                     phase = "MEASURED"
                     c._normal_balance_phases[coordinator] = phase
+                    measurement_state = getattr(
+                        c, "_normal_balance_bms_cutoff_measurement", {}
+                    )
+                    is_post_bms_measurement = (
+                        measurement_state.get(coordinator)
+                        == self._BMS_CUTOFF_MEASUREMENT_PENDING
+                    )
+                    if is_post_bms_measurement:
+                        measurement_state[coordinator] = self._BMS_CUTOFF_MEASUREMENT_DONE
                     if c._balance_monitor is not None:
                         await c._balance_monitor.async_record_top_balance_measurement(
                             coordinator,
                             vmax,
                             vmin,
                             data.get("battery_soc"),
-                            phase="top_charge_3_55v",
+                            phase=(
+                                "top_charge_bms_cutoff"
+                                if is_post_bms_measurement
+                                else "top_charge_3_55v"
+                            ),
                         )
                     _LOGGER.info(
-                        "%s: normal 100%% balance measurement delta=%.4f V at vmax=%.3f V",
+                        "%s: normal 100%% balance measurement delta=%.4f V at vmax=%.3f V%s",
                         coordinator.name,
                         delta_v,
                         vmax,
+                        " after BMS cutoff" if is_post_bms_measurement else "",
                     )
             if phase == "MEASURED" and vmax < NORMAL_BALANCE_PAUSE_CELL_VOLTAGE:
                 c._normal_balance_phases.pop(coordinator, None)

@@ -69,6 +69,7 @@ tracks the manager's runtime state."""
         _normal_balance_date=dt_util.now().date(),
         _normal_balance_voltage_tapered={},
         _normal_balance_bms_cutoff_active={},
+        _normal_balance_bms_cutoff_measurement={},
         _normal_balance_phases={},
         _normal_balance_measure_started={},
         _normal_balance_last_delta_v={},
@@ -312,6 +313,10 @@ def test_venus_ad_bms_confirmation_releases_top_charge_latch():
     cutoff_confirmed = True
     manager.refresh_blocks()
     assert c not in ctrl._normal_balance_bms_cutoff_active
+    assert (
+        ctrl._normal_balance_bms_cutoff_measurement[c]
+        == manager._BMS_CUTOFF_MEASUREMENT_PENDING
+    )
     assert manager.should_charge_to_bms_cutoff(c, 100) is False
 
 
@@ -572,6 +577,59 @@ async def test_handle_measurement_skips_top_voltage_hold_for_venus_ad():
     assert took_over is False
     assert calls == []
     assert c not in ctrl._normal_balance_phases
+
+
+async def test_handle_measurement_waits_after_venus_ad_bms_cutoff():
+    c = _Coord(
+        battery_version="vA",
+        data={"max_cell_voltage": 3.57, "min_cell_voltage": 3.54, "battery_soc": 100},
+    )
+    calls = []
+
+    async def _set(coordinator, charge, discharge, **kw):
+        calls.append((coordinator.name, charge, discharge))
+
+    ctrl = _controller([c], _set_battery_power=_set)
+    ctrl._normal_balance_bms_cutoff_measurement[c] = "pending"
+
+    took_over = await _mgr(ctrl).handle_measurement()
+
+    assert took_over is True
+    assert ctrl._normal_balance_phases[c] == "WAIT_MEASURE"
+    assert calls == [("bat", 0, 0)]
+
+
+async def test_handle_measurement_records_venus_ad_post_cutoff_delta():
+    c = _Coord(
+        battery_version="vD",
+        data={"max_cell_voltage": 3.57, "min_cell_voltage": 3.54, "battery_soc": 100},
+    )
+
+    class _Monitor:
+        def __init__(self):
+            self.calls = []
+
+        async def async_record_top_balance_measurement(
+            self, coordinator, vmax, vmin, soc, phase
+        ):
+            self.calls.append((coordinator.name, vmax, vmin, soc, phase))
+
+    monitor = _Monitor()
+    ctrl = _controller(
+        [c],
+        _set_battery_power=lambda *a, **k: _noop(),
+        _balance_monitor=monitor,
+    )
+    ctrl._normal_balance_bms_cutoff_measurement[c] = "pending"
+    ctrl._normal_balance_phases[c] = "WAIT_MEASURE"
+    ctrl._normal_balance_measure_started[c] = dt_util.utcnow() - timedelta(seconds=61)
+
+    await _mgr(ctrl).handle_measurement()
+
+    assert ctrl._normal_balance_bms_cutoff_measurement[c] == "done"
+    assert ctrl._normal_balance_last_delta_v[c] == 0.03
+    assert monitor.calls[0][4] == "top_charge_bms_cutoff"
+    assert _mgr(ctrl).should_charge_to_bms_cutoff(c, 100) is False
 
 
 async def _noop():

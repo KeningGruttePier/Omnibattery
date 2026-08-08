@@ -72,14 +72,16 @@ La carga semanal completa no usa un perfil de balanceo distinto. Solo cambia el 
 | `max_cell_voltage` llega a 3.60 V en Venus E | La histéresis de carga configurada toma el control del umbral de parada y reanudación |
 | `max_cell_voltage` llega a 3.60 V en Venus A/D | Mantiene 200 W hasta el corte de la BMS; no aplica la parada de la integración |
 | Tras la espera de 60 s en Venus E | Registra `delta_mV = (Vmax - Vmin) * 1000` |
+| Tras confirmar el corte de la BMS en Venus A/D | Espera 60 s sin cargar y registra `delta_mV = (Vmax - Vmin) * 1000` |
 
 El inicio de la reducción se basa en tensión de celda: el SOC no se usa para decidir cuándo empieza, porque cerca del final de carga los registros de tensión de celda son más fiables que el SOC reportado.
 
 En Venus E, cuando la batería llega a 3.60 V, la histéresis de carga
 configurada evita que vuelva a cargar hasta cruzar su umbral de SOC. La
 medición de 60 segundos continúa como diagnóstico de mejor esfuerzo. Las
-Venus A/D omiten esta pausa y medición mientras está activo su flujo de corte
-propiedad de la BMS.
+Venus A/D omiten esta pausa y medición antes del corte de la BMS; una vez
+confirmado el corte, esperan 60 segundos sin cargar y registran una medición
+del delta de celdas.
 
 En sistemas con varias baterías, la lógica se evalúa por batería. Una batería puede estar limitada o pausada mientras otra sigue cargando con normalidad.
 
@@ -217,6 +219,7 @@ El sensor **Integration Status** expone un atributo `normal_balance_protection` 
 | `delta_V` | Diferencia actual de tensión en voltios |
 | `voltage_taper_latched` | Si la reducción normal a 200 W está activa |
 | `bms_cutoff_charge_active` | Si Venus A/D sigue disponible para cargar hasta el corte de la BMS |
+| `bms_cutoff_measurement` | Estado de la medición posterior al corte A/D: `pending` o `done` |
 | `soc_recal_active` | Si la carga se mantiene más allá de la pausa de 3.60 V para intentar recalibrar un SOC reportado bajo |
 | `soc_recal_bms_cutoff` | Si se ha alcanzado el corte del BMS durante la recalibración (override enclavado) |
 | `soc_recal_retry_pending` | Si se está esperando a que la celda se relaje a 3.57 V para el único reintento |

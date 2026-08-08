@@ -21,7 +21,12 @@ from typing import TYPE_CHECKING, Any
 
 from homeassistant.helpers.storage import Store
 
-from ..const import DOMAIN, NORMAL_BALANCE_TAPER_CELL_VOLTAGE, WEEKDAY_MAP
+from ..const import (
+    DOMAIN,
+    NORMAL_BALANCE_BMS_CUTOFF_VERSIONS,
+    NORMAL_BALANCE_TAPER_CELL_VOLTAGE,
+    WEEKDAY_MAP,
+)
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -486,6 +491,21 @@ class WeeklyFullChargeManager:
                 "bms_cutoff_cycles": self._bms_cutoff_counts.get(coordinator.name, 0),
             }
         ctrl._weekly_charge_status["batteries"] = completion_batteries
+
+        # Preserve the post-cutoff measurement request while clearing the
+        # debounce counters used by the weekly completion detector.
+        measurement_state = getattr(
+            ctrl, "_normal_balance_bms_cutoff_measurement", None
+        )
+        if measurement_state is not None:
+            for coordinator in ctrl.coordinators:
+                if (
+                    getattr(coordinator, "battery_version", None)
+                    in NORMAL_BALANCE_BMS_CUTOFF_VERSIONS
+                    and self._bms_cutoff_counts.get(coordinator.name, 0)
+                    >= _BMS_CUTOFF_REQUIRED_CYCLES
+                ):
+                    measurement_state[coordinator] = "pending"
         self._bms_cutoff_counts.clear()
 
         # Restore register 44000 to original max_soc values (v2 only).
@@ -519,6 +539,13 @@ class WeeklyFullChargeManager:
         measured = getattr(ctrl, "_normal_balance_last_delta_v", {})
         for coordinator in ctrl.coordinators:
             if getattr(coordinator, "battery_manual_mode_enabled", False):
+                continue
+            if (
+                measurement_state is not None
+                and measurement_state.get(coordinator) == "pending"
+            ):
+                # Venus A/D get their 60 s measurement after the confirmed BMS
+                # cutoff; do not replace it with the immediate fallback sample.
                 continue
             if coordinator in measured:
                 continue

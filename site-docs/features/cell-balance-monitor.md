@@ -81,7 +81,8 @@ flowchart TD
     F -->|No, Venus A/D| K([Continue at 200 W])
     K --> L{BMS cutoff confirmed?}
     L -->|No| K
-    L -->|Yes| M([Stop charge])
+    L -->|Yes| M([Stop charge and wait 60s])
+    M --> N("Record cell_delta = (cell_Vmax - cell_Vmin) * 1000")
 ```
     
 | Condition for one battery | Action |
@@ -91,6 +92,7 @@ flowchart TD
 | `max_cell_voltage` reaches 3.60 V on Venus E | The configured charge hysteresis takes ownership of the stop/recharge threshold |
 | `max_cell_voltage` reaches 3.60 V on Venus A/D | Keep charging at 200 W until the BMS cutoff; do not apply the integration stop |
 | After the 60 s wait on Venus E | Record `delta_mV = (Vmax - Vmin) * 1000` |
+| After the confirmed BMS cutoff on Venus A/D | Wait 60 s without charging, then record `delta_mV = (Vmax - Vmin) * 1000` |
 
 Starting the taper is voltage based: SOC is deliberately not used to decide when tapering begins, because SOC can be less reliable near the top than the cell-voltage registers.
 
@@ -99,7 +101,8 @@ recharging until its SOC threshold is crossed. The 60-second delta-V
 measurement still runs as a best-effort diagnostic; if it did not finish
 before completion, a one-shot snapshot is captured at completion time under
 phase `top_charge_taper_complete`. Venus A/D skip this integration hold and
-measurement while their BMS-owned top-charge latch is active.
+measurement before the BMS cutoff; once the cutoff is confirmed, they wait 60
+seconds without charging and record the delta-V measurement once.
 
 In a multi-battery system, this is evaluated per battery. One battery can be limited by the taper while another continues charging normally.
 
@@ -235,6 +238,7 @@ The **Integration Status** sensor exposes a `normal_balance_protection` attribut
 | `delta_V` | Current voltage spread in volts |
 | `voltage_taper_latched` | Whether the 200 W normal-charge taper is currently active |
 | `bms_cutoff_charge_active` | Whether Venus A/D are being kept charge-eligible until their BMS cutoff |
+| `bms_cutoff_measurement` | Venus A/D post-cutoff measurement state: `pending` or `done` |
 | `soc_recal_active` | Whether the charge is being kept past 3.60 V to attempt recalibration of a low reported SOC |
 | `soc_recal_bms_cutoff` | Whether the BMS cutoff has been reached during recalibration (override latched off) |
 | `soc_recal_retry_pending` | Whether the battery is waiting for 3.57 V before the one-shot retry |

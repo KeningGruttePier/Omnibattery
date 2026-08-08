@@ -553,6 +553,9 @@ class ChargeDischargeController:
         self._normal_balance_date = dt_util.now().date()
         self._normal_balance_voltage_tapered: dict[MarstekVenusDataUpdateCoordinator, bool] = {}
         self._normal_balance_bms_cutoff_active: dict[MarstekVenusDataUpdateCoordinator, bool] = {}
+        self._normal_balance_bms_cutoff_measurement: dict[
+            MarstekVenusDataUpdateCoordinator, str
+        ] = {}
         self._normal_balance_phases: dict[MarstekVenusDataUpdateCoordinator, str] = {}
         self._normal_balance_measure_started: dict[MarstekVenusDataUpdateCoordinator, datetime] = {}
         self._normal_balance_last_delta_v: dict[MarstekVenusDataUpdateCoordinator, float] = {}
@@ -1027,6 +1030,11 @@ class ChargeDischargeController:
         bms_cutoff_state = getattr(self, "_normal_balance_bms_cutoff_active", None)
         if bms_cutoff_state is not None:
             bms_cutoff_state.pop(coordinator, None)
+        bms_cutoff_measurement = getattr(
+            self, "_normal_balance_bms_cutoff_measurement", None
+        )
+        if bms_cutoff_measurement is not None:
+            bms_cutoff_measurement.pop(coordinator, None)
 
         weekly_manager = getattr(self, "_weekly_charge_mgr", None)
         cutoff_counts = getattr(weekly_manager, "_bms_cutoff_counts", None)
