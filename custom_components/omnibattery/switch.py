@@ -457,6 +457,9 @@ class BatteryFullChargeVoltageTaperSwitch(SwitchEntity):
 
     def _clear_runtime_state(self) -> None:
         self.controller._normal_balance_voltage_tapered.pop(self.coordinator, None)
+        bms_cutoff_state = getattr(self.controller, "_normal_balance_bms_cutoff_active", None)
+        if bms_cutoff_state is not None:
+            bms_cutoff_state.pop(self.coordinator, None)
 
     async def async_turn_on(self, **kwargs) -> None:
         self._persist(True)

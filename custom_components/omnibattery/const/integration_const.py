@@ -231,11 +231,16 @@ NORMAL_BALANCE_TAPER_EXIT_CELL_VOLTAGE = 3.44
 NORMAL_BALANCE_PAUSE_CELL_VOLTAGE = 3.60
 NORMAL_BALANCE_CHARGE_POWER_W = 200
 NORMAL_BALANCE_MEASURE_WAIT_SECONDS = 60
-# Once the top voltage is reached the taper stops charging and latches. It does
-# NOT re-trickle when the cell relaxes (that would pin the cell at the top
-# voltage and keep some v3 BMSs from leaving standby to discharge). The latch
-# releases — allowing a later top-up to taper again — only after the battery has
-# actually been discharged by this SOC margin from where it latched.
+# Venus A/D can expose several coupled packs through one inverter. Their top
+# cell telemetry may reach the normal pause point while the other packs still
+# need charge, so keep the tapered command until the BMS confirms its cutoff.
+NORMAL_BALANCE_BMS_CUTOFF_VERSIONS = ("vA", "vD")
+# For Venus E models, once the top voltage is reached the taper stops charging
+# and latches. It does NOT re-trickle when the cell relaxes (that would pin the
+# cell at the top voltage and keep some v3 BMSs from leaving standby to
+# discharge). Venus A/D coupled packs use the BMS-owned path above instead. The
+# The normal SOC hysteresis releases after its configured percentage, while the
+# voltage taper latch itself releases below the 3.44 V exit threshold.
 # SOC recalibration on a stuck top voltage.
 # A pack that hits the top cell voltage (pause point) while the BMS reports a SOC
 # below full may have a drifted coulomb counter. Some BMS firmware only corrects

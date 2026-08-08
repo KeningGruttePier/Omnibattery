@@ -158,7 +158,7 @@
           "min_soc": "Minimaler Ladezustand - Batterie entlädt nicht unter diesen Wert",
           "charge_hysteresis_percent": "Immer aktiv (mindestens 2%). Nach Erreichen des Maximums lädt die Batterie erst wieder, wenn der SOC auf (Max SOC − Hysterese) fällt. Bsp.: Max SOC 100% mit 2% = kein Laden bis 98%.",
           "backup_offgrid_threshold": "Eine Offgrid-Last über diesem Wert wird als aktives Backup-Ereignis behandelt und schließt die Batterie aus der PD-Regelung aus. Erhöhen, wenn dauerhafte Lasten (Router, Kameras) am Offgrid-Port angeschlossen sind.",
-          "full_charge_voltage_taper_enabled": "Wenn das Ziel 100% ist, wird die Ladung ab 3.48 V maximaler Zellspannung auf 200 W begrenzt und bei 3.60 V gestoppt, um den Zellversatz nach 60 Sekunden zu messen.",
+          "full_charge_voltage_taper_enabled": "Wenn das Ziel 100% ist, wird die Ladung ab 3.48 V maximaler Zellspannung auf 200 W begrenzt. Venus-E-Modelle stoppen bei 3.60 V zur Messung des Zellversatzes nach 60 Sekunden; Venus A/D mit gekoppelten Packs laden mit 200 W weiter, bis das BMS abschaltet.",
           "battery_capacity_kwh": "Nominale nutzbare Kapazität des Batteriepacks. Sie dient zur Berechnung der gespeicherten Energie und Effizienz aus dem SOC. Für Sessy ist die tatsächliche Kapazität erforderlich; bei anderen Batterien kann 0 verwendet werden, wenn sie unbekannt ist.",
           "battery_phase": "Physische AC-Phase (L1/L2/L3), an die diese Batterie angeschlossen ist, oder Nicht zugewiesen außerhalb des geschützten Phasenschemas. Eine Batterie ohne Phase liegt außerhalb der Dreiphasen-Schutzhülle und arbeitet im Automatikbetrieb normal weiter."
         }
@@ -811,7 +811,7 @@
           "min_soc": "Minimaler Ladezustand",
           "charge_hysteresis_percent": "Immer aktiv (mindestens 2%). Nach Erreichen des Maximums lädt die Batterie erst wieder, wenn der SOC auf (Max SOC − Hysterese) fällt. Bsp.: Max SOC 100% mit 2% = kein Laden bis 98%.",
           "backup_offgrid_threshold": "Eine Offgrid-Last über diesem Wert wird als aktives Backup-Ereignis behandelt und schließt die Batterie aus der PD-Regelung aus. Erhöhen, wenn dauerhafte Lasten (Router, Kameras) am Offgrid-Port angeschlossen sind.",
-          "full_charge_voltage_taper_enabled": "Wenn das Ziel 100% ist, wird die Ladung ab 3.48 V maximaler Zellspannung auf 200 W begrenzt und bei 3.60 V gestoppt, um den Zellversatz nach 60 Sekunden zu messen.",
+          "full_charge_voltage_taper_enabled": "Wenn das Ziel 100% ist, wird die Ladung ab 3.48 V maximaler Zellspannung auf 200 W begrenzt. Venus-E-Modelle stoppen bei 3.60 V zur Messung des Zellversatzes nach 60 Sekunden; Venus A/D mit gekoppelten Packs laden mit 200 W weiter, bis das BMS abschaltet.",
           "battery_capacity_kwh": "Nominale nutzbare Kapazität des Batteriepacks. Sie dient zur Berechnung der gespeicherten Energie und Effizienz aus dem SOC. Für Sessy ist die tatsächliche Kapazität erforderlich; bei anderen Batterien kann 0 verwendet werden, wenn sie unbekannt ist.",
           "battery_phase": "Physische AC-Phase (L1/L2/L3), an die diese Batterie angeschlossen ist, oder Nicht zugewiesen außerhalb des geschützten Phasenschemas. Eine Batterie ohne Phase liegt außerhalb der Dreiphasen-Schutzhülle und arbeitet im Automatikbetrieb normal weiter."
         }

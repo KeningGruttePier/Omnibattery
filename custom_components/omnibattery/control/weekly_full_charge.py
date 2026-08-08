@@ -157,10 +157,24 @@ class WeeklyFullChargeManager:
             return False
         soc = coordinator.data.get("battery_soc", 0)
         if soc >= 100:
+            # Venus A/D can expose 100% as soon as the first coupled pack is
+            # full. When the voltage taper is active, let the top-charge path
+            # keep the command alive until the shared BMS detector confirms the
+            # real cutoff for all packs.
+            top_charge_manager = getattr(self._controller, "_max_soc_mgr", None)
+            should_charge_to_bms = getattr(
+                top_charge_manager, "should_charge_to_bms_cutoff", None
+            )
+            if should_charge_to_bms is not None and should_charge_to_bms(coordinator, 100):
+                return False
             return True
         # BMS cutoff confirmed — safe without SOC gate because tick_bms_cutoff
         # only increments the counter when soc >= 99 OR (weekly active AND cells
         # in taper zone), so the count is 0 outside those conditions.
+        return self._bms_cutoff_counts.get(coordinator.name, 0) >= _BMS_CUTOFF_REQUIRED_CYCLES
+
+    def is_bms_cutoff_confirmed(self, coordinator: Any) -> bool:
+        """Return only the debounced BMS-cutoff state, independent of SOC."""
         return self._bms_cutoff_counts.get(coordinator.name, 0) >= _BMS_CUTOFF_REQUIRED_CYCLES
 
     def is_active(self) -> bool:

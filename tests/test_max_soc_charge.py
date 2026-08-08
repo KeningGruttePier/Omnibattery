@@ -23,6 +23,7 @@ from homeassistant.util import dt as dt_util
 from custom_components.omnibattery.const import (
     CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED,
     NORMAL_BALANCE_CHARGE_POWER_W,
+    NORMAL_BALANCE_PAUSE_CELL_VOLTAGE,
     NORMAL_BALANCE_RECAL_CUTOFF_CYCLES,
     NORMAL_BALANCE_RECAL_RETRY_CELL_VOLTAGE,
 )
@@ -44,6 +45,7 @@ class _Coord:
         name="bat",
         *,
         data=None,
+        battery_version="v2",
         max_soc=100,
         taper_enabled=True,
         max_charge_power=800,
@@ -51,6 +53,7 @@ class _Coord:
     ):
         self.name = name
         self.data = {} if data is None else data
+        self.battery_version = battery_version
         self.max_soc = max_soc
         self.max_charge_power = max_charge_power
         self.commanded_charge_power = commanded_charge_power
@@ -65,6 +68,7 @@ tracks the manager's runtime state."""
         coordinators=list(coords),
         _normal_balance_date=dt_util.now().date(),
         _normal_balance_voltage_tapered={},
+        _normal_balance_bms_cutoff_active={},
         _normal_balance_phases={},
         _normal_balance_measure_started={},
         _normal_balance_last_delta_v={},
@@ -179,6 +183,15 @@ def test_apply_charge_taper_stays_latched_in_hysteresis_band():
     assert ctrl._normal_balance_voltage_tapered.get(c) is True
 
 
+def test_venus_ad_keeps_the_200_w_taper_at_the_top_voltage():
+    for version in ("vA", "vD"):
+        c = _Coord(
+            battery_version=version,
+            data={"max_cell_voltage": NORMAL_BALANCE_PAUSE_CELL_VOLTAGE},
+        )
+        assert _mgr(_controller([c])).apply_charge_taper(c, 800) == NORMAL_BALANCE_CHARGE_POWER_W
+
+
 # ----------------------------------------------------------------------
 # reset_if_new_day
 # ----------------------------------------------------------------------
@@ -201,6 +214,17 @@ def test_reset_if_new_day_clears_taper_state_on_rollover():
 
     assert ctrl._normal_balance_date == dt_util.now().date()
     assert ctrl._normal_balance_voltage_tapered == {}
+
+
+def test_reset_if_new_day_preserves_unfinished_venus_ad_bms_charge():
+    c = _Coord(battery_version="vA")
+    ctrl = _controller([c])
+    ctrl._normal_balance_date = dt_util.now().date() - timedelta(days=1)
+    ctrl._normal_balance_bms_cutoff_active[c] = True
+
+    _mgr(ctrl).reset_if_new_day()
+
+    assert ctrl._normal_balance_bms_cutoff_active[c] is True
 
 
 # ----------------------------------------------------------------------
@@ -241,6 +265,54 @@ def test_refresh_blocks_starts_recalibration_at_top_voltage_on_low_soc():
     _mgr(ctrl).refresh_blocks()
 
     assert ctrl._normal_balance_recal_override[c] is True
+
+
+def test_venus_ad_latches_bms_owned_charge_past_voltage_relaxation():
+    c = _Coord(
+        battery_version="vA",
+        data={"max_cell_voltage": NORMAL_BALANCE_PAUSE_CELL_VOLTAGE, "battery_soc": 100},
+    )
+    ctrl = _controller(
+        [c],
+        _weekly_charge_mgr=SimpleNamespace(
+            is_bms_cutoff_confirmed=lambda _coordinator: False,
+        ),
+    )
+    manager = _mgr(ctrl)
+
+    manager.refresh_blocks()
+    assert ctrl._normal_balance_bms_cutoff_active[c] is True
+    assert manager.should_charge_to_bms_cutoff(c, 100) is True
+
+    # The cell can relax below 3.60 V while the other coupled packs continue
+    # filling; the BMS-owned latch must survive that relaxation.
+    c.data["max_cell_voltage"] = 3.57
+    manager.refresh_blocks()
+    assert ctrl._normal_balance_bms_cutoff_active[c] is True
+    assert manager.should_charge_to_bms_cutoff(c, 100) is True
+
+
+def test_venus_ad_bms_confirmation_releases_top_charge_latch():
+    c = _Coord(
+        battery_version="vD",
+        data={"max_cell_voltage": NORMAL_BALANCE_PAUSE_CELL_VOLTAGE, "battery_soc": 98},
+    )
+    cutoff_confirmed = False
+    ctrl = _controller(
+        [c],
+        _weekly_charge_mgr=SimpleNamespace(
+            is_bms_cutoff_confirmed=lambda _coordinator: cutoff_confirmed,
+        ),
+    )
+    manager = _mgr(ctrl)
+
+    manager.refresh_blocks()
+    assert ctrl._normal_balance_bms_cutoff_active[c] is True
+
+    cutoff_confirmed = True
+    manager.refresh_blocks()
+    assert c not in ctrl._normal_balance_bms_cutoff_active
+    assert manager.should_charge_to_bms_cutoff(c, 100) is False
 
 
 # ----------------------------------------------------------------------
@@ -474,6 +546,26 @@ async def test_handle_measurement_skips_during_weekly_full_charge():
     ctrl = _controller(
         [c], _set_battery_power=_set, _weekly_full_charge_unlocked=lambda: True
     )
+
+    took_over = await _mgr(ctrl).handle_measurement()
+
+    assert took_over is False
+    assert calls == []
+    assert c not in ctrl._normal_balance_phases
+
+
+async def test_handle_measurement_skips_top_voltage_hold_for_venus_ad():
+    c = _Coord(
+        battery_version="vA",
+        data={"max_cell_voltage": NORMAL_BALANCE_PAUSE_CELL_VOLTAGE, "min_cell_voltage": 3.55,
+              "battery_soc": 100},
+    )
+    calls = []
+
+    async def _set(coordinator, charge, discharge, **kw):
+        calls.append((coordinator.name, charge, discharge))
+
+    ctrl = _controller([c], _set_battery_power=_set)
 
     took_over = await _mgr(ctrl).handle_measurement()
 

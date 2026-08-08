@@ -45,6 +45,12 @@ There is one integrated control that decides when the battery is taken to the to
 
 The weekly full charge feature can temporarily set the battery max SOC to 100%. Once it does that, the same 100% charge voltage taper rules are used.
 
+Venus A/D batteries with coupled packs are the exception to the top-voltage
+stop: they still reduce charge to 200 W from 3.48 V, but reaching 3.60 V does
+not stop the integration or start the 60-second measurement. The reduced
+charge continues until the BMS confirms its cutoff, so the first full pack
+cannot prevent the remaining coupled packs from filling.
+
 For active recovery of a pack with a persistent imbalance, use the optional [Marstek active-balance blueprint](../blueprints.md#active-cell-balancing-for-one-marstek-battery). The blueprint is an external Home Assistant automation: it takes one battery through **Battery Manual Mode**, discovers the standard entities from the selected Omnibattery device (with manual ID overrides for renamed entities), and leaves manual ownership asserted if cleanup cannot be confirmed.
 
 ## 100% charge voltage taper
@@ -68,28 +74,38 @@ flowchart TD
     D --> E(Charge with 200 W)
     E --> F{max_cell_voltage < 3.60 V}
     F -->|Yes| D
-    F -->|No| G([Stop charge and latch])
+    F -->|No, Venus E| G([Stop charge and latch])
     G --> H(Stay stopped until charge hysteresis releases)
     G --> I(Wait 60s)
     I --> J("Record cell_delta = (cell_Vmax - cell_Vmin) * 1000")
+    F -->|No, Venus A/D| K([Continue at 200 W])
+    K --> L{BMS cutoff confirmed?}
+    L -->|No| K
+    L -->|Yes| M([Stop charge])
 ```
     
 | Condition for one battery | Action |
 |---|---|
 | `max_cell_voltage` below 3.48 V | Normal configured charge limit |
 | `max_cell_voltage` at or above 3.48 V | Limit charge to 200 W |
-| `max_cell_voltage` reaches 3.60 V | The configured charge hysteresis takes ownership of the stop/recharge threshold |
-| After the 60 s wait | Record `delta_mV = (Vmax - Vmin) * 1000` |
+| `max_cell_voltage` reaches 3.60 V on Venus E | The configured charge hysteresis takes ownership of the stop/recharge threshold |
+| `max_cell_voltage` reaches 3.60 V on Venus A/D | Keep charging at 200 W until the BMS cutoff; do not apply the integration stop |
+| After the 60 s wait on Venus E | Record `delta_mV = (Vmax - Vmin) * 1000` |
 
 Starting the taper is voltage based: SOC is deliberately not used to decide when tapering begins, because SOC can be less reliable near the top than the cell-voltage registers.
 
-Once the battery reaches 3.60 V, the configured charge hysteresis prevents recharging until its SOC threshold is crossed. The 60-second delta-V measurement still runs as a best-effort diagnostic; if it did not finish before completion, a one-shot snapshot is captured at completion time under phase `top_charge_taper_complete`.
+On Venus E, reaching 3.60 V lets the configured charge hysteresis prevent
+recharging until its SOC threshold is crossed. The 60-second delta-V
+measurement still runs as a best-effort diagnostic; if it did not finish
+before completion, a one-shot snapshot is captured at completion time under
+phase `top_charge_taper_complete`. Venus A/D skip this integration hold and
+measurement while their BMS-owned top-charge latch is active.
 
 In a multi-battery system, this is evaluated per battery. One battery can be limited by the taper while another continues charging normally.
 
-### SOC recalibration on a stuck top voltage
+### SOC recalibration on a stuck top voltage (Venus E)
 
-Some packs reach the 3.60 V top-voltage threshold while the BMS still reports a SOC well below full (for example 60–70%). That gap can mean the BMS coulomb counter has drifted, but reaching the voltage threshold does not prove that the reported SOC is wrong.
+Some Venus E packs reach the 3.60 V top-voltage threshold while the BMS still reports a SOC well below full (for example 60–70%). That gap can mean the BMS coulomb counter has drifted, but reaching the voltage threshold does not prove that the reported SOC is wrong.
 
 When this happens, holding at 3.60 V never gives the BMS a chance to finish its own top-of-charge sequence. So instead of pausing, the integration keeps charging at the 200 W tapered power until the BMS itself cuts off, *attempting* to make it recalibrate SOC.
 
@@ -109,7 +125,7 @@ It is self-limiting:
 - if the SOC reads 99% or more before the first cutoff, the initial condition no longer matches, so the override does not fire;
 - the latch only re-arms after the battery leaves the top zone (`max_cell_voltage` below 3.48 V), so a later full charge can recalibrate again if needed.
 
-Reaching the 3.60 V threshold normally only happens on a 100% charge, so this rarely affects daily cycling at a lower `max_soc`. It does **not** run during the [weekly full charge](weekly-full-charge.md) — there the normal charge hysteresis is suppressed and the BMS cutoff alone ends the cycle (see that page). The optional active-balance blueprint takes ownership through Battery Manual Mode, so the normal controller naturally excludes that battery while the automation is running.
+Reaching the 3.60 V threshold normally only happens on a 100% charge, so this rarely affects daily cycling at a lower `max_soc`. It does **not** run during the [weekly full charge](weekly-full-charge.md) — there the normal charge hysteresis is suppressed and the BMS cutoff alone ends the cycle (see that page). Venus A/D use the BMS-owned path on every tapered 100% charge, not this SOC-recalibration retry. The optional active-balance blueprint takes ownership through Battery Manual Mode, so the normal controller naturally excludes that battery while the automation is running.
 
 !!! note "Cell imbalance"
     The override does not check the cell spread first. On a badly imbalanced pack the highest cell can hit the BMS over-voltage cutoff before the pack is full, so the recalibration is correct but balancing is left to later cycles. The BMS still protects each cell individually.
@@ -218,6 +234,7 @@ The **Integration Status** sensor exposes a `normal_balance_protection` attribut
 | `max_cell_voltage` / `min_cell_voltage` | Current cell voltage extremes |
 | `delta_V` | Current voltage spread in volts |
 | `voltage_taper_latched` | Whether the 200 W normal-charge taper is currently active |
+| `bms_cutoff_charge_active` | Whether Venus A/D are being kept charge-eligible until their BMS cutoff |
 | `soc_recal_active` | Whether the charge is being kept past 3.60 V to attempt recalibration of a low reported SOC |
 | `soc_recal_bms_cutoff` | Whether the BMS cutoff has been reached during recalibration (override latched off) |
 | `soc_recal_retry_pending` | Whether the battery is waiting for 3.57 V before the one-shot retry |

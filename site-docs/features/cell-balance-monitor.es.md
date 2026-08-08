@@ -45,6 +45,12 @@ Hay un control integrado que decide cuándo se lleva la batería a la ventana de
 
 La carga semanal completa puede fijar temporalmente el SOC máximo de la batería al 100 %. Cuando lo hace, se usan exactamente las mismas reglas de reducción por voltaje al 100 %.
 
+Las Venus A/D con packs acoplados son la excepción a la parada en tensión alta:
+también reducen la carga a 200 W desde 3,48 V, pero llegar a 3,60 V no detiene
+la integración ni inicia la medición de 60 segundos. La carga reducida continúa
+hasta que la BMS confirma su corte, evitando que el primer pack lleno deje sin
+terminar los demás packs acoplados.
+
 Para recuperar activamente un pack con desbalanceo persistente, usa el [blueprint de balanceo activo para una batería Marstek](../blueprints.es.md#balanceo-activo-de-una-batería-marstek). Es una automatización externa de Home Assistant: toma una batería mediante **Battery Manual Mode**, descubre sus entidades estándar a partir del dispositivo seleccionado y deja la propiedad manual activada si no puede confirmar la limpieza.
 
 ## Reducción por voltaje al 100 %
@@ -63,18 +69,23 @@ La carga semanal completa no usa un perfil de balanceo distinto. Solo cambia el 
 |---|---:|
 | `max_cell_voltage` por debajo de 3.48 V | Límite de carga configurado normal |
 | `max_cell_voltage` igual o superior a 3.48 V | Limita la carga a 200 W |
-| `max_cell_voltage` llega a 3.60 V | La histéresis de carga configurada toma el control del umbral de parada y reanudación |
-| Tras la espera de 60 s | Registra `delta_mV = (Vmax - Vmin) * 1000` |
+| `max_cell_voltage` llega a 3.60 V en Venus E | La histéresis de carga configurada toma el control del umbral de parada y reanudación |
+| `max_cell_voltage` llega a 3.60 V en Venus A/D | Mantiene 200 W hasta el corte de la BMS; no aplica la parada de la integración |
+| Tras la espera de 60 s en Venus E | Registra `delta_mV = (Vmax - Vmin) * 1000` |
 
 El inicio de la reducción se basa en tensión de celda: el SOC no se usa para decidir cuándo empieza, porque cerca del final de carga los registros de tensión de celda son más fiables que el SOC reportado.
 
-Cuando la batería llega a 3.60 V, la histéresis de carga configurada evita que vuelva a cargar hasta cruzar su umbral de SOC. La medición de 60 segundos continúa como diagnóstico de mejor esfuerzo.
+En Venus E, cuando la batería llega a 3.60 V, la histéresis de carga
+configurada evita que vuelva a cargar hasta cruzar su umbral de SOC. La
+medición de 60 segundos continúa como diagnóstico de mejor esfuerzo. Las
+Venus A/D omiten esta pausa y medición mientras está activo su flujo de corte
+propiedad de la BMS.
 
 En sistemas con varias baterías, la lógica se evalúa por batería. Una batería puede estar limitada o pausada mientras otra sigue cargando con normalidad.
 
-### Recalibración de SOC con tensión alta atascada
+### Recalibración de SOC con tensión alta atascada (Venus E)
 
-Algunos packs llegan al punto de pausa de 3.60 V mientras el BMS sigue reportando un SOC muy por debajo del total (por ejemplo 60–70 %). Esa diferencia puede indicar que el contador de coulombs del BMS se ha desviado, pero alcanzar el umbral de tensión no demuestra que el SOC reportado sea incorrecto.
+Algunos packs Venus E llegan al punto de pausa de 3.60 V mientras la BMS sigue reportando un SOC muy por debajo del total (por ejemplo 60–70 %). Esa diferencia puede indicar que el contador de coulombs de la BMS se ha desviado, pero alcanzar el umbral de tensión no demuestra que el SOC reportado sea incorrecto.
 
 Cuando esto ocurre, quedarse en 3.60 V no permite que el BMS termine su propia secuencia superior de carga. Por eso, en vez de pausar, la integración sigue cargando a la potencia reducida de 200 W hasta que el propio BMS corta, *intentando* que recalibre el SOC.
 
@@ -94,7 +105,7 @@ Es autolimitado:
 - si el SOC marca 99 % o más antes del primer corte, la condición inicial ya no se cumple, así que el override no se dispara;
 - el enclavamiento solo se rearma cuando la batería sale de la zona alta (`max_cell_voltage` por debajo de 3.48 V), para que una carga completa posterior pueda recalibrar de nuevo si hace falta.
 
-Llegar al punto de pausa de 3.60 V normalmente solo ocurre en una carga al 100 %, así que esto rara vez afecta al ciclado diario con un `max_soc` más bajo. **No** se ejecuta durante la [carga semanal completa](weekly-full-charge.md) — allí la pausa de 3.60 V se suprime por completo y el corte del BMS por sí solo finaliza el ciclo (ver esa página). El blueprint opcional toma la batería mediante Battery Manual Mode, por lo que el controlador normal la excluye de forma natural mientras está activo.
+Llegar al punto de pausa de 3.60 V normalmente solo ocurre en una carga al 100 %, así que esto rara vez afecta al ciclado diario con un `max_soc` más bajo. **No** se ejecuta durante la [carga semanal completa](weekly-full-charge.md) — allí la pausa de 3.60 V se suprime por completo y el corte del BMS por sí solo finaliza el ciclo (ver esa página). En Venus A/D se usa siempre el flujo propiedad de la BMS en lugar de este reintento de recalibración. El blueprint opcional toma la batería mediante Battery Manual Mode, por lo que el controlador normal la excluye de forma natural mientras está activo.
 
 !!! note "Desbalance de celdas"
     El override no comprueba primero la dispersión entre celdas. En un pack muy desbalanceado, la celda más alta puede llegar al corte por sobretensión del BMS antes de que el pack esté lleno, así que la recalibración es correcta pero el balanceo queda para ciclos posteriores. El BMS sigue protegiendo cada celda de forma individual.
@@ -205,6 +216,7 @@ El sensor **Integration Status** expone un atributo `normal_balance_protection` 
 | `max_cell_voltage` / `min_cell_voltage` | Tensiones máxima y mínima actuales |
 | `delta_V` | Diferencia actual de tensión en voltios |
 | `voltage_taper_latched` | Si la reducción normal a 200 W está activa |
+| `bms_cutoff_charge_active` | Si Venus A/D sigue disponible para cargar hasta el corte de la BMS |
 | `soc_recal_active` | Si la carga se mantiene más allá de la pausa de 3.60 V para intentar recalibrar un SOC reportado bajo |
 | `soc_recal_bms_cutoff` | Si se ha alcanzado el corte del BMS durante la recalibración (override enclavado) |
 | `soc_recal_retry_pending` | Si se está esperando a que la celda se relaje a 3.57 V para el único reintento |

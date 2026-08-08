@@ -6,7 +6,8 @@ drive active cell balancing. It manages the final stretch of a normal max-SOC
 
 - Charge-power taper near the top cell voltage (CV-like ramp-down).
 - SOC hysteresis, owned by the main controller, stops future charging once the
-  top voltage is reached.
+  top voltage is reached on Venus E models; coupled Venus A/D packs continue
+  at the tapered power until their BMS cuts off.
 - SOC recalibration: keep charging past the top-voltage threshold when the BMS reports a low SOC
   at full cell voltage (coulomb-counter drift) until the BMS itself cuts off.
 - After a cutoff above 3.60 V, wait for the cell to relax to 3.57 V and make one
@@ -28,6 +29,7 @@ from ..const import (
     CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED,
     DEFAULT_FULL_CHARGE_VOLTAGE_TAPER_ENABLED,
     NORMAL_BALANCE_CHARGE_POWER_W,
+    NORMAL_BALANCE_BMS_CUTOFF_VERSIONS,
     NORMAL_BALANCE_MEASURE_WAIT_SECONDS,
     NORMAL_BALANCE_PAUSE_CELL_VOLTAGE,
     NORMAL_BALANCE_RECAL_CUTOFF_CYCLES,
@@ -61,6 +63,8 @@ class MaxSocChargeManager:
 
         c._normal_balance_date = today
         c._normal_balance_voltage_tapered.clear()
+        # Keep an unfinished Venus A/D BMS-owned charge across midnight. The
+        # next refresh reconciles it with the live voltage and cutoff counter.
         c._normal_balance_phases.clear()
         c._normal_balance_measure_started.clear()
         c._normal_balance_last_delta_v.clear()
@@ -101,6 +105,63 @@ class MaxSocChargeManager:
         if not self._taper_enabled(coordinator):
             return False
         return True
+
+    @staticmethod
+    def _uses_bms_cutoff_at_top(coordinator) -> bool:
+        """Return True for coupled-pack Venus models with BMS-owned top cutoff."""
+        return (
+            getattr(coordinator, "battery_version", None)
+            in NORMAL_BALANCE_BMS_CUTOFF_VERSIONS
+        )
+
+    def _bms_cutoff_confirmed(self, coordinator) -> bool:
+        """Return True once the shared BMS-cutoff detector has latched."""
+        weekly_manager = getattr(self._controller, "_weekly_charge_mgr", None)
+        is_confirmed = getattr(weekly_manager, "is_bms_cutoff_confirmed", None)
+        if is_confirmed is None:
+            # Lightweight unit-test controllers may not expose the weekly
+            # manager's read-only confirmation helper; production always does.
+            return False
+        return bool(is_confirmed(coordinator))
+
+    def should_charge_to_bms_cutoff(
+        self, coordinator, effective_max_soc: float | None = None
+    ) -> bool:
+        """Return whether a Venus A/D must stay charge-eligible until BMS cutoff.
+
+        Venus A/D may report the top voltage or 100% SOC from one coupled pack
+        before the other packs are full. Once the top voltage is reached, the
+        active latch keeps the tapered command alive even if the cell relaxes
+        below 3.60 V while the BMS decides when charging is actually complete.
+        """
+        if (
+            not self._uses_bms_cutoff_at_top(coordinator)
+            or not self._taper_enabled(coordinator)
+        ):
+            return False
+        if effective_max_soc is not None:
+            try:
+                if float(effective_max_soc) < 100:
+                    return False
+            except (TypeError, ValueError):
+                return False
+
+        if self._bms_cutoff_confirmed(coordinator):
+            return False
+
+        active = getattr(
+            self._controller,
+            "_normal_balance_bms_cutoff_active",
+            {},
+        ).get(coordinator, False)
+        if active:
+            return True
+
+        try:
+            vmax = float((coordinator.data or {}).get("max_cell_voltage"))
+        except (TypeError, ValueError):
+            return False
+        return vmax >= NORMAL_BALANCE_PAUSE_CELL_VOLTAGE
 
     def _zone_active(self, coordinator) -> bool:
         """Return True when the battery is in the normal top-balancing zone."""
@@ -302,11 +363,17 @@ class MaxSocChargeManager:
             data = coordinator.data or {}
             if not self._taper_applies(coordinator):
                 c._normal_balance_voltage_tapered.pop(coordinator, None)
+                getattr(c, "_normal_balance_bms_cutoff_active", {}).pop(
+                    coordinator, None
+                )
                 self._clear_recal_state(coordinator)
                 continue
 
             if not data:
                 c._normal_balance_voltage_tapered.pop(coordinator, None)
+                getattr(c, "_normal_balance_bms_cutoff_active", {}).pop(
+                    coordinator, None
+                )
                 c._normal_balance_recal_override.pop(coordinator, None)
                 continue
 
@@ -316,6 +383,12 @@ class MaxSocChargeManager:
                 vmax_now = float(vmax_raw) if vmax_raw is not None else None
             except (TypeError, ValueError):
                 vmax_now = None
+            vmax = data.get("max_cell_voltage")
+            current_soc = data.get("battery_soc")
+            try:
+                vmax_f = float(vmax) if vmax is not None else None
+            except (TypeError, ValueError):
+                vmax_f = None
             # Hysteresis: only clear the taper latch once the cell has dropped to the
             # exit threshold (below entry), not the moment it slips under 3.48 V at
             # low charge power. This prevents full-power ↔ tapered-power oscillation.
@@ -326,17 +399,35 @@ class MaxSocChargeManager:
                 # a later full charge can recalibrate again.
                 self._clear_recal_state(coordinator)
 
-            vmax = data.get("max_cell_voltage")
-            current_soc = data.get("battery_soc")
-            try:
-                vmax_f = float(vmax) if vmax is not None else None
-            except (TypeError, ValueError):
-                vmax_f = None
-            weekly_active = hasattr(c, "_weekly_charge_mgr") and c._weekly_full_charge_unlocked()
+            if vmax_f is not None and in_zone and vmax_f >= NORMAL_BALANCE_TAPER_CELL_VOLTAGE:
+                c._normal_balance_voltage_tapered[coordinator] = True
 
-            if vmax_f is not None:
-                if in_zone and vmax_f >= NORMAL_BALANCE_TAPER_CELL_VOLTAGE:
-                    c._normal_balance_voltage_tapered[coordinator] = True
+            if self._uses_bms_cutoff_at_top(coordinator):
+                # Venus A/D coupled packs must not enter the normal 3.60 V hold
+                # or the low-SOC recalibration/retry flow. Keep a separate latch
+                # for the BMS-owned cutoff path so it survives voltage relaxation
+                # below 3.60 V while remaining in the taper zone.
+                self._clear_recal_state(coordinator)
+                bms_cutoff_state = getattr(c, "_normal_balance_bms_cutoff_active", None)
+                if bms_cutoff_state is None:
+                    bms_cutoff_state = {}
+                    c._normal_balance_bms_cutoff_active = bms_cutoff_state
+                if not in_zone or self._bms_cutoff_confirmed(coordinator):
+                    bms_cutoff_state.pop(coordinator, None)
+                elif (
+                    bms_cutoff_state.get(coordinator, False)
+                    or (vmax_f is not None and vmax_f >= NORMAL_BALANCE_PAUSE_CELL_VOLTAGE)
+                ):
+                    bms_cutoff_state[coordinator] = True
+                else:
+                    bms_cutoff_state.pop(coordinator, None)
+                continue
+
+            weekly_active = (
+                hasattr(c, "_weekly_charge_mgr")
+                and c._weekly_full_charge_unlocked()
+            )
+
             # SOC recalibration starts only once the cell has reached the top
             # voltage (or a commanded charge has already hit the BMS cutoff). It
             # then continues through the taper zone while the cell relaxes.
@@ -402,6 +493,11 @@ class MaxSocChargeManager:
                 "voltage_taper_latched": c._normal_balance_voltage_tapered.get(
                     coordinator, False
                 ),
+                "bms_cutoff_charge_active": getattr(
+                    c, "_normal_balance_bms_cutoff_active", {}
+                ).get(
+                    coordinator, False
+                ),
                 "normal_balance_phase": c._normal_balance_phases.get(coordinator),
                 "soc_recal_active": c._normal_balance_recal_override.get(coordinator, False),
                 "soc_recal_bms_cutoff": c._normal_balance_recal_latched.get(coordinator, False),
@@ -437,6 +533,13 @@ class MaxSocChargeManager:
 
         for coordinator in c.coordinators:
             if coordinator.data is None or not self._taper_applies(coordinator):
+                continue
+            if self._uses_bms_cutoff_at_top(coordinator):
+                # Coupled Venus A/D packs must continue through the top-cell
+                # reading; only their BMS may end the charge. No 60 s integration
+                # hold or balance measurement is taken on this path.
+                c._normal_balance_phases.pop(coordinator, None)
+                c._normal_balance_measure_started.pop(coordinator, None)
                 continue
             if weekly_active:
                 # Let the weekly taper charge to the BMS cutoff; don't hold/measure.

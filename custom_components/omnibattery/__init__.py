@@ -552,6 +552,7 @@ class ChargeDischargeController:
         # capacity calculation because _battery_power_limit() reads them.
         self._normal_balance_date = dt_util.now().date()
         self._normal_balance_voltage_tapered: dict[MarstekVenusDataUpdateCoordinator, bool] = {}
+        self._normal_balance_bms_cutoff_active: dict[MarstekVenusDataUpdateCoordinator, bool] = {}
         self._normal_balance_phases: dict[MarstekVenusDataUpdateCoordinator, str] = {}
         self._normal_balance_measure_started: dict[MarstekVenusDataUpdateCoordinator, datetime] = {}
         self._normal_balance_last_delta_v: dict[MarstekVenusDataUpdateCoordinator, float] = {}
@@ -1022,6 +1023,10 @@ class ChargeDischargeController:
             state = getattr(self, attr, None)
             if state is not None:
                 state.pop(coordinator, None)
+
+        bms_cutoff_state = getattr(self, "_normal_balance_bms_cutoff_active", None)
+        if bms_cutoff_state is not None:
+            bms_cutoff_state.pop(coordinator, None)
 
         weekly_manager = getattr(self, "_weekly_charge_mgr", None)
         cutoff_counts = getattr(weekly_manager, "_bms_cutoff_counts", None)
@@ -1990,6 +1995,24 @@ class ChargeDischargeController:
                 self.remove_charge_block("charge_hysteresis", coordinator=coordinator)
                 continue
 
+            effective_max_soc, max_soc_source = self._effective_charge_max_soc(
+                coordinator,
+                weekly_100_unlocked,
+            )
+
+            should_charge_to_bms = getattr(self, "_should_charge_to_bms_cutoff", None)
+            if should_charge_to_bms is not None and should_charge_to_bms(
+                coordinator, effective_max_soc
+            ):
+                # Venus A/D can have coupled packs whose top-voltage telemetry
+                # represents only the first pack. Keep the tapered charge alive
+                # until the BMS itself confirms the cutoff.
+                coordinator._hysteresis_active = False
+                coordinator._hysteresis_base_soc = None
+                self.remove_charge_block("max_soc", coordinator=coordinator)
+                self.remove_charge_block("charge_hysteresis", coordinator=coordinator)
+                continue
+
             if self._normal_balance_recal_override.get(coordinator):
                 # SOC recalibration: don't let top-voltage hysteresis stop the
                 # charge before the BMS cutoff.
@@ -2001,10 +2024,6 @@ class ChargeDischargeController:
                 self.remove_charge_block("charge_hysteresis", coordinator=coordinator)
                 continue
 
-            effective_max_soc, max_soc_source = self._effective_charge_max_soc(
-                coordinator,
-                weekly_100_unlocked,
-            )
             bms_cutoff = self._weekly_charge_mgr.is_battery_full(coordinator)
 
             if coordinator.enable_charge_hysteresis:
@@ -2098,6 +2117,14 @@ class ChargeDischargeController:
                 )
             else:
                 self.remove_charge_block("max_soc", coordinator=coordinator)
+
+    def _should_charge_to_bms_cutoff(self, coordinator, effective_max_soc: float) -> bool:
+        """Return whether a top-voltage battery must remain charge-eligible."""
+        manager = getattr(self, "_max_soc_mgr", None)
+        should_charge = getattr(manager, "should_charge_to_bms_cutoff", None)
+        if should_charge is None:
+            return False
+        return bool(should_charge(coordinator, effective_max_soc))
 
     def _refresh_battery_discharge_limit_blocks(self) -> None:
         """Expose min-SOC discharge availability as per-battery blockers."""
@@ -2325,6 +2352,12 @@ class ChargeDischargeController:
                     weekly_100_unlocked,
                 )
 
+                should_charge_to_bms = getattr(self, "_should_charge_to_bms_cutoff", None)
+                charge_to_bms_cutoff = bool(
+                    should_charge_to_bms is not None
+                    and should_charge_to_bms(coordinator, effective_max_soc)
+                )
+
                 # Update hysteresis state if enabled
                 if coordinator.enable_charge_hysteresis:
                     if weekly_100_unlocked:
@@ -2342,6 +2375,17 @@ class ChargeDischargeController:
                         if coordinator._hysteresis_active:
                             _LOGGER.debug(
                                 "%s: Overriding hysteresis for SOC recalibration",
+                                coordinator.name,
+                            )
+                        coordinator._hysteresis_active = False
+                        coordinator._hysteresis_base_soc = None
+                    elif charge_to_bms_cutoff:
+                        # Venus A/D may report 100% as soon as the first coupled
+                        # pack is full. Do not let that or the 3.60 V top-cell
+                        # reading block the remaining packs before BMS cutoff.
+                        if coordinator._hysteresis_active:
+                            _LOGGER.debug(
+                                "%s: Continuing tapered charge until Venus A/D BMS cutoff",
                                 coordinator.name,
                             )
                         coordinator._hysteresis_active = False
@@ -2410,6 +2454,7 @@ class ChargeDischargeController:
                 if (
                     self._weekly_charge_mgr.is_battery_full(coordinator)
                     and not normal_recal_active
+                    and not charge_to_bms_cutoff
                 ):
                     if coordinator.enable_charge_hysteresis and not coordinator._hysteresis_active:
                         coordinator._hysteresis_active = True
@@ -2427,7 +2472,7 @@ class ChargeDischargeController:
                     continue
 
                 # Only charge if below effective max SOC
-                if current_soc < effective_max_soc:
+                if current_soc < effective_max_soc or charge_to_bms_cutoff:
                     available_batteries.append(coordinator)
             else:  # discharging
                 # MIN-SOC RE-ENTRY HYSTERESIS: after emptying to min_soc the

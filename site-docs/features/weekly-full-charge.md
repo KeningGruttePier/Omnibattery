@@ -8,7 +8,13 @@ Charges batteries to **100% once a week** so the pack reaches the LFP top-balanc
 | --- | --- | --- | --- | 
 | **100% charge voltage taper** | Slows charging near top voltage window to allow some minor cell balancing | `full_charge_voltage_taper` | On |
 
-The 100% charge voltage taper uses the same voltage profile as a normal battery configured with `max_soc = 100`. The weekly feature only raises the target to 100%; it does not use a separate balancing algorithm.
+For Venus E models, the 100% charge voltage taper uses the same voltage profile
+as a normal battery configured with `max_soc = 100`. The weekly feature only
+raises the target to 100%; it does not use a separate balancing algorithm.
+
+On Venus A/D with coupled packs, the normal 3.60 V stop is also bypassed and a
+reported 100% SOC from the first pack does not finish the cycle. The tapered
+200 W command remains active until the shared BMS cutoff is confirmed.
 
 For deliberate active cell balancing, use the optional [Marstek active-balance blueprint](../blueprints.md#active-cell-balancing-for-one-marstek-battery). It runs one battery at a time through the per-battery Battery Manual Mode switch and is independent of this weekly feature.
 
@@ -33,10 +39,14 @@ See [Cell balancing](cell-balance-monitor.md) for full details.
 
 ## When the cycle completes
 
-The weekly charge is marked **Complete** only when every battery is genuinely full — not merely when a cell touches the 3.60 V top voltage. A battery counts as full when either:
+The weekly charge is marked **Complete** only when every battery is genuinely full — not merely when a cell touches the 3.60 V top voltage. For Venus E models, a battery counts as full when either:
 
 - its reported SOC reaches **100%**, or
 - a **BMS cutoff** is confirmed: charge collapses to ≤10 W with the inverter in Standby for 5 consecutive cycles (~10 s). During the weekly charge this is recognised whenever the pack is in the top taper zone (≥ 3.48 V), so a pack with a drifted SOC still completes.
+
+For Venus A/D with coupled packs, the BMS cutoff is required after the tapered
+charge reaches the top-voltage path, even if the reported SOC has already
+reached 100%.
 
 The 60-second cell-delta measurement still runs as a diagnostic, but it no longer gates completion. On completion the configured max SOC (and the hardware cutoff register on v2) is restored, and charge hysteresis is re-enabled.
 

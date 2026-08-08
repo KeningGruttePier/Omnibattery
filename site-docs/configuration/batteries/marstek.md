@@ -44,8 +44,9 @@ required Marstek entities in Home Assistant.
 The limits page includes the common charge/discharge power, SOC and backup
 threshold controls. Marstek also exposes the **100% charge voltage taper**:
 when the target is 100%, charging is limited to 200 W from a maximum cell
-voltage of 3.48 V and stops at 3.60 V so the integration can measure cell
-imbalance after 60 seconds.
+voltage of 3.48 V. Venus E models stop at 3.60 V so the integration can
+measure cell imbalance after 60 seconds; Venus A/D models with coupled packs
+keep charging at 200 W until their BMS cuts off.
 
 This voltage-based protection and the cell-balance monitor are Marstek-specific.
 See [Cell balance monitor](../../features/cell-balance-monitor.md) for the

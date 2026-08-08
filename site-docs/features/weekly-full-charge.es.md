@@ -8,10 +8,16 @@ Carga las baterías al **100 % una vez por semana** para que el pack llegue a la
 2. La batería carga hasta que entra la reducción por voltaje en la parte alta.
 3. Desde `max_cell_voltage >= 3.48 V`, la carga se limita a 200 W (si la reducción por voltaje está activada).
 4. Durante la carga semanal **no** se aplica la pausa de 3.60 V: la carga continúa a 200 W hasta el corte del BMS. La medición de 60 s del delta de celdas sigue ejecutándose como diagnóstico, pero ya no determina la finalización.
-5. La carga se marca como completada solo cuando la batería está realmente llena: SOC reportado al **100 %**, o un **corte del BMS** confirmado (carga ≤10 W en Standby durante 5 ciclos ~10 s, reconocido en la zona de reducción ≥ 3.48 V aunque el SOC esté mal reportado).
+5. En Venus E, la carga se marca como completada solo cuando la batería está realmente llena: SOC reportado al **100 %**, o un **corte del BMS** confirmado (carga ≤10 W en Standby durante 5 ciclos ~10 s, reconocido en la zona de reducción ≥ 3.48 V aunque el SOC esté mal reportado). En Venus A/D con packs acoplados se exige el corte de la BMS después de entrar en la ruta de carga superior, aunque el SOC ya marque 100 %.
 6. Tras finalizar, el límite de SOC máximo (y el registro de corte hardware en v2) vuelve automáticamente al valor configurado por el usuario, y se reactiva la histéresis.
 
-La carga semanal completa usa el mismo perfil de voltaje que una batería configurada normalmente con `max_soc = 100`. La función semanal solo eleva el objetivo a 100 %; no usa un algoritmo de balanceo distinto.
+En Venus E, la carga semanal completa usa el mismo perfil de voltaje que una
+batería configurada normalmente con `max_soc = 100`. La función semanal solo
+eleva el objetivo a 100 %; no usa un algoritmo de balanceo distinto.
+
+En Venus A/D con packs acoplados también se omite la parada normal a 3,60 V y
+un SOC del 100 % reportado por el primer pack no completa el ciclo. La carga
+reducida a 200 W continúa hasta confirmar el corte de la BMS.
 
 Para realizar un balanceo activo deliberado, usa el [blueprint de balanceo activo para una batería Marstek](../blueprints.es.md#balanceo-activo-de-una-batería-marstek). Ejecuta una batería cada vez mediante su interruptor Battery Manual Mode y es independiente de esta función semanal.
 
