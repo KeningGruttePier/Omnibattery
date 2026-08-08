@@ -100,7 +100,7 @@ config/blueprints/automation/omnibattery/
     ```
 
 4. Pulsa **Previsualizar blueprint** y después **Importar blueprint**.
-5. Crea una automatización nueva desde el blueprint importado y selecciona tus entidades.
+5. Crea una automatización nueva desde el blueprint importado y configura sus entradas. Para el blueprint de balanceo activo de Marstek, selecciona el dispositivo de batería de Omnibattery; sus entidades estándar se descubren automáticamente.
 
 ### Instalación manual
 

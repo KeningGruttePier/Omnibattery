@@ -3,8 +3,10 @@ blueprint:
   description: >
     Runs the Marstek active cell-balancing profile for one battery. The
     automation uses only Home Assistant entities exposed by Omnibattery; it
-    does not access Modbus directly. Select every entity from the same Marstek
-    battery and create one automation per battery. The selected Battery Manual
+    does not access Modbus directly. Select the Omnibattery device and the
+    standard entities are discovered automatically from that device. Optional
+    entity-ID overrides are available below for installations that renamed an
+    entity. Create one automation per battery. The selected Battery Manual
     Mode switch is the exclusive ownership boundary: do not run another manual
     automation on the same battery at the same time.
 
@@ -27,85 +29,87 @@ blueprint:
           filter:
             domain: input_boolean
 
-    battery_manual_mode:
-      name: "Battery Manual Mode"
-      description: "The per-battery Omnibattery ownership switch for this automation."
+    battery_device:
+      name: "Marstek battery device"
+      description: >
+        Select the Marstek device created by Omnibattery. The blueprint finds
+        its standard Battery Manual Mode, telemetry, force-mode and power-limit
+        entities automatically.
       selector:
-        entity:
+        device:
           filter:
-            domain: switch
+            - integration: omnibattery
+              manufacturer: Marstek
 
-    battery_soc:
-      name: "Battery SOC"
-      description: "SOC sensor belonging to the selected battery."
+    battery_manual_mode_override:
+      name: "Advanced — Battery Manual Mode entity override"
+      description: "Optional entity ID. Leave blank to discover the standard *_battery_manual_mode entity from the selected device."
+      default: ""
       selector:
-        entity:
-          filter:
-            domain: sensor
+        text:
 
-    battery_power:
-      name: "Battery power"
-      description: "Battery power sensor in watts; positive charge and negative discharge are both accepted."
+    battery_soc_override:
+      name: "Advanced — Battery SOC entity override"
+      description: "Optional entity ID. Leave blank to discover the standard *_battery_soc sensor from the selected device."
+      default: ""
       selector:
-        entity:
-          filter:
-            domain: sensor
+        text:
 
-    max_cell_voltage:
-      name: "Maximum cell voltage"
-      description: "Maximum cell-voltage sensor belonging to the selected battery."
+    battery_power_override:
+      name: "Advanced — Battery power entity override"
+      description: "Optional entity ID. Leave blank to discover the standard *_battery_power sensor from the selected device."
+      default: ""
       selector:
-        entity:
-          filter:
-            domain: sensor
+        text:
 
-    min_cell_voltage:
-      name: "Minimum cell voltage"
-      description: "Minimum cell-voltage sensor belonging to the selected battery."
+    max_cell_voltage_override:
+      name: "Advanced — Maximum cell voltage entity override"
+      description: "Optional entity ID. Leave blank to discover the standard *_max_cell_voltage sensor from the selected device."
+      default: ""
       selector:
-        entity:
-          filter:
-            domain: sensor
+        text:
 
-    force_mode:
-      name: "Force mode"
-      description: "Marstek force-mode select with None, Charge and Discharge options. Older lowercase ESPHome spellings are detected automatically."
+    min_cell_voltage_override:
+      name: "Advanced — Minimum cell voltage entity override"
+      description: "Optional entity ID. Leave blank to discover the standard *_min_cell_voltage sensor from the selected device."
+      default: ""
       selector:
-        entity:
-          filter:
-            domain: select
+        text:
 
-    set_charge_power:
-      name: "Manual charge power"
-      description: "Marstek manual charge-power number for this battery."
+    force_mode_override:
+      name: "Advanced — Force mode entity override"
+      description: "Optional entity ID. Leave blank to discover the standard *_force_mode select from the selected device."
+      default: ""
       selector:
-        entity:
-          filter:
-            domain: number
+        text:
 
-    set_discharge_power:
-      name: "Manual discharge power"
-      description: "Marstek manual discharge-power number for this battery."
+    set_charge_power_override:
+      name: "Advanced — Manual charge power entity override"
+      description: "Optional entity ID. Leave blank to discover the standard *_set_charge_power number from the selected device."
+      default: ""
       selector:
-        entity:
-          filter:
-            domain: number
+        text:
 
-    max_charge_power:
-      name: "Configured maximum charge power"
-      description: "The battery's configured maximum charge-power number, used for the initial climb."
+    set_discharge_power_override:
+      name: "Advanced — Manual discharge power entity override"
+      description: "Optional entity ID. Leave blank to discover the standard *_set_discharge_power number from the selected device."
+      default: ""
       selector:
-        entity:
-          filter:
-            domain: number
+        text:
 
-    max_soc:
-      name: "Maximum SOC"
-      description: "The battery's maximum-SOC number. The blueprint temporarily writes 100%."
+    max_charge_power_override:
+      name: "Advanced — Configured maximum charge power entity override"
+      description: "Optional entity ID. Leave blank to discover the standard *_max_charge_power number from the selected device."
+      default: ""
       selector:
-        entity:
-          filter:
-            domain: number
+        text:
+
+    max_soc_override:
+      name: "Advanced — Maximum SOC entity override"
+      description: "Optional entity ID. Leave blank to discover the standard *_charging_cutoff_capacity number from the selected device."
+      default: ""
+      selector:
+        text:
 
     top_zone_voltage_v:
       name: "Top-zone voltage"
@@ -252,16 +256,107 @@ blueprint:
 
 variables:
   run_request: !input run_request
-  battery_manual_mode: !input battery_manual_mode
-  battery_soc: !input battery_soc
-  battery_power: !input battery_power
-  max_cell_voltage: !input max_cell_voltage
-  min_cell_voltage: !input min_cell_voltage
-  force_mode: !input force_mode
-  set_charge_power: !input set_charge_power
-  set_discharge_power: !input set_discharge_power
-  max_charge_power: !input max_charge_power
-  max_soc: !input max_soc
+  battery_device: !input battery_device
+  battery_manual_mode_override: !input battery_manual_mode_override
+  battery_soc_override: !input battery_soc_override
+  battery_power_override: !input battery_power_override
+  max_cell_voltage_override: !input max_cell_voltage_override
+  min_cell_voltage_override: !input min_cell_voltage_override
+  force_mode_override: !input force_mode_override
+  set_charge_power_override: !input set_charge_power_override
+  set_discharge_power_override: !input set_discharge_power_override
+  max_charge_power_override: !input max_charge_power_override
+  max_soc_override: !input max_soc_override
+  battery_manual_mode: >-
+    {%- set override = battery_manual_mode_override | trim -%}
+    {%- if override -%}
+      {{ override }}
+    {%- else -%}
+      {%- set candidates = device_entities(battery_device)
+          | select('match', '^switch\\..*_battery_manual_mode$') | list -%}
+      {{ candidates[0] if candidates else '' }}
+    {%- endif -%}
+  battery_soc: >-
+    {%- set override = battery_soc_override | trim -%}
+    {%- if override -%}
+      {{ override }}
+    {%- else -%}
+      {%- set candidates = device_entities(battery_device)
+          | select('match', '^sensor\\..*_battery_soc$') | list -%}
+      {{ candidates[0] if candidates else '' }}
+    {%- endif -%}
+  battery_power: >-
+    {%- set override = battery_power_override | trim -%}
+    {%- if override -%}
+      {{ override }}
+    {%- else -%}
+      {%- set candidates = device_entities(battery_device)
+          | select('match', '^sensor\\..*_battery_power$') | list -%}
+      {{ candidates[0] if candidates else '' }}
+    {%- endif -%}
+  max_cell_voltage: >-
+    {%- set override = max_cell_voltage_override | trim -%}
+    {%- if override -%}
+      {{ override }}
+    {%- else -%}
+      {%- set candidates = device_entities(battery_device)
+          | select('match', '^sensor\\..*_max_cell_voltage$') | list -%}
+      {{ candidates[0] if candidates else '' }}
+    {%- endif -%}
+  min_cell_voltage: >-
+    {%- set override = min_cell_voltage_override | trim -%}
+    {%- if override -%}
+      {{ override }}
+    {%- else -%}
+      {%- set candidates = device_entities(battery_device)
+          | select('match', '^sensor\\..*_min_cell_voltage$') | list -%}
+      {{ candidates[0] if candidates else '' }}
+    {%- endif -%}
+  force_mode: >-
+    {%- set override = force_mode_override | trim -%}
+    {%- if override -%}
+      {{ override }}
+    {%- else -%}
+      {%- set candidates = device_entities(battery_device)
+          | select('match', '^select\\..*_force_mode$') | list -%}
+      {{ candidates[0] if candidates else '' }}
+    {%- endif -%}
+  set_charge_power: >-
+    {%- set override = set_charge_power_override | trim -%}
+    {%- if override -%}
+      {{ override }}
+    {%- else -%}
+      {%- set candidates = device_entities(battery_device)
+          | select('match', '^number\\..*_set_charge_power$') | list -%}
+      {{ candidates[0] if candidates else '' }}
+    {%- endif -%}
+  set_discharge_power: >-
+    {%- set override = set_discharge_power_override | trim -%}
+    {%- if override -%}
+      {{ override }}
+    {%- else -%}
+      {%- set candidates = device_entities(battery_device)
+          | select('match', '^number\\..*_set_discharge_power$') | list -%}
+      {{ candidates[0] if candidates else '' }}
+    {%- endif -%}
+  max_charge_power: >-
+    {%- set override = max_charge_power_override | trim -%}
+    {%- if override -%}
+      {{ override }}
+    {%- else -%}
+      {%- set candidates = device_entities(battery_device)
+          | select('match', '^number\\..*_max_charge_power$') | list -%}
+      {{ candidates[0] if candidates else '' }}
+    {%- endif -%}
+  max_soc: >-
+    {%- set override = max_soc_override | trim -%}
+    {%- if override -%}
+      {{ override }}
+    {%- else -%}
+      {%- set candidates = device_entities(battery_device)
+          | select('match', '^number\\..*_charging_cutoff_capacity$') | list -%}
+      {{ candidates[0] if candidates else '' }}
+    {%- endif -%}
   top_zone_voltage_v: !input top_zone_voltage_v
   charge_stop_voltage_v: !input charge_stop_voltage_v
   final_discharge_voltage_v: !input final_discharge_voltage_v
@@ -327,19 +422,19 @@ action:
         sequence:
           - service: number.set_value
             target:
-              entity_id: !input set_charge_power
+              entity_id: "{{ set_charge_power }}"
             data:
               value: 0
             continue_on_error: true
           - service: number.set_value
             target:
-              entity_id: !input set_discharge_power
+              entity_id: "{{ set_discharge_power }}"
             data:
               value: 0
             continue_on_error: true
           - service: select.select_option
             target:
-              entity_id: !input force_mode
+              entity_id: "{{ force_mode }}"
             data:
               option: "{{ force_mode_idle }}"
             continue_on_error: true
@@ -357,7 +452,7 @@ action:
                 sequence:
                   - service: number.set_value
                     target:
-                      entity_id: !input max_soc
+                      entity_id: "{{ max_soc }}"
                     data:
                       value: "{{ soc_maximo_normal | float(100) }}"
                     continue_on_error: true
@@ -373,7 +468,7 @@ action:
                         sequence:
                           - service: switch.turn_off
                             target:
-                              entity_id: !input battery_manual_mode
+                              entity_id: "{{ battery_manual_mode }}"
                             continue_on_error: true
           - service: persistent_notification.create
             data:
@@ -390,17 +485,38 @@ action:
   - variables:
       validation_error: >-
         {% set ns = namespace(errors=[]) %}
-        {% for entity_id in [battery_soc, battery_power, max_cell_voltage, min_cell_voltage,
-                             force_mode, set_charge_power, set_discharge_power,
-                             max_charge_power, max_soc] %}
-          {% if states(entity_id) in ['unknown', 'unavailable', 'none', ''] %}
-            {% set ns.errors = ns.errors + [entity_id ~ ' is unavailable'] %}
+        {% set device_entity_ids = device_entities(battery_device) %}
+        {% set required_entities = [
+          ('Battery Manual Mode', battery_manual_mode),
+          ('Battery SOC', battery_soc),
+          ('Battery power', battery_power),
+          ('Maximum cell voltage', max_cell_voltage),
+          ('Minimum cell voltage', min_cell_voltage),
+          ('Force mode', force_mode),
+          ('Manual charge power', set_charge_power),
+          ('Manual discharge power', set_discharge_power),
+          ('Configured maximum charge power', max_charge_power),
+          ('Maximum SOC', max_soc)
+        ] %}
+        {% for label, entity_id in required_entities %}
+          {% if entity_id | trim == '' %}
+            {% set ns.errors = ns.errors + [label ~ ' could not be discovered on the selected device; set its override'] %}
+          {% elif entity_id not in device_entity_ids %}
+            {% set ns.errors = ns.errors + [label ~ ' (' ~ entity_id ~ ') does not belong to the selected device'] %}
+          {% elif states(entity_id) in ['unknown', 'unavailable', 'none', ''] %}
+            {% set ns.errors = ns.errors + [label ~ ' (' ~ entity_id ~ ') is unavailable'] %}
           {% endif %}
         {% endfor %}
-        {% for entity_id in [battery_soc, battery_power, max_cell_voltage, min_cell_voltage,
-                             max_charge_power, max_soc] %}
-          {% if not is_number(states(entity_id)) %}
-            {% set ns.errors = ns.errors + [entity_id ~ ' is not numeric'] %}
+        {% for label, entity_id in [
+          ('Battery SOC', battery_soc),
+          ('Battery power', battery_power),
+          ('Maximum cell voltage', max_cell_voltage),
+          ('Minimum cell voltage', min_cell_voltage),
+          ('Configured maximum charge power', max_charge_power),
+          ('Maximum SOC', max_soc)
+        ] %}
+          {% if entity_id | trim != '' and not is_number(states(entity_id)) %}
+            {% set ns.errors = ns.errors + [label ~ ' (' ~ entity_id ~ ') is not numeric'] %}
           {% endif %}
         {% endfor %}
         {% set options = state_attr(force_mode, 'options') or [] %}
@@ -468,7 +584,7 @@ action:
   # Acquire the per-battery ownership switch before any manual setpoint write.
   - service: switch.turn_on
     target:
-      entity_id: !input battery_manual_mode
+      entity_id: "{{ battery_manual_mode }}"
     continue_on_error: true
   - wait_template: "{{ is_state(battery_manual_mode, 'on') }}"
     timeout: "00:00:15"
@@ -505,19 +621,19 @@ action:
   # Ensure a known idle state, then temporarily allow the battery to reach 100%.
   - service: number.set_value
     target:
-      entity_id: !input set_charge_power
+      entity_id: "{{ set_charge_power }}"
     data:
       value: 0
     continue_on_error: true
   - service: number.set_value
     target:
-      entity_id: !input set_discharge_power
+      entity_id: "{{ set_discharge_power }}"
     data:
       value: 0
     continue_on_error: true
   - service: select.select_option
     target:
-      entity_id: !input force_mode
+      entity_id: "{{ force_mode }}"
     data:
       option: "{{ force_mode_idle }}"
     continue_on_error: true
@@ -525,7 +641,7 @@ action:
       seconds: 2
   - service: number.set_value
     target:
-      entity_id: !input max_soc
+      entity_id: "{{ max_soc }}"
     data:
       value: 100
     continue_on_error: true
@@ -574,19 +690,19 @@ action:
                       sequence:
                         - service: number.set_value
                           target:
-                            entity_id: !input set_discharge_power
+                            entity_id: "{{ set_discharge_power }}"
                           data:
                             value: 0
                           continue_on_error: true
                         - service: number.set_value
                           target:
-                            entity_id: !input set_charge_power
+                            entity_id: "{{ set_charge_power }}"
                           data:
                             value: "{{ states(max_charge_power) | float(0) }}"
                           continue_on_error: true
                         - service: select.select_option
                           target:
-                            entity_id: !input force_mode
+                            entity_id: "{{ force_mode }}"
                           data:
                             option: "{{ force_mode_charge }}"
                           continue_on_error: true
@@ -640,19 +756,19 @@ action:
                       sequence:
                         - service: number.set_value
                           target:
-                            entity_id: !input set_discharge_power
+                            entity_id: "{{ set_discharge_power }}"
                           data:
                             value: 0
                           continue_on_error: true
                         - service: number.set_value
                           target:
-                            entity_id: !input set_charge_power
+                            entity_id: "{{ set_charge_power }}"
                           data:
                             value: "{{ top_charge_power_w | float(95) }}"
                           continue_on_error: true
                         - service: select.select_option
                           target:
-                            entity_id: !input force_mode
+                            entity_id: "{{ force_mode }}"
                           data:
                             option: "{{ force_mode_charge }}"
                           continue_on_error: true
@@ -732,19 +848,19 @@ action:
                       sequence:
                         - service: number.set_value
                           target:
-                            entity_id: !input set_charge_power
+                            entity_id: "{{ set_charge_power }}"
                           data:
                             value: 0
                           continue_on_error: true
                         - service: number.set_value
                           target:
-                            entity_id: !input set_discharge_power
+                            entity_id: "{{ set_discharge_power }}"
                           data:
                             value: 0
                           continue_on_error: true
                         - service: select.select_option
                           target:
-                            entity_id: !input force_mode
+                            entity_id: "{{ force_mode }}"
                           data:
                             option: "{{ force_mode_idle }}"
                           continue_on_error: true
@@ -792,19 +908,19 @@ action:
                               sequence:
                                 - service: number.set_value
                                   target:
-                                    entity_id: !input set_charge_power
+                                    entity_id: "{{ set_charge_power }}"
                                   data:
                                     value: 0
                                   continue_on_error: true
                                 - service: number.set_value
                                   target:
-                                    entity_id: !input set_discharge_power
+                                    entity_id: "{{ set_discharge_power }}"
                                   data:
                                     value: "{{ discharge_power_w | float(200) }}"
                                   continue_on_error: true
                                 - service: select.select_option
                                   target:
-                                    entity_id: !input force_mode
+                                    entity_id: "{{ force_mode }}"
                                   data:
                                     option: "{{ force_mode_discharge }}"
                                   continue_on_error: true
@@ -849,19 +965,19 @@ action:
                               sequence:
                                 - service: number.set_value
                                   target:
-                                    entity_id: !input set_charge_power
+                                    entity_id: "{{ set_charge_power }}"
                                   data:
                                     value: 0
                                   continue_on_error: true
                                 - service: number.set_value
                                   target:
-                                    entity_id: !input set_discharge_power
+                                    entity_id: "{{ set_discharge_power }}"
                                   data:
                                     value: "{{ discharge_power_w | float(200) }}"
                                   continue_on_error: true
                                 - service: select.select_option
                                   target:
-                                    entity_id: !input force_mode
+                                    entity_id: "{{ force_mode }}"
                                   data:
                                     option: "{{ force_mode_discharge }}"
                                   continue_on_error: true
@@ -907,19 +1023,19 @@ action:
 
   - service: number.set_value
     target:
-      entity_id: !input set_charge_power
+      entity_id: "{{ set_charge_power }}"
     data:
       value: 0
     continue_on_error: true
   - service: number.set_value
     target:
-      entity_id: !input set_discharge_power
+      entity_id: "{{ set_discharge_power }}"
     data:
       value: 0
     continue_on_error: true
   - service: select.select_option
     target:
-      entity_id: !input force_mode
+      entity_id: "{{ force_mode }}"
     data:
       option: "{{ force_mode_idle }}"
     continue_on_error: true
@@ -937,7 +1053,7 @@ action:
         sequence:
           - service: number.set_value
             target:
-              entity_id: !input max_soc
+              entity_id: "{{ max_soc }}"
             data:
               value: "{{ soc_maximo_normal | float(100) }}"
             continue_on_error: true
@@ -953,7 +1069,7 @@ action:
                 sequence:
                   - service: switch.turn_off
                     target:
-                      entity_id: !input battery_manual_mode
+                      entity_id: "{{ battery_manual_mode }}"
                     continue_on_error: true
                   - delay:
                       seconds: 2

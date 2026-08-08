@@ -8,6 +8,8 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 import yaml
+from homeassistant.components.blueprint.schemas import BLUEPRINT_SCHEMA
+from homeassistant.util import yaml as yaml_util
 
 from custom_components.omnibattery import _async_migrate_legacy_active_balance
 from custom_components.omnibattery.const.registers_v2 import SELECT_DEFINITIONS
@@ -67,17 +69,36 @@ def test_blueprint_has_one_battery_contract_and_plan_defaults():
     inputs = blueprint["blueprint"]["input"]
     assert {
         "run_request",
-        "battery_manual_mode",
-        "battery_soc",
-        "battery_power",
-        "max_cell_voltage",
-        "min_cell_voltage",
-        "force_mode",
-        "set_charge_power",
-        "set_discharge_power",
-        "max_charge_power",
-        "max_soc",
+        "battery_device",
+        "battery_manual_mode_override",
+        "battery_soc_override",
+        "battery_power_override",
+        "max_cell_voltage_override",
+        "min_cell_voltage_override",
+        "force_mode_override",
+        "set_charge_power_override",
+        "set_discharge_power_override",
+        "max_charge_power_override",
+        "max_soc_override",
     } <= set(inputs)
+    assert inputs["battery_device"]["selector"]["device"]["filter"] == [{
+        "integration": "omnibattery",
+        "manufacturer": "Marstek",
+    }]
+    for key in (
+        "battery_manual_mode_override",
+        "battery_soc_override",
+        "battery_power_override",
+        "max_cell_voltage_override",
+        "min_cell_voltage_override",
+        "force_mode_override",
+        "set_charge_power_override",
+        "set_discharge_power_override",
+        "max_charge_power_override",
+        "max_soc_override",
+    ):
+        assert inputs[key]["default"] == ""
+        assert "text" in inputs[key]["selector"]
     assert inputs["top_zone_voltage_v"]["default"] == 3.49
     assert inputs["charge_stop_voltage_v"]["default"] == 3.60
     assert inputs["final_discharge_voltage_v"]["default"] == 3.48
@@ -93,8 +114,17 @@ def test_blueprint_has_one_battery_contract_and_plan_defaults():
     assert "modbus." not in raw.lower()
     assert "switch.turn_on" in raw
     assert "switch.turn_off" in raw
+    assert "device_entities(battery_device)" in raw
+    assert "charging_cutoff_capacity" in raw
+    assert "entity_id: !input battery_" not in raw
     assert "state_attr(set_charge_power, 'min')" in raw
     assert "state_attr(max_charge_power, 'min')" not in raw
+
+
+def test_blueprint_matches_home_assistant_schema():
+    """Keep the device selector and optional overrides importable by HA."""
+    data = yaml_util.load_yaml_dict(BLUEPRINT)
+    BLUEPRINT_SCHEMA(data)
 
 
 def test_blueprint_writes_setpoints_before_force_mode_and_cleans_up_in_order():
@@ -123,8 +153,8 @@ def test_blueprint_writes_setpoints_before_force_mode_and_cleans_up_in_order():
         and "force_mode_idle" in str(action)
     )
     assert [entity for index, entity in setpoint_pairs if index < first_idle][-2:] == [
-        "!input set_charge_power",
-        "!input set_discharge_power",
+        "{{ set_charge_power }}",
+        "{{ set_discharge_power }}",
     ]
 
 
