@@ -5,6 +5,8 @@ import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+import pytest
+
 from custom_components.omnibattery.drivers.base import ReadGroup
 from custom_components.omnibattery.infra.coordinator import (
     MarstekVenusDataUpdateCoordinator,
@@ -112,6 +114,106 @@ async def test_configured_capacity_is_injected_for_drivers_without_nominal_capac
     await MarstekVenusDataUpdateCoordinator._async_update_data(coordinator)
 
     assert coordinator.data["battery_total_energy"] == 5.28
+
+
+def _power_limit_coordinator(
+    *, version: str, device_charge: int, device_discharge: int,
+    user_charge: int, user_discharge: int,
+):
+    group = ReadGroup("high", ("max_charge_power", "max_discharge_power"))
+
+    async def read_telemetry(keys):
+        return {
+            "max_charge_power": device_charge,
+            "max_discharge_power": device_discharge,
+        }
+
+    driver = SimpleNamespace(
+        read_groups=[group],
+        read_telemetry=read_telemetry,
+        control_dependency_keys=set(),
+    )
+    registry = SimpleNamespace(
+        async_get_entity_id=lambda *args: None,
+        entities={},
+    )
+    return SimpleNamespace(
+        name="Battery",
+        host="192.0.2.10",
+        device_key="192.0.2.10_1",
+        brand="marstek",
+        battery_version=version,
+        driver=driver,
+        _def_by_key={
+            "max_charge_power": {"key": "max_charge_power"},
+            "max_discharge_power": {"key": "max_discharge_power"},
+        },
+        _get_entity_type=lambda definition, fallback_key=None: "number",
+        _entity_registry=registry,
+        _is_shutting_down=False,
+        _suspension_reset_time=None,
+        _last_update_times={},
+        _critical_group_failures={},
+        boost_fast_poll_until=0.0,
+        lock=asyncio.Lock(),
+        _consecutive_failures=0,
+        _max_failures_before_reconnect=99,
+        _max_failures_before_suspend=100,
+        _is_connected=True,
+        data={},
+        async_reconnect_fresh=AsyncMock(return_value=True),
+        capabilities=SimpleNamespace(
+            has_energy_counters=True,
+            has_daily_energy_counters=True,
+            has_nominal_capacity=True,
+        ),
+        battery_capacity_kwh=0,
+        _alarm_notifier=SimpleNamespace(check=AsyncMock()),
+        number_definitions=[
+            {"key": "max_charge_power"},
+            {"key": "max_discharge_power"},
+        ],
+        user_max_charge_power=user_charge,
+        user_max_discharge_power=user_discharge,
+        needs_software_max_charge=False,
+        needs_software_max_discharge=False,
+        needs_software_power_cap=version in ("v2", "v3"),
+        max_charge_power=2500,
+        max_discharge_power=2500,
+    )
+
+
+@pytest.mark.parametrize("version", ["v2", "v3"])
+async def test_venus_e_polling_preserves_user_power_caps(version):
+    coordinator = _power_limit_coordinator(
+        version=version,
+        device_charge=800,
+        device_discharge=2500,
+        user_charge=500,
+        user_discharge=1200,
+    )
+
+    await MarstekVenusDataUpdateCoordinator._async_update_data(coordinator)
+
+    assert coordinator.data["max_charge_power"] == 800
+    assert coordinator.data["max_discharge_power"] == 2500
+    assert coordinator.max_charge_power == 500
+    assert coordinator.max_discharge_power == 1200
+
+
+async def test_non_venus_e_polling_keeps_register_value_as_effective_cap():
+    coordinator = _power_limit_coordinator(
+        version="vA",
+        device_charge=800,
+        device_discharge=2500,
+        user_charge=500,
+        user_discharge=1200,
+    )
+
+    await MarstekVenusDataUpdateCoordinator._async_update_data(coordinator)
+
+    assert coordinator.max_charge_power == 800
+    assert coordinator.max_discharge_power == 2500
 
 
 async def test_lifetime_energy_totals_are_dependencies_for_derived_daily_energy():

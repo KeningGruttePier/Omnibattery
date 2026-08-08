@@ -396,6 +396,17 @@ class MarstekVenusDataUpdateCoordinator(DataUpdateCoordinator):
         return True
 
     @property
+    def needs_software_power_cap(self) -> bool:
+        """True when Venus E v2/v3's device cap is only a hardware ceiling.
+
+        The Marstek app exposes these models' max-power setting as 800 W or
+        2500 W, while existing integration configurations may contain another
+        user limit. The polling path must retain that user limit instead of
+        replacing it with the value read from the battery.
+        """
+        return self.brand == "marstek" and self.battery_version in ("v2", "v3")
+
+    @property
     def is_available(self) -> bool:
         """Return whether the battery is currently reachable."""
         return self._is_connected and not self._is_shutting_down
@@ -915,7 +926,8 @@ class MarstekVenusDataUpdateCoordinator(DataUpdateCoordinator):
 
         # Sync control attributes from polled register values so that changes made
         # via the UI (number entities) survive HA restarts. The hardware register is
-        # the source of truth; config_entry.data holds only the initial defaults.
+        # the source of truth, except for Venus E v2/v3 where it is only the device
+        # ceiling and the user's software cap remains authoritative.
         if "charging_cutoff_capacity" in self.data:
             self.max_soc = int(self.data["charging_cutoff_capacity"])
         # Registerless drivers (Zendure) expose the device SOC ceiling as soc_set
@@ -935,18 +947,21 @@ class MarstekVenusDataUpdateCoordinator(DataUpdateCoordinator):
             self.min_soc = int(self.data["min_soc"])
         if "max_charge_power" in self.data:
             device_cap = int(self.data["max_charge_power"])
-            # Soft-max drivers (Zendure telemetry, Anker read-only sensor) honour
-            # the user's software ceiling on top of the device/hardware cap;
-            # otherwise the polled register value is itself the effective limit.
+            # Soft-max drivers (Zendure telemetry, Anker read-only sensor) and
+            # Venus E v2/v3 honour the user's software ceiling on top of the
+            # device/hardware cap; otherwise the polled register value is itself
+            # the effective limit.
             self.max_charge_power = (
                 min(device_cap, self.user_max_charge_power)
-                if self.needs_software_max_charge else device_cap
+                if self.needs_software_max_charge or self.needs_software_power_cap
+                else device_cap
             )
         if "max_discharge_power" in self.data:
             device_cap = int(self.data["max_discharge_power"])
             self.max_discharge_power = (
                 min(device_cap, self.user_max_discharge_power)
-                if self.needs_software_max_discharge else device_cap
+                if self.needs_software_max_discharge or self.needs_software_power_cap
+                else device_cap
             )
 
         if updated_data:

@@ -166,10 +166,22 @@ class MarstekVenusNumber(CoordinatorEntity, NumberEntity):
 
     @property
     def native_value(self):
-        """Return the state of the number."""
+        """Return the configured value represented by the number entity.
+
+        Venus E v2/v3 report the hardware selector (800/2500 W) through the
+        same register that backs these entities. That register is not the
+        user's software cap, so expose the persisted/user value there instead
+        of making the slider jump to the hardware ceiling after polling.
+        """
+        key = self.definition["key"]
+        if getattr(self.coordinator, "needs_software_power_cap", False):
+            if key == "max_charge_power":
+                return float(self.coordinator.user_max_charge_power)
+            if key == "max_discharge_power":
+                return float(self.coordinator.user_max_discharge_power)
         if self.coordinator.data is None:
             return None
-        return self.coordinator.data.get(self.definition["key"])
+        return self.coordinator.data.get(key)
 
     async def async_set_native_value(self, value: float) -> None:
         """Set the value of the number."""
@@ -185,9 +197,29 @@ class MarstekVenusNumber(CoordinatorEntity, NumberEntity):
             _LOGGER.info("Converting %s: %.1f%s -> register value %d (scale=%.1f)",
                         self.definition['name'], value, self._attr_native_unit_of_measurement or '', 
                         register_value, self._scale)
-        
+
+        # Venus E v2/v3 use the configured max-power number as the software cap
+        # while the polling path also sees the device's hardware cap. Keep the
+        # user value current before the write triggers an immediate refresh; the
+        # wire value itself remains owned by the driver.
+        key = self.definition["key"]
+        if key == "max_charge_power" and getattr(
+            self.coordinator, "needs_software_power_cap", False
+        ):
+            self.coordinator.user_max_charge_power = int(value)
+            self.coordinator.persist_battery_config(
+                "user_max_charge_power", int(value)
+            )
+        elif key == "max_discharge_power" and getattr(
+            self.coordinator, "needs_software_power_cap", False
+        ):
+            self.coordinator.user_max_discharge_power = int(value)
+            self.coordinator.persist_battery_config(
+                "user_max_discharge_power", int(value)
+            )
+
         # Write the converted value via the logical control key
-        await self.coordinator.write_control(self.definition["key"], register_value, do_refresh=True)
+        await self.coordinator.write_control(key, register_value, do_refresh=True)
         
         # Update coordinator attributes immediately for control loop
         # This ensures changes take effect immediately without waiting for scan_interval

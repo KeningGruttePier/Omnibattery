@@ -78,6 +78,26 @@ def test_marstek_writable_max_charge_skips_software_max():
     )
 
 
+def test_venus_e_v2_v3_keep_a_software_power_cap_during_polling():
+    for version in ("v2", "v3"):
+        coordinator = SimpleNamespace(brand="marstek", battery_version=version)
+        assert (
+            MarstekVenusDataUpdateCoordinator.needs_software_power_cap.fget(
+                coordinator
+            )
+            is True
+        )
+
+    for version in ("vA", "vD"):
+        coordinator = SimpleNamespace(brand="marstek", battery_version=version)
+        assert (
+            MarstekVenusDataUpdateCoordinator.needs_software_power_cap.fget(
+                coordinator
+            )
+            is False
+        )
+
+
 async def test_reconnect_skips_rs485_for_driver_without_capability():
     driver = SimpleNamespace(connect=AsyncMock(return_value=True))
     coordinator = SimpleNamespace(

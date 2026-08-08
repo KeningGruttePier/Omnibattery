@@ -1,6 +1,11 @@
 # Changelog
 
-## [1.3.0b4] - 2026-08-06
+## [1.3.0b5] - 2026-08-07
+
+### Fixed
+- **Marstek Venus E v2/v3 power caps could be overwritten or displayed as 2500 W**: writes now use the app-supported 800/2500 W hardware values while the integration preserves and displays the user's lower software limit.
+
+## [1.3.0b4] - 2026-08-07
 
 ### Fixed
 - **Sessy authentication failures could look like a healthy connection**: the initial probe now validates the protected strategy endpoint instead of relying only on the readable power-status endpoint, and repeated `401` responses are collapsed into one actionable credential warning.
