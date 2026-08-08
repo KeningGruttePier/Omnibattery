@@ -86,6 +86,7 @@ def test_blueprint_has_one_battery_contract_and_plan_defaults():
         "battery_power_override",
         "max_cell_voltage_override",
         "min_cell_voltage_override",
+        "cell_delta_override",
         "force_mode_override",
         "set_charge_power_override",
         "set_discharge_power_override",
@@ -102,6 +103,7 @@ def test_blueprint_has_one_battery_contract_and_plan_defaults():
         "battery_power_override",
         "max_cell_voltage_override",
         "min_cell_voltage_override",
+        "cell_delta_override",
         "force_mode_override",
         "set_charge_power_override",
         "set_discharge_power_override",
@@ -126,6 +128,10 @@ def test_blueprint_has_one_battery_contract_and_plan_defaults():
     assert "switch.turn_on" in raw
     assert "switch.turn_off" in raw
     assert "device_entities(battery_device)" in raw
+    assert "sensor\\\\..*_cell_delta" in raw
+    assert "states(cell_delta)" in raw
+    assert "Initial delta: {{ initial_delta_text }}" in raw
+    assert "unknown\n        {%- endif -%}" in raw
     assert "charging_cutoff_capacity" in raw
     assert "omnibattery_balance_measurement_ready" in raw
     assert "entity_id: !input battery_" not in raw

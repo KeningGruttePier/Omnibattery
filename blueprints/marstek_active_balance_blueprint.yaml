@@ -76,6 +76,13 @@ blueprint:
       selector:
         text:
 
+    cell_delta_override:
+      name: "Advanced — Cell Delta entity override"
+      description: "Optional entity ID. Leave blank to discover the standard *_cell_delta sensor from the selected device."
+      default: ""
+      selector:
+        text:
+
     force_mode_override:
       name: "Advanced — Force mode entity override"
       description: "Optional entity ID. Leave blank to discover the standard *_force_mode select from the selected device."
@@ -266,6 +273,7 @@ variables:
   battery_power_override: !input battery_power_override
   max_cell_voltage_override: !input max_cell_voltage_override
   min_cell_voltage_override: !input min_cell_voltage_override
+  cell_delta_override: !input cell_delta_override
   force_mode_override: !input force_mode_override
   set_charge_power_override: !input set_charge_power_override
   set_discharge_power_override: !input set_discharge_power_override
@@ -314,6 +322,15 @@ variables:
     {%- else -%}
       {%- set candidates = device_entities(battery_device)
           | select('match', '^sensor\\..*_min_cell_voltage$') | list -%}
+      {{ candidates[0] if candidates else '' }}
+    {%- endif -%}
+  cell_delta: >-
+    {%- set override = cell_delta_override | trim -%}
+    {%- if override -%}
+      {{ override }}
+    {%- else -%}
+      {%- set candidates = device_entities(battery_device)
+          | select('match', '^sensor\\..*_cell_delta$') | list -%}
       {{ candidates[0] if candidates else '' }}
     {%- endif -%}
   force_mode: >-
@@ -536,6 +553,9 @@ action:
             {% set ns.errors = ns.errors + [label ~ ' (' ~ entity_id ~ ') is unavailable'] %}
           {% endif %}
         {% endfor %}
+        {% if cell_delta | trim != '' and cell_delta not in device_entity_ids %}
+          {% set ns.errors = ns.errors + ['Cell Delta (' ~ cell_delta ~ ') does not belong to the selected device'] %}
+        {% endif %}
         {% for label, entity_id in [
           ('Battery SOC', battery_soc),
           ('Battery power', battery_power),
@@ -644,9 +664,25 @@ action:
       started_at: "{{ as_timestamp(now()) }}"
       measurement_index: 0
       initial_delta_v: >-
-        {{ (states(max_cell_voltage) | float(0) - states(min_cell_voltage) | float(0)) | round(4) }}
+        {%- if cell_delta | trim != '' and is_number(states(cell_delta)) -%}
+        {{ (states(cell_delta) | float(0) / 1000) | round(4) }}
+        {%- else -%}
+        unknown
+        {%- endif -%}
       last_delta_v: >-
-        {{ (states(max_cell_voltage) | float(0) - states(min_cell_voltage) | float(0)) | round(4) }}
+        {%- if cell_delta | trim != '' and is_number(states(cell_delta)) -%}
+        {{ (states(cell_delta) | float(0) / 1000) | round(4) }}
+        {%- else -%}
+        unknown
+        {%- endif -%}
+
+  - variables:
+      initial_delta_text: >-
+        {%- if is_number(initial_delta_v) -%}
+        {{ (initial_delta_v | float(0) * 1000) | round(0) | int }} mV
+        {%- else -%}
+        n/a
+        {%- endif -%}
 
   # Ensure a known idle state, then temporarily allow the battery to reach 100%.
   - service: number.set_value
@@ -709,7 +745,7 @@ action:
             data:
               title: "🔋 Active balancing started - {{ battery_name }}"
               message: |-
-                📊 Initial delta: {{ (initial_delta_v | float(0) * 1000) | round(0) | int }} mV
+                📊 Initial delta: {{ initial_delta_text }}
                 🎯 Runs until delta ≤ {{ (target_delta_v | float(0.03) * 1000) | round(0) | int }} mV or you stop it.
                 🚫 Battery paused from normal control while balancing.
               notification_id: "omnibattery_marstek_active_balance_started_{{ run_request | replace('.', '_') }}"
@@ -1084,9 +1120,11 @@ action:
         {% elif not is_state(battery_manual_mode, 'on') %}manual_mode_released
         {% else %}cancelled{% endif %}
       cleanup_final_delta_v: >-
-        {{ last_delta_v | float(
-             states(max_cell_voltage) | float(0) - states(min_cell_voltage) | float(0)
-           ) | round(4) }}
+        {%- if is_number(last_delta_v) -%}
+        {{ last_delta_v | float(0) | round(4) }}
+        {%- else -%}
+        unknown
+        {%- endif -%}
 
   - service: number.set_value
     target:
@@ -1177,6 +1215,19 @@ action:
         ✅ Stopped by user
         {%- endif -%}
   - variables:
+      cleanup_final_delta_text: >-
+        {%- if is_number(cleanup_final_delta_v) -%}
+        {{ (cleanup_final_delta_v | float(0) * 1000) | round(0) | int }} mV
+        {%- else -%}
+        n/a
+        {%- endif -%}
+      cleanup_improvement_text: >-
+        {%- if is_number(initial_delta_v) and is_number(cleanup_final_delta_v) -%}
+        {{ ((initial_delta_v | float(0) - cleanup_final_delta_v | float(0)) * 1000) | round(0) | int }} mV
+        {%- else -%}
+        n/a
+        {%- endif -%}
+  - variables:
       cleanup_title: >-
         {%- if cleanup_ok and cleanup_reason in ['completed', 'cancelled'] -%}
         ✅ Active balancing finished - {{ battery_name }}
@@ -1185,7 +1236,7 @@ action:
         {%- endif -%}
       cleanup_message: |-
         {{ cleanup_status }}
-        📊 Delta: {{ (initial_delta_v | float(0) * 1000) | round(0) | int }} mV → {{ (cleanup_final_delta_v | float(0) * 1000) | round(0) | int }} mV (improvement {{ ((initial_delta_v | float(0) - cleanup_final_delta_v | float(0)) * 1000) | round(0) | int }} mV)
+        📊 Delta: {{ initial_delta_text }} → {{ cleanup_final_delta_text }} (improvement {{ cleanup_improvement_text }})
         ⏱️ Duration: {{ ((as_timestamp(now()) - started_at | float(0)) / 3600) | round(2) }} h
         {%- if not cleanup_ok %}
         ⚠️ Battery Manual Mode remains ON as a safety hold; inspect the battery before releasing it.
