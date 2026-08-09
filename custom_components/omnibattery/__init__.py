@@ -1275,11 +1275,20 @@ class ChargeDischargeController:
         """Return the effective per-battery power limit for the current cycle."""
         if not is_charging:
             limit = self._temp_limit_mgr.apply_discharge_limit(
-                coordinator, coordinator.max_discharge_power
+                coordinator,
+                getattr(
+                    coordinator,
+                    "effective_max_discharge_power",
+                    coordinator.max_discharge_power,
+                ),
             )
             return self._apply_slot_power_ceiling(coordinator, False, limit)
 
-        limit = coordinator.max_charge_power
+        limit = getattr(
+            coordinator,
+            "effective_max_charge_power",
+            coordinator.max_charge_power,
+        )
         if coordinator.data is None:
             return self._apply_slot_power_ceiling(coordinator, True, limit)
         limit = self._max_soc_mgr.apply_charge_taper(coordinator, limit)
@@ -3776,8 +3785,26 @@ class ChargeDischargeController:
         # limits, but software-manual and recovery paths deliberately bypass
         # normal blockers and can otherwise carry an old/persisted setpoint.
         try:
-            charge_limit = max(0, int(coordinator.max_charge_power))
-            discharge_limit = max(0, int(coordinator.max_discharge_power))
+            charge_limit = max(
+                0,
+                int(
+                    getattr(
+                        coordinator,
+                        "effective_max_charge_power",
+                        coordinator.max_charge_power,
+                    )
+                ),
+            )
+            discharge_limit = max(
+                0,
+                int(
+                    getattr(
+                        coordinator,
+                        "effective_max_discharge_power",
+                        coordinator.max_discharge_power,
+                    )
+                ),
+            )
             original_charge_power = charge_power
             original_discharge_power = discharge_power
             charge_power = min(charge_power, charge_limit)
@@ -7127,6 +7154,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             battery_version=battery_config.get(CONF_BATTERY_VERSION, DEFAULT_VERSION),
             max_charge_power=battery_config["max_charge_power"],
             max_discharge_power=battery_config["max_discharge_power"],
+            device_max_charge_power=battery_config.get("device_max_charge_power"),
+            device_max_discharge_power=battery_config.get("device_max_discharge_power"),
             max_soc=battery_config["max_soc"],
             min_soc=battery_config["min_soc"],
             charge_hysteresis_percent=battery_config.get(
@@ -7162,28 +7191,32 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             battery_config.get(CONF_BATTERY_MANUAL_MODE_ENABLED, False)
         )
         coordinator.battery_capacity_kwh = battery_config.get("battery_capacity_kwh", 0.0)
+        # Restore the user's configured ceilings into the normalized coordinator
+        # model. ``effective_max_*`` then applies the physical/device cap without
+        # destroying the value selected by the user.
+        coordinator.configured_max_charge_power = battery_config.get(
+            "user_max_charge_power",
+            battery_config.get("max_charge_power", coordinator.configured_max_charge_power),
+        )
+        coordinator.configured_max_discharge_power = battery_config.get(
+            "user_max_discharge_power",
+            battery_config.get("max_discharge_power", coordinator.configured_max_discharge_power),
+        )
+
         # Software manual-control + charge-ceiling state (Zendure-class drivers).
         coordinator.manual_force_mode = battery_config.get("manual_force_mode", "None")
         coordinator.manual_set_charge_power = min(
             battery_config.get("manual_set_charge_power", 0),
-            coordinator.max_charge_power,
+            coordinator.effective_max_charge_power,
         )
         coordinator.manual_set_discharge_power = min(
             battery_config.get("manual_set_discharge_power", 0),
-            coordinator.max_discharge_power,
+            coordinator.effective_max_discharge_power,
         )
         # Seed the live display from the persisted manual targets until the first
         # control cycle refreshes them.
         coordinator.commanded_charge_power = coordinator.manual_set_charge_power
         coordinator.commanded_discharge_power = coordinator.manual_set_discharge_power
-        coordinator.user_max_charge_power = min(
-            battery_config.get("user_max_charge_power", coordinator.max_charge_power),
-            coordinator.max_charge_power,
-        )
-        coordinator.user_max_discharge_power = min(
-            battery_config.get("user_max_discharge_power", coordinator.max_discharge_power),
-            coordinator.max_discharge_power,
-        )
         coordinator._shadow_selects = {
             k[len("shadow_select_"):]: v
             for k, v in battery_config.items()

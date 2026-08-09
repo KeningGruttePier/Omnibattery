@@ -557,25 +557,37 @@ def _non_negative_int(value) -> int:
 def effective_battery_power_limits(battery) -> tuple[int, int]:
     """Return the static effective (charge_w, discharge_w) limits for one battery.
 
-    ``max_*_power`` is the configured/device envelope for register-backed
-    batteries, but soft-max drivers (for example Zendure and Anker) keep the
-    user's additional ceiling in ``user_max_*_power``.  Treat that optional
-    value as another cap so every brand contributes the same effective limit to
-    system-level calculations.  Missing soft-limit keys preserve legacy entries.
+    New entries may persist the normalized ``device_max_*`` and
+    ``configured_max_*`` fields. Legacy entries use ``max_*_power`` and soft-max
+    drivers (for example Zendure and Anker) keep the user's additional ceiling
+    in ``user_max_*_power``. Missing normalized/soft-limit keys preserve legacy
+    entries while applying the same ``min(device, configured)`` rule.
     """
-    charge_w = _non_negative_int(battery.get("max_charge_power"))
-    discharge_w = _non_negative_int(battery.get("max_discharge_power"))
+    device_charge = battery.get("device_max_charge_power")
+    device_discharge = battery.get("device_max_discharge_power")
+    configured_charge = battery.get("configured_max_charge_power")
+    configured_discharge = battery.get("configured_max_discharge_power")
 
-    if battery.get("user_max_charge_power") is not None:
-        charge_w = min(
-            charge_w, _non_negative_int(battery.get("user_max_charge_power"))
+    if device_charge is None:
+        device_charge = battery.get("max_charge_power")
+    if device_discharge is None:
+        device_discharge = battery.get("max_discharge_power")
+    if configured_charge is None:
+        configured_charge = battery.get(
+            "user_max_charge_power", battery.get("max_charge_power")
         )
-    if battery.get("user_max_discharge_power") is not None:
-        discharge_w = min(
-            discharge_w, _non_negative_int(battery.get("user_max_discharge_power"))
+    if configured_discharge is None:
+        configured_discharge = battery.get(
+            "user_max_discharge_power", battery.get("max_discharge_power")
         )
 
-    return charge_w, discharge_w
+    return (
+        min(_non_negative_int(device_charge), _non_negative_int(configured_charge)),
+        min(
+            _non_negative_int(device_discharge),
+            _non_negative_int(configured_discharge),
+        ),
+    )
 
 
 def total_battery_power(data) -> tuple[int, int]:

@@ -63,7 +63,13 @@ def _effective_setpoint_max(
 ) -> int:
     """Return the current per-direction ceiling for a manual setpoint."""
     try:
-        configured_max = int(getattr(coordinator, f"max_{kind}_power"))
+        configured_max = int(
+            getattr(
+                coordinator,
+                f"effective_max_{kind}_power",
+                getattr(coordinator, f"max_{kind}_power"),
+            )
+        )
     except (AttributeError, TypeError, ValueError):
         configured_max = int(hardware_max)
     return max(0, min(int(hardware_max), configured_max))
@@ -206,9 +212,21 @@ class MarstekVenusNumber(CoordinatorEntity, NumberEntity):
         key = self.definition["key"]
         if getattr(self.coordinator, "needs_software_power_cap", False):
             if key == "max_charge_power":
-                return float(self.coordinator.user_max_charge_power)
+                return float(
+                    getattr(
+                        self.coordinator,
+                        "configured_max_charge_power",
+                        self.coordinator.user_max_charge_power,
+                    )
+                )
             if key == "max_discharge_power":
-                return float(self.coordinator.user_max_discharge_power)
+                return float(
+                    getattr(
+                        self.coordinator,
+                        "configured_max_discharge_power",
+                        self.coordinator.user_max_discharge_power,
+                    )
+                )
         if self.coordinator.data is None:
             return None
         value = self.coordinator.data.get(key)
@@ -290,15 +308,23 @@ class MarstekVenusNumber(CoordinatorEntity, NumberEntity):
                          self.coordinator.name, old_min_soc, value)
 
         elif self.definition['key'] == 'max_charge_power':
-            old_value = self.coordinator.max_charge_power
-            self.coordinator.max_charge_power = int(value)
+            old_value = getattr(
+                self.coordinator,
+                "effective_max_charge_power",
+                self.coordinator.max_charge_power,
+            )
+            self.coordinator.configured_max_charge_power = int(value)
             self.coordinator.persist_battery_config("max_charge_power", int(value))
             _LOGGER.info("%s: Updated max_charge_power %dW → %dW (immediate sync)",
                          self.coordinator.name, old_value, int(value))
 
         elif self.definition['key'] == 'max_discharge_power':
-            old_value = self.coordinator.max_discharge_power
-            self.coordinator.max_discharge_power = int(value)
+            old_value = getattr(
+                self.coordinator,
+                "effective_max_discharge_power",
+                self.coordinator.max_discharge_power,
+            )
+            self.coordinator.configured_max_discharge_power = int(value)
             self.coordinator.persist_battery_config("max_discharge_power", int(value))
             _LOGGER.info("%s: Updated max_discharge_power %dW → %dW (immediate sync)",
                          self.coordinator.name, old_value, int(value))
@@ -1071,7 +1097,11 @@ class MarstekSoftMaxChargeNumber(CoordinatorEntity, NumberEntity):
         self._attr_icon = "mdi:battery-arrow-up-outline"
         self._attr_native_unit_of_measurement = "W"
         self._attr_native_min_value = 0
-        self._attr_native_max_value = coordinator.capabilities.max_charge_power_w
+        self._attr_native_max_value = getattr(
+            coordinator,
+            "device_max_charge_power",
+            coordinator.capabilities.max_charge_power_w,
+        )
         self._attr_native_step = 10
         self._attr_should_poll = False
 
@@ -1089,9 +1119,13 @@ class MarstekSoftMaxChargeNumber(CoordinatorEntity, NumberEntity):
         device_cap = None
         if self.coordinator.data is not None:
             device_cap = self.coordinator.data.get("max_charge_power")
-        self.coordinator.max_charge_power = (
-            min(int(device_cap), new_value) if device_cap is not None else new_value
-        )
+        if device_cap is not None and hasattr(self.coordinator, "device_max_charge_power"):
+            self.coordinator.device_max_charge_power = int(device_cap)
+        effective = getattr(self.coordinator, "effective_max_charge_power", None)
+        if effective is None:
+            effective = min(int(device_cap), new_value) if device_cap is not None else new_value
+        if not hasattr(self.coordinator, "_configured_max_charge_power"):
+            self.coordinator.max_charge_power = int(effective)
         _LOGGER.info("%s: user_max_charge_power → %dW", self.coordinator.name, new_value)
         self.async_write_ha_state()
 
@@ -1116,7 +1150,11 @@ class MarstekSoftMaxDischargeNumber(CoordinatorEntity, NumberEntity):
         self._attr_icon = "mdi:battery-arrow-down-outline"
         self._attr_native_unit_of_measurement = "W"
         self._attr_native_min_value = 0
-        self._attr_native_max_value = coordinator.capabilities.max_discharge_power_w
+        self._attr_native_max_value = getattr(
+            coordinator,
+            "device_max_discharge_power",
+            coordinator.capabilities.max_discharge_power_w,
+        )
         self._attr_native_step = 10
         self._attr_should_poll = False
 
@@ -1133,9 +1171,13 @@ class MarstekSoftMaxDischargeNumber(CoordinatorEntity, NumberEntity):
         device_cap = None
         if self.coordinator.data is not None:
             device_cap = self.coordinator.data.get("max_discharge_power")
-        self.coordinator.max_discharge_power = (
-            min(int(device_cap), new_value) if device_cap is not None else new_value
-        )
+        if device_cap is not None and hasattr(self.coordinator, "device_max_discharge_power"):
+            self.coordinator.device_max_discharge_power = int(device_cap)
+        effective = getattr(self.coordinator, "effective_max_discharge_power", None)
+        if effective is None:
+            effective = min(int(device_cap), new_value) if device_cap is not None else new_value
+        if not hasattr(self.coordinator, "_configured_max_discharge_power"):
+            self.coordinator.max_discharge_power = int(effective)
         _LOGGER.info("%s: user_max_discharge_power → %dW", self.coordinator.name, new_value)
         self.async_write_ha_state()
 

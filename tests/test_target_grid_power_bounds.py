@@ -88,6 +88,18 @@ def test_missing_soft_limit_keeps_the_configured_limit():
     assert _bounds({"batteries": [battery]}) == (-2400, 600)
 
 
+def test_normalized_power_limits_are_used_when_present():
+    battery = {
+        "device_max_charge_power": 2400,
+        "device_max_discharge_power": 1800,
+        "configured_max_charge_power": 600,
+        "configured_max_discharge_power": 2200,
+    }
+
+    assert effective_battery_power_limits(battery) == (600, 1800)
+    assert _bounds({"batteries": [battery]}) == (-1800, 600)
+
+
 def test_system_cap_narrows_each_direction_independently():
     """A cap of 0 means "disabled" for that direction, mirroring _configured_system_limit."""
     data = {
