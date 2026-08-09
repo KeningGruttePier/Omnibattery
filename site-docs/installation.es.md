@@ -13,7 +13,7 @@ compatible. Los adaptadores y puentes solo son necesarios cuando se indican.
 | **Zendure SolarFlow 2400 AC+, 2400 AC Pro, 1600 AC+, 800 Pro, 800 Plus, 800** | API HTTP local | Mantén **HEMS desactivado** en la aplicación de Zendure. Si está activo, HEMS sobrescribe la consigna manual de potencia de Omnibattery. |
 | **Anker SOLIX Solarbank Max AC, 4 E5000 Pro** | Modbus TCP | Activa **Third-Party Control** en la aplicación de Anker. Solo puede conectarse un cliente Modbus a la vez. |
 | **Sessy Home Battery** | API HTTP local mediante el dongle de Sessy | El dongle debe ser accesible desde Home Assistant. Introduce su IP/nombre de host, puerto y credenciales; el puerto predeterminado es `80`. |
-| **Hoymiles MS-A2** | MQTT mediante la integración MQTT configurada en Home Assistant | Hace falta un broker MQTT local operativo (por ejemplo, Mosquitto; se puede reutilizar uno existente). Activa **MQTT Service** en S-Miles Home y asegúrate de que la batería puede alcanzar el broker. |
+| **Hoymiles MS-A2 / HiBattery** | MQTT mediante la integración MQTT configurada en Home Assistant | Hace falta un broker MQTT local operativo (por ejemplo, Mosquitto; se puede reutilizar uno existente). Activa **MQTT Service** en S-Miles Home y asegúrate de que la batería puede alcanzar el broker. |
 | **Sensor de red** | Entidad de Home Assistant | Sensor que mida el consumo total de la red (p. ej. Shelly EM3, Neurio o integración de contador inteligente). |
 | **Medidor de producción solar** *(opcional)* | Entidad de Home Assistant | Sensor de producción fotovoltaica en tiempo real, en W o kW. Permite derivar con precisión el consumo del hogar y mostrar el nodo Solar en el dashboard de la integración. Déjalo vacío si los paneles alimentan directamente las entradas MPPT de la batería. |
 
@@ -26,7 +26,7 @@ compatible. Los adaptadores y puentes solo son necesarios cuando se indican.
 ### Software
 
 - Home Assistant **2024.1.0** o superior
-- Solo para **Hoymiles MS-A2**: la integración MQTT de Home Assistant y un broker MQTT local operativo. Omnibattery usa el broker a través de Home Assistant; no instala uno.
+- Solo para **baterías Hoymiles mediante MQTT**: la integración MQTT de Home Assistant y un broker MQTT local operativo. Omnibattery usa el broker a través de Home Assistant; no instala uno.
 - (Opcional) Sensor de previsión solar para la carga predictiva (Solcast, Forecast.Solar, etc.)
 
 ### Red

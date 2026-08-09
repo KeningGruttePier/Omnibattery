@@ -8,11 +8,11 @@
 - Zendure Solarflow 2400 AC+, 2400 AC 2400 Pro, 1600 AC+, 800 Pro, 800 Plus and 800 (Local API)
 - Anker SOLIX Solarbank Max AC and Solarbank 4 E5000 Pro via Modbus TCP (thanks @wouterbouvy!)
 - Sessy Home Battery (Looking for testers!!!)
-- Hoymiles MS-A2
+- Hoymiles MS-A2 and HiBattery MQTT models
 
 ## Key Features
 
-- **Mix and match different battery brands**: Marstek, Zendure, Anker Solix, Sessy, Hoymiles MS-A2 and more to come!
+- **Mix and match different battery brands**: Marstek, Zendure, Anker Solix, Sessy, Hoymiles MQTT and more to come!
 - **Zero Export/Import PD Controller**: Keeps grid exchange near zero using a Proportional-Derivative algorithm.
 - **Integrated dashboard**: All the controls and adjustments from a single place. Graphs and power flow diagram included!
 - **One-Click PD Profiles + Quality Sensor**: Pick a tuning profile (Very smooth → Very aggressive) instead of tuning gains by hand; a control-quality sensor reports whether the result is stable, oscillating or sluggish.

@@ -1,4 +1,4 @@
-"""Hoymiles MS-A2 MQTT driver contract tests."""
+"""Hoymiles MQTT driver contract tests."""
 
 import asyncio
 from types import SimpleNamespace
@@ -6,8 +6,15 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from custom_components.omnibattery.drivers.hoymiles import HoymilesMqttDriver
-from custom_components.omnibattery.config_flow import MarstekVenusConfigFlow
+from custom_components.omnibattery.drivers.hoymiles import (
+    HoymilesMqttDriver,
+    hoymiles_capacity_kwh,
+    hoymiles_model_profile,
+)
+from custom_components.omnibattery.config_flow import (
+    MarstekVenusConfigFlow,
+    _hoymiles_apply_probe_caps,
+)
 
 
 class _Mqtt:
@@ -150,6 +157,83 @@ async def test_power_config_caps_single_unit_symmetrically_without_inflating_use
 
 
 @pytest.mark.asyncio
+async def test_4020_x_discovery_uses_its_2_kw_profile_instead_of_ms_a2_limits(mqtt_mock):
+    driver = HoymilesMqttDriver(
+        SimpleNamespace(async_create_task=asyncio.create_task), "HB-4020"
+    )
+    await driver.connect()
+
+    mqtt_mock.callbacks[driver._power_config_topic](SimpleNamespace(payload='''{
+        "min": -2000,
+        "max": 2000,
+        "device": {"model": "HB-4020-X"}
+    }'''))
+
+    assert driver.model_label == "HiBattery 4020 X"
+    assert driver.capabilities.max_charge_power_w == 2000
+    assert driver.capabilities.max_discharge_power_w == 2000
+    assert (await driver.read_telemetry())["battery_total_energy"] == 4.02
+    assert (await driver.apply_setpoint(-2500, read_back=False)).net_power_w == -2000
+    await driver.close()
+
+
+@pytest.mark.asyncio
+async def test_configured_4020_x_overrides_incorrect_ms_a2_discovery_model(mqtt_mock):
+    driver = HoymilesMqttDriver(
+        SimpleNamespace(async_create_task=asyncio.create_task),
+        "HB-4020",
+        model="hibattery_4020_x",
+    )
+    await driver.connect()
+
+    mqtt_mock.callbacks[driver._power_config_topic](SimpleNamespace(payload='''{
+        "min": -2000,
+        "max": 2000,
+        "device": {"model": "MS-A2"}
+    }'''))
+
+    assert driver.model_label == "HiBattery 4020 X"
+    assert driver.capabilities.max_charge_power_w == 2000
+    assert driver.capabilities.max_discharge_power_w == 2000
+    assert (await driver.read_telemetry())["battery_total_energy"] == 4.02
+    await driver.close()
+
+
+def test_hoymiles_profiles_cover_scalable_1920_and_4020_variants():
+    assert hoymiles_model_profile("HB-1920-AC-SV").label == "HiBattery 1920 AC"
+    assert hoymiles_capacity_kwh("HB-1920-AC-SV", 6000, 6000) == 11.52
+    assert hoymiles_model_profile("HB-4020-XM").key == "hibattery_4020_x"
+    assert hoymiles_model_profile("HB-4020-ACM").key == "hibattery_4020_ac"
+    assert HoymilesMqttDriver._device_power_caps(
+        {"min": -1000, "max": 800, "device": {"model": "HB-4020-X"}}
+    ) == (1000, 800)
+
+
+def test_detected_4020_profile_upgrades_only_legacy_ms_a2_defaults():
+    battery = {
+        "brand": "hoymiles",
+        "max_charge_power": 1000,
+        "max_discharge_power": 1000,
+        "battery_capacity_kwh": 2.24,
+    }
+    _hoymiles_apply_probe_caps(
+        battery,
+        {
+            "hoymiles_model": "hibattery_4020_x",
+            "hoymiles_model_label": "HiBattery 4020 X",
+            "device_max_charge_power": 2000,
+            "device_max_discharge_power": 2000,
+            "battery_capacity_kwh": 4.02,
+        },
+        upgrade_legacy_defaults=True,
+    )
+
+    assert battery["max_charge_power"] == 2000
+    assert battery["max_discharge_power"] == 2000
+    assert battery["battery_capacity_kwh"] == 4.02
+
+
+@pytest.mark.asyncio
 async def test_keepalive_retries_quickly_after_refresh_failure(monkeypatch):
     driver = HoymilesMqttDriver(SimpleNamespace(async_create_task=asyncio.create_task), "MSA-1")
     refresh = AsyncMock(side_effect=[False, True])
@@ -182,6 +266,31 @@ async def test_probe_accepts_quick_telemetry_and_cleans_up(mqtt_mock):
     ok, metadata = await probe
     assert ok and metadata == {}
     assert len(mqtt_mock.unsubscribed) == 2
+
+
+@pytest.mark.asyncio
+async def test_probe_preserves_manual_model_hint_without_discovery_config(mqtt_mock):
+    probe = asyncio.create_task(
+        HoymilesMqttDriver.probe(
+            SimpleNamespace(),
+            "HB-4020",
+            timeout=0.01,
+            model_hint="hibattery_4020_x",
+        )
+    )
+    await asyncio.sleep(0)
+    mqtt_mock.callbacks["homeassistant/sensor/HB-4020/quick/state"](
+        SimpleNamespace(payload='{"soc":50,"bat_p":-100}')
+    )
+
+    assert await probe == (
+        True,
+        {
+            "hoymiles_model": "hibattery_4020_x",
+            "hoymiles_model_label": "HiBattery 4020 X",
+            "battery_capacity_kwh": 4.02,
+        },
+    )
 
 
 @pytest.mark.asyncio
@@ -220,6 +329,69 @@ async def test_probe_corrects_standalone_asymmetric_discovery_envelope(mqtt_mock
 
 
 @pytest.mark.asyncio
+async def test_probe_reports_4020_x_model_capacity_and_power(mqtt_mock):
+    probe = asyncio.create_task(
+        HoymilesMqttDriver.probe(SimpleNamespace(), "HB-4020", timeout=0.2)
+    )
+    await asyncio.sleep(0)
+    mqtt_mock.callbacks["homeassistant/number/HB-4020/power_ctrl/config"](
+        SimpleNamespace(payload='''{
+            "min": -2000,
+            "max": 2000,
+            "device": {"model": "HB-4020-X"}
+        }''')
+    )
+    mqtt_mock.callbacks["homeassistant/sensor/HB-4020/quick/state"](
+        SimpleNamespace(payload='{"soc":50,"bat_p":-100}')
+    )
+
+    assert await probe == (
+        True,
+        {
+            "hoymiles_model": "hibattery_4020_x",
+            "hoymiles_model_label": "HiBattery 4020 X",
+            "device_max_charge_power": 2000,
+            "device_max_discharge_power": 2000,
+            "battery_capacity_kwh": 4.02,
+        },
+    )
+
+
+@pytest.mark.asyncio
+async def test_probe_model_hint_overrides_incorrect_discovery_model(mqtt_mock):
+    probe = asyncio.create_task(
+        HoymilesMqttDriver.probe(
+            SimpleNamespace(),
+            "HB-4020",
+            timeout=0.2,
+            model_hint="hibattery_4020_x",
+        )
+    )
+    await asyncio.sleep(0)
+    mqtt_mock.callbacks["homeassistant/number/HB-4020/power_ctrl/config"](
+        SimpleNamespace(payload='''{
+            "min": -2000,
+            "max": 2000,
+            "device": {"model": "MS-A2"}
+        }''')
+    )
+    mqtt_mock.callbacks["homeassistant/sensor/HB-4020/quick/state"](
+        SimpleNamespace(payload='{"soc":50,"bat_p":-100}')
+    )
+
+    assert await probe == (
+        True,
+        {
+            "hoymiles_model": "hibattery_4020_x",
+            "hoymiles_model_label": "HiBattery 4020 X",
+            "device_max_charge_power": 2000,
+            "device_max_discharge_power": 2000,
+            "battery_capacity_kwh": 4.02,
+        },
+    )
+
+
+@pytest.mark.asyncio
 async def test_config_flow_offers_hoymiles_and_software_capacity_defaults(monkeypatch):
     flow = MarstekVenusConfigFlow()
     flow.config_data = {"num_batteries": 1}
@@ -234,6 +406,9 @@ async def test_config_flow_offers_hoymiles_and_software_capacity_defaults(monkey
 
     routed = await flow.async_step_battery_brand({"brand": "hoymiles"})
     assert routed["step_id"] == "battery_connection_hoymiles"
+    assert "hoymiles_model" in {
+        marker.schema for marker in routed["data_schema"].schema
+    }
 
     probe = AsyncMock(return_value=(True, {"device_max_charge_power": 1800, "device_max_discharge_power": 1800}))
     monkeypatch.setattr(HoymilesMqttDriver, "probe", probe)
@@ -250,3 +425,42 @@ async def test_config_flow_offers_hoymiles_and_software_capacity_defaults(monkey
         "charge_hysteresis_percent": 2, "backup_offgrid_threshold": 50, "battery_capacity_kwh": 2.24,
     })
     assert flow.battery_configs[0]["battery_capacity_kwh"] == 2.24
+
+
+@pytest.mark.asyncio
+async def test_config_flow_seeds_4020_x_characteristics_from_discovery(monkeypatch):
+    flow = MarstekVenusConfigFlow()
+    flow.hass = SimpleNamespace()
+    flow.config_data = {"num_batteries": 1}
+    flow._current_battery_data = {"brand": "hoymiles"}
+    probe = AsyncMock(return_value=(True, {
+            "hoymiles_model": "hibattery_4020_x",
+            "hoymiles_model_label": "HiBattery 4020 X",
+            "device_max_charge_power": 2000,
+            "device_max_discharge_power": 2000,
+            "battery_capacity_kwh": 4.02,
+        }))
+    monkeypatch.setattr(HoymilesMqttDriver, "probe", probe)
+
+    form = await flow.async_step_battery_connection_hoymiles(
+        {
+            "name": "4020 X",
+            "device_id": "MSA-4020",
+            "hoymiles_model": "hibattery_4020_x",
+        }
+    )
+    defaults = {
+        marker.schema: marker.default()
+        for marker in form["data_schema"].schema
+        if callable(marker.default)
+    }
+
+    assert flow._current_battery_data["hoymiles_model"] == "hibattery_4020_x"
+    assert defaults["max_charge_power"] == 2000
+    assert defaults["max_discharge_power"] == 2000
+    assert defaults["battery_capacity_kwh"] == 4.02
+    probe.assert_awaited_once_with(
+        flow.hass,
+        "MSA-4020",
+        model_hint="hibattery_4020_x",
+    )

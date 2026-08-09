@@ -146,8 +146,8 @@
       "battery_connection_hoymiles": {
         "title": "Configure battery {battery_num} — Connection (Hoymiles)",
         "description": "Enable MQTT Service in S-Miles Home and point it to Home Assistant's configured MQTT broker before continuing.",
-        "data": {"name": "Name", "device_id": "MQTT device ID"},
-        "data_description": {"device_id": "MS-A2 MQTT device id, for example MSA-280024341346. Broker credentials are managed by Home Assistant."}
+        "data": {"name": "Name", "device_id": "MQTT device ID", "hoymiles_model": "Battery model"},
+        "data_description": {"device_id": "Hoymiles MQTT device ID, for example MSA-280024341346.", "hoymiles_model": "Use automatic discovery unless the device publishes an incorrect or generic model."}
       },
       "battery_connection_esphome": {
         "title": "Configure battery {battery_num} — Connection (LilyGo/ESPHome)",
@@ -600,8 +600,9 @@
       },
       "reconfigure_battery_hoymiles": {
         "title": "Reconfigure battery {battery_num} — Hoymiles MQTT",
-        "description": "Enter the MS-A2 MQTT device ID; Home Assistant manages the broker connection.",
-        "data": {"name": "Name", "device_id": "MQTT device ID"}
+        "description": "Enter the Hoymiles MQTT device ID; Home Assistant manages the broker and Omnibattery detects the model.",
+        "data": {"name": "Name", "device_id": "MQTT device ID", "hoymiles_model": "Battery model"},
+        "data_description": {"hoymiles_model": "Use automatic discovery unless the device publishes an incorrect or generic model."}
       },
       "reconfigure_battery_esphome": {
         "title": "Reconfigure battery {battery_num} — Connection (LilyGo/ESPHome)",
@@ -1216,6 +1217,15 @@
     }
   },
   "selector": {
+    "hoymiles_model": {
+      "options": {
+        "auto": "Auto-detect (recommended)",
+        "ms_a2": "MS-A2",
+        "hibattery_1920_ac": "HiBattery 1920 AC",
+        "hibattery_4020_x": "HiBattery 4020 X",
+        "hibattery_4020_ac": "HiBattery 4020 AC"
+      }
+    },
     "weekday": {
       "options": {
         "mon": "Monday",

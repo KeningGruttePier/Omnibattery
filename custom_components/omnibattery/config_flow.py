@@ -148,15 +148,38 @@ from .drivers.zendure import (
 )
 from .drivers.anker import AnkerModbusDriver
 from .drivers.sessy import SessyLocalDriver
-from .drivers.hoymiles import HoymilesMqttDriver
+from .drivers.hoymiles import (
+    DEFAULT_HOYMILES_MODEL,
+    HOYMILES_MODEL_PROFILES,
+    HoymilesMqttDriver,
+    hoymiles_capacity_kwh,
+    hoymiles_model_profile,
+)
 from .pricing.nordpool import is_official_nordpool_sensor
 
 _ANKER_MAX_POWER_W = 3500
 _SESSY_MAX_CHARGE_POWER_W = 2200
 _SESSY_MAX_DISCHARGE_POWER_W = 1700
 _SESSY_DEFAULT_MIN_SOC = 5
-_HOYMILES_MAX_POWER_W = 2000
-_HOYMILES_DEFAULT_POWER_W = 1000
+_HOYMILES_MODEL_AUTO = "auto"
+
+
+def _hoymiles_model_selector(default: str = _HOYMILES_MODEL_AUTO):
+    """Build the MQTT model selector, retaining automatic discovery by default."""
+    options = [_HOYMILES_MODEL_AUTO, *(profile.key for profile in HOYMILES_MODEL_PROFILES)]
+    return vol.Required("hoymiles_model", default=default), SelectSelector(
+        SelectSelectorConfig(
+            options=options,
+            translation_key="hoymiles_model",
+            mode=SelectSelectorMode.DROPDOWN,
+        )
+    )
+
+
+def _hoymiles_model_hint(user_input: dict[str, Any]) -> str | None:
+    """Return an explicit model override or None for retained-topic discovery."""
+    selected = user_input.get("hoymiles_model", _HOYMILES_MODEL_AUTO)
+    return None if selected == _HOYMILES_MODEL_AUTO else selected
 
 
 def _parse_optional_float(value: Any) -> float | None:
@@ -374,16 +397,77 @@ def _soc_selector_limits(brand: str) -> tuple[int, int, int, int, int, int]:
     return min_lo, min_hi, min_default, 80, 100, 100
 
 
-def _hoymiles_apply_probe_caps(battery_data: dict, caps: dict) -> None:
+def _hoymiles_apply_probe_caps(
+    battery_data: dict, caps: dict, *, upgrade_legacy_defaults: bool = False
+) -> None:
+    previous_model = battery_data.get("hoymiles_model")
+    detected_model = caps.get("hoymiles_model")
+    if detected_model:
+        battery_data["hoymiles_model"] = detected_model
+    if caps.get("hoymiles_model_label"):
+        battery_data["hoymiles_model_label"] = caps["hoymiles_model_label"]
     for source, target in (("device_max_charge_power", "device_max_charge_power"),
                            ("device_max_discharge_power", "device_max_discharge_power")):
         if isinstance(caps.get(source), (int, float)) and caps[source] > 0:
-            battery_data[target] = min(_HOYMILES_MAX_POWER_W, int(caps[source]))
+            battery_data[target] = int(caps[source])
+
+    capacity = caps.get("battery_capacity_kwh")
+    if (
+        (not isinstance(capacity, (int, float)) or capacity <= 0)
+        and (detected_model or previous_model)
+    ):
+        capacity = hoymiles_capacity_kwh(
+            detected_model or previous_model,
+            battery_data.get("device_max_charge_power"),
+            battery_data.get("device_max_discharge_power"),
+        )
+    if not isinstance(capacity, (int, float)) or capacity <= 0:
+        capacity = None
+
+    # Entries created by the original MS-A2-only flow have no model marker and
+    # persist its 1000 W / 2.24 kWh defaults. When reconfiguration identifies a
+    # different product, replace only those indistinguishable legacy defaults.
+    detected_profile = hoymiles_model_profile(detected_model)
+    if upgrade_legacy_defaults and previous_model is None and detected_profile:
+        for key, device_key, legacy_default, profile_default in (
+            ("max_charge_power", "device_max_charge_power", 1000, detected_profile.max_charge_power_w),
+            ("max_discharge_power", "device_max_discharge_power", 1000, detected_profile.max_discharge_power_w),
+        ):
+            if int(battery_data.get(key, legacy_default) or 0) == legacy_default:
+                battery_data[key] = int(
+                    battery_data.get(device_key) or profile_default
+                )
+        if float(battery_data.get("battery_capacity_kwh", 2.24) or 0) == 2.24:
+            battery_data["battery_capacity_kwh"] = capacity
+    elif "battery_capacity_kwh" not in battery_data and capacity:
+        battery_data["battery_capacity_kwh"] = capacity
 
 
 def _hoymiles_power_ceilings(battery_data: dict) -> tuple[int, int]:
-    return tuple(max(100, min(_HOYMILES_MAX_POWER_W, int(battery_data.get(key) or _HOYMILES_DEFAULT_POWER_W)))
-                 for key in ("device_max_charge_power", "device_max_discharge_power"))
+    profile = hoymiles_model_profile(
+        battery_data.get("hoymiles_model") or DEFAULT_HOYMILES_MODEL
+    )
+    default_charge = profile.max_charge_power_w if profile else 1000
+    default_discharge = profile.max_discharge_power_w if profile else 1000
+    maximum = profile.max_system_power_w if profile else 10000
+    return (
+        max(100, min(maximum, int(battery_data.get("device_max_charge_power") or default_charge))),
+        max(100, min(maximum, int(battery_data.get("device_max_discharge_power") or default_discharge))),
+    )
+
+
+def _hoymiles_capacity_default(battery_data: dict) -> float:
+    capacity = battery_data.get("battery_capacity_kwh")
+    if isinstance(capacity, (int, float)) and capacity > 0:
+        return round(float(capacity), 2)
+    model = battery_data.get("hoymiles_model")
+    if model:
+        return hoymiles_capacity_kwh(
+            model,
+            battery_data.get("device_max_charge_power"),
+            battery_data.get("device_max_discharge_power"),
+        ) or 2.24
+    return 2.24
 
 
 def _anker_apply_probe_caps(battery_data: dict, caps: dict) -> None:
@@ -1085,7 +1169,7 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
                                 {"value": "esphome", "label": "Marstek via LilyGo RS485 (ESPHome)"},
                                 {"value": "anker", "label": "Anker SOLIX Solarbank Max AC / 4 E5000 Pro"},
                                 {"value": "sessy", "label": "Sessy"},
-                                {"value": "hoymiles", "label": "Hoymiles MS-A2"},
+                                {"value": "hoymiles", "label": "Hoymiles MQTT"},
                             ],
                             mode=SelectSelectorMode.DROPDOWN,
                         )),
@@ -1272,11 +1356,15 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
         }), errors=errors, description_placeholders={"battery_num": str(self.battery_index + 1)})
 
     async def async_step_battery_connection_hoymiles(self, user_input: dict[str, Any] | None = None) -> FlowResult:
-        """Configure an MS-A2 through Home Assistant's configured MQTT broker."""
+        """Configure a Hoymiles battery through Home Assistant's MQTT broker."""
         errors = {}
         if user_input is not None:
             device_id = user_input["device_id"].strip()
-            ok, caps = await HoymilesMqttDriver.probe(self.hass, device_id)
+            ok, caps = await HoymilesMqttDriver.probe(
+                self.hass,
+                device_id,
+                model_hint=_hoymiles_model_hint(user_input),
+            )
             if not ok:
                 errors["base"] = "cannot_connect"
             else:
@@ -1284,9 +1372,11 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
                     CONF_PORT: 0, "device_id": device_id, "brand": "hoymiles"})
                 _hoymiles_apply_probe_caps(self._current_battery_data, caps)
                 return await self.async_step_battery_limits()
+        model_field, model_selector = _hoymiles_model_selector()
         return self.async_show_form(step_id="battery_connection_hoymiles", data_schema=vol.Schema({
-            vol.Required(CONF_NAME, default=f"Hoymiles MS-A2 {self.battery_index + 1}"): str,
+            vol.Required(CONF_NAME, default=f"Hoymiles {self.battery_index + 1}"): str,
             vol.Required("device_id"): str,
+            model_field: model_selector,
         }), errors=errors, description_placeholders={"battery_num": str(self.battery_index + 1)})
 
 
@@ -1395,7 +1485,11 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
                     else user_input.get(CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED, DEFAULT_FULL_CHARGE_VOLTAGE_TAPER_ENABLED)
                 )
                 if brand in ("zendure", "sessy", "hoymiles"):
-                    merged["battery_capacity_kwh"] = round(float(user_input.get("battery_capacity_kwh", 2.24 if brand == "hoymiles" else 0.0)), 2)
+                    capacity_default = (
+                        _hoymiles_capacity_default(self._current_battery_data)
+                        if brand == "hoymiles" else 0.0
+                    )
+                    merged["battery_capacity_kwh"] = round(float(user_input.get("battery_capacity_kwh", capacity_default)), 2)
                 self.battery_configs.append(merged)
                 self.battery_index += 1
 
@@ -1437,7 +1531,11 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
                 NumberSelectorConfig(min=0.01, max=100, step=0.01, unit_of_measurement="kWh", mode=NumberSelectorMode.BOX)
             )
         elif brand in ("zendure", "hoymiles"):
-            _schema[vol.Optional("battery_capacity_kwh", default=2.24 if brand == "hoymiles" else 0.0)] = NumberSelector(
+            capacity_default = (
+                _hoymiles_capacity_default(self._current_battery_data)
+                if brand == "hoymiles" else 0.0
+            )
+            _schema[vol.Optional("battery_capacity_kwh", default=capacity_default)] = NumberSelector(
                 NumberSelectorConfig(min=0.01 if brand == "hoymiles" else 0, max=100, step=0.01, unit_of_measurement="kWh", mode=NumberSelectorMode.BOX)
             )
         if self.config_data.get(CONF_THREE_PHASE_ENABLED):
@@ -2548,7 +2646,11 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
         errors = {}
         if user_input is not None:
             device_id = user_input["device_id"].strip()
-            ok, caps = await HoymilesMqttDriver.probe(self.hass, device_id)
+            ok, caps = await HoymilesMqttDriver.probe(
+                self.hass,
+                device_id,
+                model_hint=_hoymiles_model_hint(user_input),
+            )
             if not ok:
                 errors["base"] = "cannot_connect"
             else:
@@ -2558,15 +2660,21 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
                 updated = dict(current)
                 updated.update({CONF_NAME: user_input[CONF_NAME], CONF_HOST: device_id, CONF_PORT: 0,
                                 "device_id": device_id, "brand": "hoymiles"})
-                _hoymiles_apply_probe_caps(updated, caps)
+                _hoymiles_apply_probe_caps(
+                    updated, caps, upgrade_legacy_defaults=True
+                )
                 self._reconfigure_batteries.append(updated)
                 self.battery_index += 1
                 if self.battery_index >= len(entry.data.get("batteries", [])):
                     return self.async_update_reload_and_abort(entry, data_updates={"batteries": self._reconfigure_batteries})
                 return await self.async_step_reconfigure_battery()
+        model_field, model_selector = _hoymiles_model_selector(
+            current.get("hoymiles_model", _HOYMILES_MODEL_AUTO)
+        )
         return self.async_show_form(step_id="reconfigure_battery_hoymiles", data_schema=vol.Schema({
-            vol.Required(CONF_NAME, default=current.get(CONF_NAME, "Hoymiles MS-A2")): str,
+            vol.Required(CONF_NAME, default=current.get(CONF_NAME, "Hoymiles")): str,
             vol.Required("device_id", default=current.get("device_id", current.get(CONF_HOST, ""))): str,
+            model_field: model_selector,
         }), errors=errors, description_placeholders={"battery_num": str(self.battery_index + 1)})
 
     @staticmethod
@@ -2911,7 +3019,7 @@ class OptionsFlowHandler(OptionsFlow):
                                 {"value": "esphome", "label": "Marstek via LilyGo RS485 (ESPHome)"},
                                 {"value": "anker", "label": "Anker SOLIX Solarbank Max AC / 4 E5000 Pro"},
                                 {"value": "sessy", "label": "Sessy"},
-                                {"value": "hoymiles", "label": "Hoymiles MS-A2"},
+                                {"value": "hoymiles", "label": "Hoymiles MQTT"},
                             ],
                             mode=SelectSelectorMode.DROPDOWN,
                         )),
@@ -3177,23 +3285,35 @@ class OptionsFlowHandler(OptionsFlow):
 
 
     async def async_step_battery_connection_hoymiles(self, user_input: dict[str, Any] | None = None) -> FlowResult:
-        """Configure the MS-A2 MQTT device id in the options flow."""
+        """Configure a Hoymiles MQTT device id in the options flow."""
         errors = {}
         current_batteries = self.config_entry.data.get("batteries", [])
         current = current_batteries[self.battery_index] if self.battery_index < len(current_batteries) else {}
         if user_input is not None:
             device_id = user_input["device_id"].strip()
-            ok, caps = await HoymilesMqttDriver.probe(self.hass, device_id)
+            ok, caps = await HoymilesMqttDriver.probe(
+                self.hass,
+                device_id,
+                model_hint=_hoymiles_model_hint(user_input),
+            )
             if not ok:
                 errors["base"] = "cannot_connect"
             else:
                 self._current_battery_data.update({CONF_NAME: user_input[CONF_NAME], CONF_HOST: device_id,
                     CONF_PORT: 0, "device_id": device_id, "brand": "hoymiles"})
-                _hoymiles_apply_probe_caps(self._current_battery_data, caps)
+                _hoymiles_apply_probe_caps(
+                    self._current_battery_data,
+                    caps,
+                    upgrade_legacy_defaults=bool(current),
+                )
                 return await self.async_step_battery_limits()
+        model_field, model_selector = _hoymiles_model_selector(
+            current.get("hoymiles_model", _HOYMILES_MODEL_AUTO)
+        )
         return self.async_show_form(step_id="battery_connection_hoymiles", data_schema=vol.Schema({
-            vol.Required(CONF_NAME, default=current.get(CONF_NAME, f"Hoymiles MS-A2 {self.battery_index + 1}")): str,
+            vol.Required(CONF_NAME, default=current.get(CONF_NAME, f"Hoymiles {self.battery_index + 1}")): str,
             vol.Required("device_id", default=current.get("device_id", current.get(CONF_HOST, ""))): str,
+            model_field: model_selector,
         }), errors=errors, description_placeholders={"battery_num": str(self.battery_index + 1)})
 
     async def async_step_battery_connection_anker(self, user_input: dict[str, Any] | None = None) -> FlowResult:
@@ -3337,7 +3457,11 @@ class OptionsFlowHandler(OptionsFlow):
                     else user_input.get(CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED, DEFAULT_FULL_CHARGE_VOLTAGE_TAPER_ENABLED)
                 )
                 if brand in ("zendure", "sessy", "hoymiles"):
-                    merged["battery_capacity_kwh"] = round(float(user_input.get("battery_capacity_kwh", 2.24 if brand == "hoymiles" else 0.0)), 2)
+                    capacity_default = (
+                        _hoymiles_capacity_default(self._current_battery_data)
+                        if brand == "hoymiles" else 0.0
+                    )
+                    merged["battery_capacity_kwh"] = round(float(user_input.get("battery_capacity_kwh", capacity_default)), 2)
                 self.battery_configs.append(merged)
                 self.battery_index += 1
 
@@ -3348,7 +3472,8 @@ class OptionsFlowHandler(OptionsFlow):
                 return await self.async_step_battery_brand()
 
             if self.battery_index < len(current_batteries):
-                current_battery = current_batteries[self.battery_index]
+                current_battery = dict(current_batteries[self.battery_index])
+                current_battery.update(self._current_battery_data)
                 defaults = {
                     "max_charge_power": min(current_battery.get("max_charge_power", max_charge_power), max_charge_power),
                     "max_discharge_power": min(current_battery.get("max_discharge_power", max_discharge_power), max_discharge_power),
@@ -3363,7 +3488,11 @@ class OptionsFlowHandler(OptionsFlow):
                         CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED,
                         DEFAULT_FULL_CHARGE_VOLTAGE_TAPER_ENABLED,
                     ),
-                    "battery_capacity_kwh": current_battery.get("battery_capacity_kwh", 2.24 if brand == "hoymiles" else 0.0),
+                    "battery_capacity_kwh": current_battery.get(
+                        "battery_capacity_kwh",
+                        _hoymiles_capacity_default(self._current_battery_data)
+                        if brand == "hoymiles" else 0.0,
+                    ),
                     CONF_BATTERY_PHASE: normalize_battery_phase(
                         current_battery.get(CONF_BATTERY_PHASE, PHASE_UNASSIGNED)
                     ),
@@ -3389,7 +3518,10 @@ class OptionsFlowHandler(OptionsFlow):
                     "charge_hysteresis_percent": DEFAULT_CHARGE_HYSTERESIS_PERCENT,
                     "backup_offgrid_threshold": 50,
                     CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED: DEFAULT_FULL_CHARGE_VOLTAGE_TAPER_ENABLED,
-                    "battery_capacity_kwh": 2.24 if brand == "hoymiles" else 0.0,
+                    "battery_capacity_kwh": (
+                        _hoymiles_capacity_default(self._current_battery_data)
+                        if brand == "hoymiles" else 0.0
+                    ),
                     CONF_BATTERY_PHASE: PHASE_UNASSIGNED,
                 }
         except Exception as e:

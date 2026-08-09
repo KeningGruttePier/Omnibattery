@@ -2,6 +2,14 @@
 
 ## [1.3.0b6] - 2026-08-09
 
+### Added
+- **Hoymiles MQTT model profiles**: the driver now detects MS-A2, HiBattery
+  1920 AC, HiBattery 4020 X and HiBattery 4020 AC variants from MQTT discovery
+  and applies each model's capacity, scalability and charge/discharge envelope.
+  The former MS-A2-only defaults are upgraded when an existing Hoymiles
+  connection is reconfigured and discovery identifies another model. A manual
+  model override covers firmware that publishes an incorrect or generic model.
+
 ### Fixed
 - **Voltage taper could stop coupled Venus A/D packs at 3.60 V**: Venus A/D
   now keep the tapered charge at 200 W until the debounced BMS cutoff, so a

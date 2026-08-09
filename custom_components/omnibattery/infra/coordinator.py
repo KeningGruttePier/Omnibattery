@@ -117,6 +117,7 @@ class MarstekVenusDataUpdateCoordinator(DataUpdateCoordinator):
                  full_charge_voltage_taper_enabled: bool = DEFAULT_FULL_CHARGE_VOLTAGE_TAPER_ENABLED,
                  brand: str = "marstek",
                  zendure_model: str = ZENDURE_MODEL_2400AC_PRO,
+                 hoymiles_model: str | None = None,
                  serial_port: str | None = None,
                  esphome_device_id: str | None = None,
                  username: str = "",
@@ -288,6 +289,7 @@ class MarstekVenusDataUpdateCoordinator(DataUpdateCoordinator):
         elif self.brand == "hoymiles":
             self.driver = HoymilesMqttDriver(
                 hass, self.host,
+                model=hoymiles_model,
                 max_charge_power_w=self.configured_max_charge_power,
                 max_discharge_power_w=self.configured_max_discharge_power,
             )

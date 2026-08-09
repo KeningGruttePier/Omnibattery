@@ -122,8 +122,8 @@
       "battery_connection_hoymiles": {
         "title": "Configurer la batterie {battery_num} — Connexion (Hoymiles)",
         "description": "Activez MQTT Service dans S-Miles Home et utilisez le broker MQTT configuré dans Home Assistant.",
-        "data": {"name": "Nom", "device_id": "ID d'appareil MQTT"},
-        "data_description": {"device_id": "ID MQTT MS-A2, par exemple MSA-280024341346."}
+        "data": {"name": "Nom", "device_id": "ID d'appareil MQTT", "hoymiles_model": "Modèle de batterie"},
+        "data_description": {"device_id": "ID MQTT Hoymiles, par exemple MSA-280024341346.", "hoymiles_model": "Utilisez la détection automatique sauf si l'appareil publie un modèle incorrect ou générique."}
       },
       "battery_connection_esphome": {
         "title": "Configurer la batterie {battery_num} — Connexion (LilyGo/ESPHome)",
@@ -584,8 +584,9 @@
       },
       "reconfigure_battery_hoymiles": {
         "title": "Reconfigurer la batterie {battery_num} — MQTT Hoymiles",
-        "description": "Saisissez l'ID MQTT de la MS-A2 ; Home Assistant gère le broker.",
-        "data": {"name": "Nom", "device_id": "ID d'appareil MQTT"}
+        "description": "Saisissez l'ID MQTT Hoymiles ; Home Assistant gère le broker et Omnibattery détecte le modèle.",
+        "data": {"name": "Nom", "device_id": "ID d'appareil MQTT", "hoymiles_model": "Modèle de batterie"},
+        "data_description": {"hoymiles_model": "Utilisez la détection automatique sauf si l'appareil publie un modèle incorrect ou générique."}
       },
       "reconfigure_battery_esphome": {
         "title": "Reconfigurer la batterie {battery_num} — Connexion (LilyGo/ESPHome)",
@@ -1230,6 +1231,15 @@
     }
   },
   "selector": {
+    "hoymiles_model": {
+      "options": {
+        "auto": "Détection automatique (recommandé)",
+        "ms_a2": "MS-A2",
+        "hibattery_1920_ac": "HiBattery 1920 AC",
+        "hibattery_4020_x": "HiBattery 4020 X",
+        "hibattery_4020_ac": "HiBattery 4020 AC"
+      }
+    },
     "battery_phase": {
       "options": {"unassigned": "Non assignée", "l1": "L1", "l2": "L2", "l3": "L3"}
     },

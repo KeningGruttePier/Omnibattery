@@ -1,4 +1,4 @@
-"""MQTT driver for the Hoymiles MS-A2 home battery.
+"""MQTT driver for Hoymiles micro-storage batteries.
 
 The S-Miles Home MQTT service publishes Home Assistant discovery-style topics to
 the broker already configured in HA.  This driver deliberately uses HA's MQTT
@@ -10,6 +10,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
+from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
 from homeassistant.components import mqtt
@@ -19,9 +21,111 @@ from .base import BatteryDriver, DriverCapabilities, ReadGroup, SetpointResult, 
 
 _LOGGER = logging.getLogger(__name__)
 _DEFAULT_MAX_POWER_W = 1000
-_ABSOLUTE_MAX_POWER_W = 2000
+_UNKNOWN_MAX_POWER_W = 10000
 _KEEPALIVE_S = 30
 _KEEPALIVE_RETRY_S = 5
+
+
+@dataclass(frozen=True)
+class HoymilesModelProfile:
+    """Static characteristics for one MQTT-compatible Hoymiles product."""
+
+    key: str
+    label: str
+    aliases: tuple[str, ...]
+    capacity_kwh: float
+    max_charge_power_w: int
+    max_discharge_power_w: int
+    max_system_power_w: int
+    max_units: int = 1
+    capacity_scales_with_units: bool = False
+    correct_asymmetric_discovery: bool = False
+
+
+HOYMILES_MODEL_PROFILES: tuple[HoymilesModelProfile, ...] = (
+    HoymilesModelProfile(
+        "ms_a2",
+        "MS-A2",
+        ("ms-a2", "ms-a2-fx", "ms-a2-zz", "msa2"),
+        2.24,
+        1000,
+        1000,
+        2000,
+        max_units=2,
+        capacity_scales_with_units=True,
+        # Firmware 01.06.03 can advertise -1000..+2000 W for one 1 kW unit.
+        correct_asymmetric_discovery=True,
+    ),
+    HoymilesModelProfile(
+        "hibattery_1920_ac",
+        "HiBattery 1920 AC",
+        ("hb-1920-ac-sv", "hibattery-1920-ac", "hibattery-1920-ac-sv"),
+        1.92,
+        1000,
+        1000,
+        6000,
+        max_units=6,
+        capacity_scales_with_units=True,
+    ),
+    HoymilesModelProfile(
+        "hibattery_4020_x",
+        "HiBattery 4020 X",
+        ("hb-4020-x", "hb-4020-xm", "hibattery-4020-x"),
+        4.02,
+        2000,
+        2000,
+        2000,
+    ),
+    HoymilesModelProfile(
+        "hibattery_4020_ac",
+        "HiBattery 4020 AC",
+        ("hb-4020-ac", "hb-4020-acm", "hibattery-4020-ac"),
+        4.02,
+        2000,
+        2000,
+        2000,
+    ),
+)
+DEFAULT_HOYMILES_MODEL = "ms_a2"
+
+
+def _normalise_model_name(value: Any) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", str(value or "").lower()).strip("-")
+
+
+def hoymiles_model_profile(model: Any) -> HoymilesModelProfile | None:
+    """Resolve a stored key or discovery model name to a known profile."""
+    normalised = _normalise_model_name(model)
+    if not normalised:
+        return None
+    for profile in HOYMILES_MODEL_PROFILES:
+        if normalised == _normalise_model_name(profile.key):
+            return profile
+        if any(
+            normalised == _normalise_model_name(alias)
+            or _normalise_model_name(alias) in normalised
+            for alias in profile.aliases
+        ):
+            return profile
+    return None
+
+
+def hoymiles_capacity_kwh(
+    model: Any,
+    charge_power_w: int | None = None,
+    discharge_power_w: int | None = None,
+) -> float:
+    """Return nominal system capacity inferred from model and MQTT envelope."""
+    profile = hoymiles_model_profile(model)
+    if profile is None:
+        return 0.0
+    units = 1
+    if profile.capacity_scales_with_units:
+        advertised = max(int(charge_power_w or 0), int(discharge_power_w or 0))
+        if advertised > 0:
+            per_unit = max(profile.max_charge_power_w, profile.max_discharge_power_w)
+            units = min(profile.max_units, max(1, (advertised + per_unit - 1) // per_unit))
+    return round(profile.capacity_kwh * units, 2)
 
 SENSOR_DEFINITIONS: list[dict] = [
     {"key": "battery_soc", "name": "Battery SOC", "unit": "%", "device_class": "battery", "state_class": "measurement", "scale": 1, "precision": 0, "scan_interval": "high", "enabled_by_default": True},
@@ -32,26 +136,38 @@ SENSOR_DEFINITIONS: list[dict] = [
     {"key": "wifi_signal_strength", "name": "WiFi Signal Strength", "unit": "dBm", "device_class": "signal_strength", "state_class": "measurement", "scale": 1, "precision": 0, "scan_interval": "low", "enabled_by_default": True},
     {"key": "inverter_state", "name": "Inverter State", "unit": None, "device_class": None, "state_class": None, "scale": 1, "precision": 0, "icon": "mdi:state-machine", "scan_interval": "high", "enabled_by_default": True, "states": {1: "Standby", 2: "Charge", 3: "Discharge"}},
     {"key": "pack_count", "name": "Pack Count", "unit": None, "device_class": None, "state_class": "measurement", "scale": 1, "precision": 0, "icon": "mdi:battery", "scan_interval": "low", "enabled_by_default": True},
+    {"key": "max_charge_power", "name": "Maximum Charge Power", "unit": "W", "device_class": "power", "state_class": "measurement", "scale": 1, "precision": 0, "scan_interval": "low", "enabled_by_default": False},
+    {"key": "max_discharge_power", "name": "Maximum Discharge Power", "unit": "W", "device_class": "power", "state_class": "measurement", "scale": 1, "precision": 0, "scan_interval": "low", "enabled_by_default": False},
     {"key": "total_daily_charging_energy", "name": "Total Daily Charging Energy", "unit": "kWh", "device_class": "energy", "state_class": "total_increasing", "scale": 0.001, "precision": 3, "scan_interval": "low", "enabled_by_default": True},
     {"key": "total_daily_discharging_energy", "name": "Total Daily Discharging Energy", "unit": "kWh", "device_class": "energy", "state_class": "total_increasing", "scale": 0.001, "precision": 3, "scan_interval": "low", "enabled_by_default": True},
 ]
 
 
 class HoymilesMqttDriver(BatteryDriver):
-    """Push telemetry and external-power control for one MS-A2 master."""
+    """Push telemetry and external-power control for one Hoymiles system."""
 
-    def __init__(self, hass: HomeAssistant, device_id: str, *, max_charge_power_w: int = _DEFAULT_MAX_POWER_W,
-                 max_discharge_power_w: int = _DEFAULT_MAX_POWER_W) -> None:
+    def __init__(self, hass: HomeAssistant, device_id: str, *, model: str | None = None,
+                 max_charge_power_w: int | None = None,
+                 max_discharge_power_w: int | None = None) -> None:
         self.hass = hass
         self.device_id = device_id
-        self._configured_max_charge_w = min(_ABSOLUTE_MAX_POWER_W, max(0, int(max_charge_power_w or _DEFAULT_MAX_POWER_W)))
-        self._configured_max_discharge_w = min(_ABSOLUTE_MAX_POWER_W, max(0, int(max_discharge_power_w or _DEFAULT_MAX_POWER_W)))
+        self._model_is_configured = model is not None
+        self._model_raw = model or "MS-A2"
+        self._profile = hoymiles_model_profile(self._model_raw)
+        profile_charge = self._profile.max_charge_power_w if self._profile else _DEFAULT_MAX_POWER_W
+        profile_discharge = self._profile.max_discharge_power_w if self._profile else _DEFAULT_MAX_POWER_W
+        profile_max = self._profile.max_system_power_w if self._profile else _UNKNOWN_MAX_POWER_W
+        self._uses_profile_charge_default = max_charge_power_w is None
+        self._uses_profile_discharge_default = max_discharge_power_w is None
+        self._configured_max_charge_w = min(
+            profile_max, max(0, int(max_charge_power_w or profile_charge))
+        )
+        self._configured_max_discharge_w = min(
+            profile_max, max(0, int(max_discharge_power_w or profile_discharge))
+        )
         self._max_charge_w = self._configured_max_charge_w
         self._max_discharge_w = self._configured_max_discharge_w
-        self._capabilities = DriverCapabilities(False, False, True, self._max_charge_w, self._max_discharge_w,
-            False, False, False, has_energy_counters=True, has_daily_energy_counters=True,
-            has_nominal_capacity=False, setpoint_confirm_reliable=False,
-            actuator_latency_s=1.8, readback_latency_s=4.0)
+        self._capabilities = self._build_capabilities()
         self._cache: dict[str, Any] = {}
         self._connected = False
         self._shutting_down = False
@@ -64,7 +180,8 @@ class HoymilesMqttDriver(BatteryDriver):
     @property
     def capabilities(self): return self._capabilities
     @property
-    def model_label(self): return "MS-A2"
+    def model_label(self):
+        return self._profile.label if self._profile else (self._model_raw or None)
     @property
     def serial(self): return self.device_id
     @property
@@ -201,48 +318,113 @@ class HoymilesMqttDriver(BatteryDriver):
     def _handle_power_config(self, message) -> None:
         data = self._payload(message)
         if not data: return
-        device_charge_w, device_discharge_w = self._device_power_caps(data)
+        discovered_model = self._model_from_payload(data)
+        if discovered_model and not self._model_is_configured:
+            self._set_model(discovered_model)
+        device_charge_w, device_discharge_w = self._device_power_caps(
+            data,
+            self._model_raw,
+            prefer_model=self._model_is_configured,
+        )
         if device_charge_w is None and device_discharge_w is None: return
-        # The discovery ``max`` overstates a standalone MS-A2 (2000 W advertised,
-        # 1000 W delivered). Keep the user's configured ceilings authoritative
-        # and only shrink them using the symmetric, device-derived envelope.
+        profile_max = self._profile.max_system_power_w if self._profile else _UNKNOWN_MAX_POWER_W
+        if self._uses_profile_charge_default and device_charge_w is not None:
+            self._configured_max_charge_w = device_charge_w
+        if self._uses_profile_discharge_default and device_discharge_w is not None:
+            self._configured_max_discharge_w = device_discharge_w
         self._max_charge_w = min(
             self._configured_max_charge_w,
-            device_charge_w if device_charge_w is not None else _ABSOLUTE_MAX_POWER_W,
+            device_charge_w if device_charge_w is not None else profile_max,
         )
         self._max_discharge_w = min(
             self._configured_max_discharge_w,
-            device_discharge_w if device_discharge_w is not None else _DEFAULT_MAX_POWER_W,
+            device_discharge_w if device_discharge_w is not None else profile_max,
         )
-        self._capabilities = DriverCapabilities(False, False, True, self._max_charge_w, self._max_discharge_w,
-            False, False, False, has_energy_counters=True, has_daily_energy_counters=True,
-            has_nominal_capacity=False, setpoint_confirm_reliable=False,
-            actuator_latency_s=1.8, readback_latency_s=4.0)
+        self._capabilities = self._build_capabilities()
+        if device_charge_w is not None:
+            self._cache["max_charge_power"] = device_charge_w
+        if device_discharge_w is not None:
+            self._cache["max_discharge_power"] = device_discharge_w
+        capacity = hoymiles_capacity_kwh(
+            self._model_raw, device_charge_w, device_discharge_w
+        )
+        if capacity:
+            self._cache["battery_total_energy"] = capacity
         if self._last_net_power_w is not None:
             self._last_net_power_w = self._clamp(self._last_net_power_w)
             self._cache["commanded_net_power"] = self._last_net_power_w
 
     @classmethod
-    def _device_power_caps(cls, data: dict) -> tuple[int | None, int | None]:
-        """Return safe symmetric caps from the signed MQTT discovery envelope."""
+    def _device_power_caps(
+        cls,
+        data: dict,
+        model: Any = None,
+        *,
+        prefer_model: bool = False,
+    ) -> tuple[int | None, int | None]:
+        """Return safe caps from the model-specific signed discovery envelope."""
+        payload_model = cls._model_from_payload(data)
+        effective_model = model if prefer_model else payload_model or model
+        profile = hoymiles_model_profile(effective_model or DEFAULT_HOYMILES_MODEL)
+        absolute_max = profile.max_system_power_w if profile else _UNKNOWN_MAX_POWER_W
         minimum, maximum = cls._number(data, "min"), cls._number(data, "max")
         charge_w = (
-            min(_ABSOLUTE_MAX_POWER_W, max(0, int(-minimum)))
+            min(absolute_max, max(0, int(-minimum)))
             if minimum is not None and minimum < 0
             else None
         )
         advertised_discharge_w = (
-            min(_ABSOLUTE_MAX_POWER_W, max(0, int(maximum)))
+            min(absolute_max, max(0, int(maximum)))
             if maximum is not None and maximum > 0
             else None
         )
         if advertised_discharge_w is None:
             return charge_w, None
-        # MS-A2 charge and discharge hardware are symmetric. The charge-side
-        # magnitude distinguishes a 1 kW standalone unit from a 2 kW pair, while
-        # firmware 01.06.03 incorrectly advertises 2 kW discharge for one unit.
-        symmetric_ceiling_w = charge_w if charge_w is not None else _DEFAULT_MAX_POWER_W
-        return charge_w, min(advertised_discharge_w, symmetric_ceiling_w)
+        if profile and profile.correct_asymmetric_discovery:
+            # MS-A2 charge and discharge hardware are symmetric. The charge-side
+            # magnitude distinguishes a 1 kW unit from a 2 kW pair, while one
+            # firmware incorrectly advertises 2 kW discharge for a single unit.
+            symmetric_ceiling_w = charge_w or profile.max_discharge_power_w
+            advertised_discharge_w = min(advertised_discharge_w, symmetric_ceiling_w)
+        return charge_w, advertised_discharge_w
+
+    @classmethod
+    def _model_from_payload(cls, data: dict) -> str | None:
+        device = data.get("device")
+        if isinstance(device, dict) and isinstance(device.get("model"), str):
+            return device["model"].strip() or None
+        model = data.get("model")
+        return model.strip() if isinstance(model, str) and model.strip() else None
+
+    def _set_model(self, model: str) -> None:
+        profile = hoymiles_model_profile(model)
+        self._model_raw = model
+        self._profile = profile
+        if profile:
+            if self._uses_profile_charge_default:
+                self._configured_max_charge_w = profile.max_charge_power_w
+            else:
+                self._configured_max_charge_w = min(
+                    self._configured_max_charge_w, profile.max_system_power_w
+                )
+            if self._uses_profile_discharge_default:
+                self._configured_max_discharge_w = profile.max_discharge_power_w
+            else:
+                self._configured_max_discharge_w = min(
+                    self._configured_max_discharge_w, profile.max_system_power_w
+                )
+
+    def _build_capabilities(self) -> DriverCapabilities:
+        # ``has_mppt_pv`` remains false even for 4020 X: its MQTT battery-power
+        # value is already the cell-side value, unlike the Marstek DC-bus value
+        # for which Omnibattery's MPPT correction capability was designed.
+        return DriverCapabilities(
+            False, False, True, self._max_charge_w, self._max_discharge_w,
+            False, False, False, has_energy_counters=True,
+            has_daily_energy_counters=True, has_nominal_capacity=False,
+            setpoint_confirm_reliable=False, actuator_latency_s=1.8,
+            readback_latency_s=4.0,
+        )
 
     def _merge_battery(self, data: dict) -> None:
         soc = self._number(data, "sys_soc")
@@ -335,10 +517,29 @@ class HoymilesMqttDriver(BatteryDriver):
         return int(value) if isinstance(value, (int, float)) else None
 
     @classmethod
-    async def probe(cls, hass: HomeAssistant, device_id: str, timeout: float = 5.0) -> tuple[bool, dict]:
+    async def probe(
+        cls,
+        hass: HomeAssistant,
+        device_id: str,
+        timeout: float = 5.0,
+        *,
+        model_hint: str | None = None,
+    ) -> tuple[bool, dict]:
         """Wait briefly for retained/live quick telemetry and clean up always."""
         event = asyncio.Event()
+        config_event = asyncio.Event()
         metadata: dict[str, Any] = {}
+        hinted_profile = hoymiles_model_profile(model_hint)
+        if model_hint:
+            metadata["hoymiles_model"] = (
+                hinted_profile.key if hinted_profile else model_hint
+            )
+            metadata["hoymiles_model_label"] = (
+                hinted_profile.label if hinted_profile else model_hint
+            )
+            capacity = hoymiles_capacity_kwh(model_hint)
+            if capacity:
+                metadata["battery_capacity_kwh"] = capacity
         valid = False
 
         @callback
@@ -350,15 +551,38 @@ class HoymilesMqttDriver(BatteryDriver):
 
         @callback
         def config(message) -> None:
-            charge_w, discharge_w = cls._device_power_caps(cls._payload(message) or {})
+            data = cls._payload(message) or {}
+            discovered_model = cls._model_from_payload(data)
+            model = model_hint or discovered_model
+            profile = hoymiles_model_profile(model or DEFAULT_HOYMILES_MODEL)
+            charge_w, discharge_w = cls._device_power_caps(
+                data,
+                model,
+                prefer_model=model_hint is not None,
+            )
+            if model:
+                metadata["hoymiles_model"] = profile.key if profile else model
+                metadata["hoymiles_model_label"] = profile.label if profile else model
             if charge_w is not None: metadata["device_max_charge_power"] = charge_w
             if discharge_w is not None: metadata["device_max_discharge_power"] = discharge_w
+            if model:
+                capacity = hoymiles_capacity_kwh(
+                    profile.key if profile else model, charge_w, discharge_w
+                )
+                if capacity:
+                    metadata["battery_capacity_kwh"] = capacity
+            config_event.set()
 
         unsubs = []
         try:
             unsubs.append(await mqtt.async_subscribe(hass, f"homeassistant/sensor/{device_id}/quick/state", quick, qos=1))
             unsubs.append(await mqtt.async_subscribe(hass, f"homeassistant/number/{device_id}/power_ctrl/config", config, qos=1))
             await asyncio.wait_for(event.wait(), timeout)
+            if not config_event.is_set():
+                try:
+                    await asyncio.wait_for(config_event.wait(), min(timeout, 0.25))
+                except asyncio.TimeoutError:
+                    pass
             return valid, metadata
         except Exception:
             return False, metadata

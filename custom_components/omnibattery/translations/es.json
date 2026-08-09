@@ -122,8 +122,8 @@
       "battery_connection_hoymiles": {
         "title": "Configurar batería {battery_num} — Conexión (Hoymiles)",
         "description": "Activa MQTT Service en S-Miles Home y apúntalo al broker MQTT configurado en Home Assistant antes de continuar.",
-        "data": {"name": "Nombre", "device_id": "ID de dispositivo MQTT"},
-        "data_description": {"device_id": "ID MQTT de la MS-A2, por ejemplo MSA-280024341346. Home Assistant gestiona las credenciales."}
+        "data": {"name": "Nombre", "device_id": "ID de dispositivo MQTT", "hoymiles_model": "Modelo de batería"},
+        "data_description": {"device_id": "ID MQTT de Hoymiles, por ejemplo MSA-280024341346.", "hoymiles_model": "Usa la detección automática salvo que el dispositivo publique un modelo incorrecto o genérico."}
       },
       "battery_connection_esphome": {
         "title": "Configurar batería {battery_num} — Conexión (LilyGo/ESPHome)",
@@ -584,8 +584,9 @@
       },
       "reconfigure_battery_hoymiles": {
         "title": "Reconfigurar batería {battery_num} — MQTT Hoymiles",
-        "description": "Introduce el ID MQTT de la MS-A2; Home Assistant gestiona el broker.",
-        "data": {"name": "Nombre", "device_id": "ID de dispositivo MQTT"}
+        "description": "Introduce el ID MQTT de Hoymiles; Home Assistant gestiona el broker y Omnibattery detecta el modelo.",
+        "data": {"name": "Nombre", "device_id": "ID de dispositivo MQTT", "hoymiles_model": "Modelo de batería"},
+        "data_description": {"hoymiles_model": "Usa la detección automática salvo que el dispositivo publique un modelo incorrecto o genérico."}
       },
       "reconfigure_battery_esphome": {
         "title": "Reconfigurar batería {battery_num} — Conexión (LilyGo/ESPHome)",
@@ -1230,6 +1231,15 @@
     }
   },
   "selector": {
+    "hoymiles_model": {
+      "options": {
+        "auto": "Detección automática (recomendado)",
+        "ms_a2": "MS-A2",
+        "hibattery_1920_ac": "HiBattery 1920 AC",
+        "hibattery_4020_x": "HiBattery 4020 X",
+        "hibattery_4020_ac": "HiBattery 4020 AC"
+      }
+    },
     "battery_phase": {
       "options": {"unassigned": "Sin asignar", "l1": "L1", "l2": "L2", "l3": "L3"}
     },

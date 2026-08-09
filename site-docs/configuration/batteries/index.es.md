@@ -14,7 +14,7 @@ parte de los controles en tiempo de ejecución son comunes.
 | **Zendure** | API HTTP local | [Zendure](zendure.md) |
 | **Anker SOLIX** | Modbus TCP | [Anker SOLIX](anker.md) |
 | **Sessy** | API HTTP local mediante el dongle de Sessy | [Sessy](sessy.md) |
-| **Hoymiles MS-A2** | MQTT mediante Home Assistant | [Hoymiles MS-A2](hoymiles.md) |
+| **Hoymiles MS-A2 / HiBattery** | MQTT mediante Home Assistant | [Hoymiles MQTT](hoymiles.md) |
 
 ![Selector de marca de batería](../../assets/screenshots/configuration/battery-brand-form.png){ width="650"  style="display: block; margin: 0 auto;"}
 

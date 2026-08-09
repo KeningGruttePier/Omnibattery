@@ -122,8 +122,8 @@
       "battery_connection_hoymiles": {
         "title": "Batterij {battery_num} configureren — Verbinding (Hoymiles)",
         "description": "Schakel MQTT Service in S-Miles Home in en gebruik de MQTT-broker die in Home Assistant is ingesteld.",
-        "data": {"name": "Naam", "device_id": "MQTT-apparaat-ID"},
-        "data_description": {"device_id": "MS-A2 MQTT-ID, bijvoorbeeld MSA-280024341346."}
+        "data": {"name": "Naam", "device_id": "MQTT-apparaat-ID", "hoymiles_model": "Batterijmodel"},
+        "data_description": {"device_id": "Hoymiles MQTT-ID, bijvoorbeeld MSA-280024341346.", "hoymiles_model": "Gebruik automatische detectie tenzij het apparaat een onjuist of generiek model publiceert."}
       },
       "battery_connection_esphome": {
         "title": "Batterij {battery_num} configureren — Verbinding (LilyGo/ESPHome)",
@@ -584,8 +584,9 @@
       },
       "reconfigure_battery_hoymiles": {
         "title": "Batterij {battery_num} opnieuw configureren — Hoymiles MQTT",
-        "description": "Voer de MQTT-apparaat-ID van de MS-A2 in; Home Assistant beheert de broker.",
-        "data": {"name": "Naam", "device_id": "MQTT-apparaat-ID"}
+        "description": "Voer de Hoymiles MQTT-apparaat-ID in; Home Assistant beheert de broker en Omnibattery detecteert het model.",
+        "data": {"name": "Naam", "device_id": "MQTT-apparaat-ID", "hoymiles_model": "Batterijmodel"},
+        "data_description": {"hoymiles_model": "Gebruik automatische detectie tenzij het apparaat een onjuist of generiek model publiceert."}
       },
       "reconfigure_battery_esphome": {
         "title": "Batterij {battery_num} opnieuw configureren — Verbinding (LilyGo/ESPHome)",
@@ -1230,6 +1231,15 @@
     }
   },
   "selector": {
+    "hoymiles_model": {
+      "options": {
+        "auto": "Automatisch detecteren (aanbevolen)",
+        "ms_a2": "MS-A2",
+        "hibattery_1920_ac": "HiBattery 1920 AC",
+        "hibattery_4020_x": "HiBattery 4020 X",
+        "hibattery_4020_ac": "HiBattery 4020 AC"
+      }
+    },
     "battery_phase": {
       "options": {"unassigned": "Niet toegewezen", "l1": "L1", "l2": "L2", "l3": "L3"}
     },
