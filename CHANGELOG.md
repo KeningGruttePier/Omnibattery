@@ -9,6 +9,10 @@
   The former MS-A2-only defaults are upgraded when an existing Hoymiles
   connection is reconfigured and discovery identifies another model. A manual
   model override covers firmware that publishes an incorrect or generic model.
+  HiBattery 4020 profiles also account for their HB-4020-S expansion ranges:
+  4020 X systems allow up to 6500 W charge and 2500 W discharge, while current
+  4020 AC systems allow up to 2500 W in either direction; the device-published
+  MQTT envelope remains the final authority.
 
 ### Fixed
 - **Voltage taper could stop coupled Venus A/D packs at 3.60 V**: Venus A/D

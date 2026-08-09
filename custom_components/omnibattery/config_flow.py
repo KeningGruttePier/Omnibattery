@@ -449,10 +449,11 @@ def _hoymiles_power_ceilings(battery_data: dict) -> tuple[int, int]:
     )
     default_charge = profile.max_charge_power_w if profile else 1000
     default_discharge = profile.max_discharge_power_w if profile else 1000
-    maximum = profile.max_system_power_w if profile else 10000
+    charge_maximum = profile.max_system_charge_power_w if profile else 10000
+    discharge_maximum = profile.max_system_discharge_power_w if profile else 10000
     return (
-        max(100, min(maximum, int(battery_data.get("device_max_charge_power") or default_charge))),
-        max(100, min(maximum, int(battery_data.get("device_max_discharge_power") or default_discharge))),
+        max(100, min(charge_maximum, int(battery_data.get("device_max_charge_power") or default_charge))),
+        max(100, min(discharge_maximum, int(battery_data.get("device_max_discharge_power") or default_discharge))),
     )
 
 

@@ -36,9 +36,11 @@ class HoymilesModelProfile:
     capacity_kwh: float
     max_charge_power_w: int
     max_discharge_power_w: int
-    max_system_power_w: int
+    max_system_charge_power_w: int
+    max_system_discharge_power_w: int
     max_units: int = 1
     capacity_scales_with_units: bool = False
+    infer_units_from_power: bool = True
     correct_asymmetric_discovery: bool = False
 
 
@@ -50,6 +52,7 @@ HOYMILES_MODEL_PROFILES: tuple[HoymilesModelProfile, ...] = (
         2.24,
         1000,
         1000,
+        2000,
         2000,
         max_units=2,
         capacity_scales_with_units=True,
@@ -64,6 +67,7 @@ HOYMILES_MODEL_PROFILES: tuple[HoymilesModelProfile, ...] = (
         1000,
         1000,
         6000,
+        6000,
         max_units=6,
         capacity_scales_with_units=True,
     ),
@@ -74,7 +78,11 @@ HOYMILES_MODEL_PROFILES: tuple[HoymilesModelProfile, ...] = (
         4.02,
         2000,
         2000,
-        2000,
+        6500,
+        2500,
+        max_units=4,
+        capacity_scales_with_units=True,
+        infer_units_from_power=False,
     ),
     HoymilesModelProfile(
         "hibattery_4020_ac",
@@ -83,7 +91,11 @@ HOYMILES_MODEL_PROFILES: tuple[HoymilesModelProfile, ...] = (
         4.02,
         2000,
         2000,
-        2000,
+        2500,
+        2500,
+        max_units=4,
+        capacity_scales_with_units=True,
+        infer_units_from_power=False,
     ),
 )
 DEFAULT_HOYMILES_MODEL = "ms_a2"
@@ -114,17 +126,28 @@ def hoymiles_capacity_kwh(
     model: Any,
     charge_power_w: int | None = None,
     discharge_power_w: int | None = None,
+    pack_count: int | None = None,
 ) -> float:
-    """Return nominal system capacity inferred from model and MQTT envelope."""
+    """Return nominal system capacity inferred from model, packs or envelope."""
     profile = hoymiles_model_profile(model)
     if profile is None:
         return 0.0
     units = 1
     if profile.capacity_scales_with_units:
-        advertised = max(int(charge_power_w or 0), int(discharge_power_w or 0))
-        if advertised > 0:
+        normalised_model = _normalise_model_name(model)
+        expansion_suffix = re.search(r"(?:x|xm|ac|acm)-([1-3])$", normalised_model)
+        if isinstance(pack_count, int) and not isinstance(pack_count, bool) and pack_count > 0:
+            units = min(profile.max_units, pack_count)
+        elif expansion_suffix:
+            units = min(profile.max_units, int(expansion_suffix.group(1)) + 1)
+        elif profile.infer_units_from_power:
+            advertised = max(int(charge_power_w or 0), int(discharge_power_w or 0))
             per_unit = max(profile.max_charge_power_w, profile.max_discharge_power_w)
-            units = min(profile.max_units, max(1, (advertised + per_unit - 1) // per_unit))
+            if advertised > 0:
+                units = min(
+                    profile.max_units,
+                    max(1, (advertised + per_unit - 1) // per_unit),
+                )
     return round(profile.capacity_kwh * units, 2)
 
 SENSOR_DEFINITIONS: list[dict] = [
@@ -156,14 +179,15 @@ class HoymilesMqttDriver(BatteryDriver):
         self._profile = hoymiles_model_profile(self._model_raw)
         profile_charge = self._profile.max_charge_power_w if self._profile else _DEFAULT_MAX_POWER_W
         profile_discharge = self._profile.max_discharge_power_w if self._profile else _DEFAULT_MAX_POWER_W
-        profile_max = self._profile.max_system_power_w if self._profile else _UNKNOWN_MAX_POWER_W
+        profile_charge_max = self._profile.max_system_charge_power_w if self._profile else _UNKNOWN_MAX_POWER_W
+        profile_discharge_max = self._profile.max_system_discharge_power_w if self._profile else _UNKNOWN_MAX_POWER_W
         self._uses_profile_charge_default = max_charge_power_w is None
         self._uses_profile_discharge_default = max_discharge_power_w is None
         self._configured_max_charge_w = min(
-            profile_max, max(0, int(max_charge_power_w or profile_charge))
+            profile_charge_max, max(0, int(max_charge_power_w or profile_charge))
         )
         self._configured_max_discharge_w = min(
-            profile_max, max(0, int(max_discharge_power_w or profile_discharge))
+            profile_discharge_max, max(0, int(max_discharge_power_w or profile_discharge))
         )
         self._max_charge_w = self._configured_max_charge_w
         self._max_discharge_w = self._configured_max_discharge_w
@@ -303,6 +327,14 @@ class HoymilesMqttDriver(BatteryDriver):
                                ("pack_num", "pack_count")):
             value = self._number(data, source)
             if value is not None: self._cache[target] = value
+        pack_count = self._number(data, "pack_num")
+        if pack_count is not None:
+            capacity = hoymiles_capacity_kwh(
+                self._model_raw,
+                pack_count=int(pack_count),
+            )
+            if capacity:
+                self._cache["battery_total_energy"] = capacity
 
     @callback
     def _handle_system(self, message) -> None:
@@ -327,18 +359,19 @@ class HoymilesMqttDriver(BatteryDriver):
             prefer_model=self._model_is_configured,
         )
         if device_charge_w is None and device_discharge_w is None: return
-        profile_max = self._profile.max_system_power_w if self._profile else _UNKNOWN_MAX_POWER_W
+        profile_charge_max = self._profile.max_system_charge_power_w if self._profile else _UNKNOWN_MAX_POWER_W
+        profile_discharge_max = self._profile.max_system_discharge_power_w if self._profile else _UNKNOWN_MAX_POWER_W
         if self._uses_profile_charge_default and device_charge_w is not None:
             self._configured_max_charge_w = device_charge_w
         if self._uses_profile_discharge_default and device_discharge_w is not None:
             self._configured_max_discharge_w = device_discharge_w
         self._max_charge_w = min(
             self._configured_max_charge_w,
-            device_charge_w if device_charge_w is not None else profile_max,
+            device_charge_w if device_charge_w is not None else profile_charge_max,
         )
         self._max_discharge_w = min(
             self._configured_max_discharge_w,
-            device_discharge_w if device_discharge_w is not None else profile_max,
+            device_discharge_w if device_discharge_w is not None else profile_discharge_max,
         )
         self._capabilities = self._build_capabilities()
         if device_charge_w is not None:
@@ -366,15 +399,16 @@ class HoymilesMqttDriver(BatteryDriver):
         payload_model = cls._model_from_payload(data)
         effective_model = model if prefer_model else payload_model or model
         profile = hoymiles_model_profile(effective_model or DEFAULT_HOYMILES_MODEL)
-        absolute_max = profile.max_system_power_w if profile else _UNKNOWN_MAX_POWER_W
+        charge_max = profile.max_system_charge_power_w if profile else _UNKNOWN_MAX_POWER_W
+        discharge_max = profile.max_system_discharge_power_w if profile else _UNKNOWN_MAX_POWER_W
         minimum, maximum = cls._number(data, "min"), cls._number(data, "max")
         charge_w = (
-            min(absolute_max, max(0, int(-minimum)))
+            min(charge_max, max(0, int(-minimum)))
             if minimum is not None and minimum < 0
             else None
         )
         advertised_discharge_w = (
-            min(absolute_max, max(0, int(maximum)))
+            min(discharge_max, max(0, int(maximum)))
             if maximum is not None and maximum > 0
             else None
         )
@@ -405,13 +439,15 @@ class HoymilesMqttDriver(BatteryDriver):
                 self._configured_max_charge_w = profile.max_charge_power_w
             else:
                 self._configured_max_charge_w = min(
-                    self._configured_max_charge_w, profile.max_system_power_w
+                    self._configured_max_charge_w,
+                    profile.max_system_charge_power_w,
                 )
             if self._uses_profile_discharge_default:
                 self._configured_max_discharge_w = profile.max_discharge_power_w
             else:
                 self._configured_max_discharge_w = min(
-                    self._configured_max_discharge_w, profile.max_system_power_w
+                    self._configured_max_discharge_w,
+                    profile.max_system_discharge_power_w,
                 )
 
     def _build_capabilities(self) -> DriverCapabilities:

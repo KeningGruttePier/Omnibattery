@@ -196,6 +196,10 @@ async def test_configured_4020_x_overrides_incorrect_ms_a2_discovery_model(mqtt_
     assert driver.capabilities.max_charge_power_w == 2000
     assert driver.capabilities.max_discharge_power_w == 2000
     assert (await driver.read_telemetry())["battery_total_energy"] == 4.02
+    mqtt_mock.callbacks[driver._device_topic](
+        SimpleNamespace(payload='{"pack_num":4}')
+    )
+    assert (await driver.read_telemetry())["battery_total_energy"] == 16.08
     await driver.close()
 
 
@@ -204,9 +208,18 @@ def test_hoymiles_profiles_cover_scalable_1920_and_4020_variants():
     assert hoymiles_capacity_kwh("HB-1920-AC-SV", 6000, 6000) == 11.52
     assert hoymiles_model_profile("HB-4020-XM").key == "hibattery_4020_x"
     assert hoymiles_model_profile("HB-4020-ACM").key == "hibattery_4020_ac"
+    assert hoymiles_capacity_kwh("HB-4020-X-1") == 8.04
+    assert hoymiles_capacity_kwh("HB-4020-XM-3") == 16.08
+    assert hoymiles_capacity_kwh("HB-4020-AC", pack_count=3) == 12.06
     assert HoymilesMqttDriver._device_power_caps(
         {"min": -1000, "max": 800, "device": {"model": "HB-4020-X"}}
     ) == (1000, 800)
+    assert HoymilesMqttDriver._device_power_caps(
+        {"min": -7000, "max": 3000, "device": {"model": "HB-4020-X-3"}}
+    ) == (6500, 2500)
+    assert HoymilesMqttDriver._device_power_caps(
+        {"min": -7000, "max": 3000, "device": {"model": "HB-4020-AC-3"}}
+    ) == (2500, 2500)
 
 
 def test_detected_4020_profile_upgrades_only_legacy_ms_a2_defaults():
