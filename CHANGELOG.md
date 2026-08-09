@@ -3,24 +3,11 @@
 ## [1.3.0b6] - 2026-08-09
 
 ### Added
-- **Hoymiles MQTT model profiles**: the driver now detects MS-A2, HiBattery
-  1920 AC, HiBattery 4020 X and HiBattery 4020 AC variants from MQTT discovery
-  and applies each model's capacity, scalability and charge/discharge envelope.
-  The former MS-A2-only defaults are upgraded when an existing Hoymiles
-  connection is reconfigured and discovery identifies another model. A manual
-  model override covers firmware that publishes an incorrect or generic model.
-  HiBattery 4020 profiles also account for their HB-4020-S expansion ranges:
-  4020 X systems allow up to 6500 W charge and 2500 W discharge, while current
-  4020 AC systems allow up to 2500 W in either direction; the device-published
-  MQTT envelope remains the final authority.
+- **Hoymiles MQTT model profiles**: the driver now detects MS-A2, HiBattery 1920 AC, HiBattery 4020 X and HiBattery 4020 AC variants from MQTT discovery and applies each model's capacity, scalability and charge/discharge envelope. The former MS-A2-only defaults are upgraded when an existing Hoymiles connection is reconfigured and discovery identifies another model. A manual model override covers firmware that publishes an incorrect or generic model. HiBattery 4020 profiles also account for their HB-4020-S expansion ranges: 4020 X systems allow up to 6500 W charge and 2500 W discharge, while current 4020 AC systems allow up to 2500 W in either direction; the device-published MQTT envelope remains the final authority.
+- **LilyGo RS485 ESPHome diagnostics**: maps the firmware's diagnostic telemetry and 24 individual warning sensors into Omnibattery, including versions, network status, MOS/cell temperatures, cell-voltage delta and ESP WiFi data. Matching now accounts for ESPHome text sensors being exposed by Home Assistant under the `sensor` domain.
 
 ### Fixed
-- **Voltage taper could stop coupled Venus A/D packs at 3.60 V**: Venus A/D
-  now keep the tapered charge at 200 W until the debounced BMS cutoff, so a
-  full first pack cannot leave the remaining coupled packs undercharged. After
-  the cutoff, the integration waits 60 seconds without charging and records a
-  one-shot cell-delta measurement with phase `top_charge_bms_cutoff`, including
-  weekly full-charge runs. Venus E top-voltage behavior remains unchanged.
+- **Voltage taper could stop coupled Venus A/D packs at 3.60 V**: Venus A/D now keep the tapered charge at 200 W until the debounced BMS cutoff, so a full first pack cannot leave the remaining coupled packs undercharged. After the cutoff, the integration waits 60 seconds without charging and records a one-shot cell-delta measurement with phase `top_charge_bms_cutoff`, including weekly full-charge runs. Venus E top-voltage behavior remains unchanged.
 - **PD target grid power now scales with the configured battery fleet**: the target slider follows the sum of the per-battery charge/discharge limits, applies optional system caps independently in each direction, updates without a reload, and expands the related blueprint selectors, help text and documentation for multi-battery installations. Coordinators now also expose separate physical, configured and effective limits, keeping every brand and control path aligned through `effective_max_* = min(device_max_*, configured_max_*)`. Thanks to @waelha for the original PR (#252).
 
 ## [1.3.0b5] - 2026-08-08

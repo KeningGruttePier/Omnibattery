@@ -1517,6 +1517,18 @@
       "internal_temperature": {
         "name": "Internal Temperature"
       },
+      "internal_mos1_temperature": {
+        "name": "Internal MOS1 Temperature"
+      },
+      "internal_mos2_temperature": {
+        "name": "Internal MOS2 Temperature"
+      },
+      "max_cell_temperature": {
+        "name": "Max Cell Temperature"
+      },
+      "min_cell_temperature": {
+        "name": "Min Cell Temperature"
+      },
       "ac_power": {
         "name": "AC Power"
       },
@@ -1549,6 +1561,9 @@
       },
       "min_cell_voltage": {
         "name": "Min Cell Voltage"
+      },
+      "cell_voltage_delta": {
+        "name": "Cell Voltage Delta"
       },
       "fault_status": {
         "name": "Fault Status"
@@ -1619,6 +1634,9 @@
       "software_version": {
         "name": "Software Version"
       },
+      "battery_runtime_estimate": {
+        "name": "Battery Runtime Estimate"
+      },
       "bms_version": {
         "name": "BMS Version"
       },
@@ -1631,11 +1649,29 @@
       "comm_module_firmware": {
         "name": "Comm Module Firmware"
       },
+      "esp_ip": {
+        "name": "ESPHome IP"
+      },
+      "esp_ssid": {
+        "name": "ESPHome SSID"
+      },
+      "esp_version": {
+        "name": "ESP Version"
+      },
       "mac_address": {
         "name": "MAC Address"
       },
       "wifi_signal_strength": {
         "name": "WiFi Signal Strength"
+      },
+      "esp_wifi_signal_strength": {
+        "name": "ESP WiFi Signal Strength"
+      },
+      "bt_status": {
+        "name": "BT Status"
+      },
+      "power_restriction": {
+        "name": "Power Restriction"
       },
       "battery_cycle_count": {
         "name": "Battery Cycle Count"
@@ -1719,6 +1755,81 @@
       },
       "cloud_status": {
         "name": "Cloud Status"
+      },
+      "esp_wifi_status": {
+        "name": "ESP WiFi Status"
+      },
+      "pll_abnormal_restart": {
+        "name": "PLL Abnormal Restart"
+      },
+      "overtemperature_limit": {
+        "name": "Overtemperature Limit"
+      },
+      "low_temperature_limit": {
+        "name": "Low Temperature Limit"
+      },
+      "fan_abnormal_warning": {
+        "name": "Fan Abnormal Warning"
+      },
+      "low_battery_soc_warning": {
+        "name": "Low Battery SOC Warning"
+      },
+      "output_overcurrent_warning": {
+        "name": "Output Overcurrent Warning"
+      },
+      "abnormal_line_sequence_detection": {
+        "name": "Abnormal Line Sequence Detection"
+      },
+      "wifi_abnormal": {
+        "name": "WiFi Abnormal"
+      },
+      "ble_abnormal": {
+        "name": "BLE Abnormal"
+      },
+      "network_abnormal": {
+        "name": "Network Abnormal"
+      },
+      "ct_connection_abnormal": {
+        "name": "CT Connection Abnormal"
+      },
+      "grid_overvoltage": {
+        "name": "Grid Overvoltage"
+      },
+      "grid_undervoltage": {
+        "name": "Grid Undervoltage"
+      },
+      "grid_overfrequency": {
+        "name": "Grid Overfrequency"
+      },
+      "grid_underfrequency": {
+        "name": "Grid Underfrequency"
+      },
+      "grid_peak_voltage_abnormal": {
+        "name": "Grid Peak Voltage Abnormal"
+      },
+      "current_dcover": {
+        "name": "Current Dcover"
+      },
+      "voltage_dcover": {
+        "name": "Voltage Dcover"
+      },
+      "bat_overvoltage": {
+        "name": "BAT Overvoltage"
+      },
+      "bat_undervoltage": {
+        "name": "BAT Undervoltage"
+      },
+      "bat_overcurrent": {
+        "name": "BAT Overcurrent"
+      },
+      "bat_low_soc": {
+        "name": "BAT Low SOC"
+      },
+      "bat_communication_failure": {
+        "name": "BAT Communication Failure"
+      },
+      "bms_protect": {
+        "name": "BMS Protect"
       },
       "balancing_mode": {
         "name": "Balancing Mode"

@@ -1520,6 +1520,18 @@
       "internal_temperature": {
         "name": "Interne Temperatuur"
       },
+      "internal_mos1_temperature": {
+        "name": "Interne MOS1-temperatuur"
+      },
+      "internal_mos2_temperature": {
+        "name": "Interne MOS2-temperatuur"
+      },
+      "max_cell_temperature": {
+        "name": "Maximale Celtemperatuur"
+      },
+      "min_cell_temperature": {
+        "name": "Minimale Celtemperatuur"
+      },
       "ac_power": {
         "name": "AC-Vermogen"
       },
@@ -1552,6 +1564,9 @@
       },
       "min_cell_voltage": {
         "name": "Minimale Celspanning"
+      },
+      "cell_voltage_delta": {
+        "name": "Celspanningsverschil"
       },
       "fault_status": {
         "name": "Foutstatus"
@@ -1622,6 +1637,9 @@
       "software_version": {
         "name": "Softwareversie"
       },
+      "battery_runtime_estimate": {
+        "name": "Geschatte Batterijduur"
+      },
       "bms_version": {
         "name": "BMS-versie"
       },
@@ -1637,8 +1655,26 @@
       "mac_address": {
         "name": "MAC-adres"
       },
+      "esp_ip": {
+        "name": "ESPHome-IP"
+      },
+      "esp_ssid": {
+        "name": "ESPHome-SSID"
+      },
+      "esp_version": {
+        "name": "ESP-versie"
+      },
       "wifi_signal_strength": {
         "name": "WiFi-signaalsterkte"
+      },
+      "esp_wifi_signal_strength": {
+        "name": "ESP-WiFi-signaalsterkte"
+      },
+      "bt_status": {
+        "name": "BT-status"
+      },
+      "power_restriction": {
+        "name": "Vermogensbeperking"
       },
       "battery_cycle_count": {
         "name": "Batterijcycli"
@@ -1722,6 +1758,81 @@
       },
       "cloud_status": {
         "name": "Cloudstatus"
+      },
+      "esp_wifi_status": {
+        "name": "ESP-WiFi-status"
+      },
+      "pll_abnormal_restart": {
+        "name": "Abnormale PLL-herstart"
+      },
+      "overtemperature_limit": {
+        "name": "Overtemperatuurlimiet"
+      },
+      "low_temperature_limit": {
+        "name": "Lagetemperatuurlimiet"
+      },
+      "fan_abnormal_warning": {
+        "name": "Waarschuwing: abnormale ventilator"
+      },
+      "low_battery_soc_warning": {
+        "name": "Waarschuwing: lage batterij-SOC"
+      },
+      "output_overcurrent_warning": {
+        "name": "Waarschuwing: uitgangsoverstroom"
+      },
+      "abnormal_line_sequence_detection": {
+        "name": "Detectie abnormale lijnvolgorde"
+      },
+      "wifi_abnormal": {
+        "name": "Abnormale WiFi"
+      },
+      "ble_abnormal": {
+        "name": "Abnormale BLE"
+      },
+      "network_abnormal": {
+        "name": "Abnormaal netwerk"
+      },
+      "ct_connection_abnormal": {
+        "name": "Abnormale CT-verbinding"
+      },
+      "grid_overvoltage": {
+        "name": "Netoverspanning"
+      },
+      "grid_undervoltage": {
+        "name": "Netonderspanning"
+      },
+      "grid_overfrequency": {
+        "name": "Net-overfrequentie"
+      },
+      "grid_underfrequency": {
+        "name": "Net-onderfrequentie"
+      },
+      "grid_peak_voltage_abnormal": {
+        "name": "Abnormale netpiekspanning"
+      },
+      "current_dcover": {
+        "name": "Stroom-Dcover"
+      },
+      "voltage_dcover": {
+        "name": "Spannings-Dcover"
+      },
+      "bat_overvoltage": {
+        "name": "Batterijoverspanning"
+      },
+      "bat_undervoltage": {
+        "name": "Batterijonderspanning"
+      },
+      "bat_overcurrent": {
+        "name": "Batterij-overstroom"
+      },
+      "bat_low_soc": {
+        "name": "Lage batterij-SOC"
+      },
+      "bat_communication_failure": {
+        "name": "Communicatiefout batterij"
+      },
+      "bms_protect": {
+        "name": "BMS-bescherming"
       },
       "balancing_mode": {
         "name": "Balanceermodus"

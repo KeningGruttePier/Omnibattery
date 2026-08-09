@@ -45,6 +45,36 @@ _FORCE_NONE = 0
 _FORCE_CHARGE = 1
 _FORCE_DISCHARGE = 2
 
+# Diagnostic binary sensors published by the LilyGo firmware.  Keep the
+# upstream names here: entity matching is intentionally based on the ESPHome
+# ``name:`` field rather than the generated entity_id.
+_ESPHOME_WARNING_DEFINITIONS: tuple[tuple[str, str, str], ...] = (
+    ("pll_abnormal_restart", "PLL Abnormal Restart", "mdi:flash-triangle"),
+    ("overtemperature_limit", "Overtemperature Limit", "mdi:thermometer-alert"),
+    ("low_temperature_limit", "Low Temperature Limit", "mdi:thermometer-alert"),
+    ("fan_abnormal_warning", "Fan Abnormal Warning", "mdi:fan-alert"),
+    ("low_battery_soc_warning", "Low Battery SOC Warning", "mdi:battery-off-outline"),
+    ("output_overcurrent_warning", "Output Overcurrent Warning", "mdi:flash-triangle"),
+    ("abnormal_line_sequence_detection", "Abnormal Line Sequence Detection", "mdi:flash-triangle"),
+    ("wifi_abnormal", "Wifi Abnormal", "mdi:wifi-alert"),
+    ("ble_abnormal", "BLE abnormal", "mdi:bluetooth-off"),
+    ("network_abnormal", "Network abnormal", "mdi:network-off"),
+    ("ct_connection_abnormal", "CT connection abnormal", "mdi:robot-vacuum-alert"),
+    ("grid_overvoltage", "Grid overvoltage", "mdi:flash-triangle"),
+    ("grid_undervoltage", "Grid undervoltage", "mdi:flash-triangle-outline"),
+    ("grid_overfrequency", "Grid overfrequency", "mdi:flash-triangle"),
+    ("grid_underfrequency", "Grid underfrequency", "mdi:flash-triangle"),
+    ("grid_peak_voltage_abnormal", "Grid peak voltage abnormal", "mdi:alert-plus"),
+    ("current_dcover", "Current Dcover", "mdi:flash-triangle"),
+    ("voltage_dcover", "Voltage Dcover", "mdi:flash-triangle"),
+    ("bat_overvoltage", "BAT overvoltage", "mdi:flash-triangle"),
+    ("bat_undervoltage", "BAT undervoltage", "mdi:flash-triangle-outline"),
+    ("bat_overcurrent", "BAT overcurrent", "mdi:wave-undercurrent"),
+    ("bat_low_soc", "BAT low SOC", "mdi:battery-off-outline"),
+    ("bat_communication_failure", "BAT communication failure", "mdi:flash-triangle"),
+    ("bms_protect", "BMS protect", "mdi:flash-triangle"),
+)
+
 # Logical key → (HA domain, upstream ESPHome entity name). The name is the
 # ``name:`` field of the upstream YAML; matching is on its slug so punctuation
 # ("Max. Cell Voltage") is irrelevant.
@@ -64,6 +94,26 @@ _ENTITY_MAP: dict[str, tuple[str, str]] = {
     "total_discharging_energy":       ("sensor", "Total Discharging Energy"),
     "total_daily_charging_energy":    ("sensor", "Daily Charging Energy"),
     "total_daily_discharging_energy": ("sensor", "Daily Discharging Energy"),
+    # diagnostics / auxiliary telemetry
+    # ESPHome text_sensor entities are exposed by HA's sensor platform.
+    "software_version":               ("sensor", "Software Version"),
+    "ems_version":                    ("sensor", "Firmware Version"),
+    "bms_version":                    ("sensor", "BMS Version"),
+    "battery_runtime_estimate":       ("sensor", "Battery Runtime Estimate"),
+    "esp_ip":                          ("sensor", "ESPHome IP"),
+    "esp_ssid":                        ("sensor", "ESPHome SSID"),
+    "esp_version":                     ("sensor", "ESP Version"),
+    "wifi_status":                     ("sensor", "Battery Wifi Status"),
+    "bt_status":                       ("sensor", "BT Status"),
+    "cloud_status":                    ("sensor", "Cloud Status"),
+    "power_restriction":               ("sensor", "Power restriction"),
+    "internal_mos1_temperature":       ("sensor", "Internal MOS1 Temperature"),
+    "internal_mos2_temperature":       ("sensor", "Internal MOS2 Temperature"),
+    "max_cell_temperature":            ("sensor", "Max. Cell Temperature"),
+    "min_cell_temperature":            ("sensor", "Min. Cell Temperature"),
+    "cell_voltage_delta":              ("sensor", "Cell Voltage Delta"),
+    "esp_wifi_signal_strength":        ("sensor", "ESP WiFi Signal Strength"),
+    "esp_wifi_status":                 ("binary_sensor", "ESP WiFi Status"),
     # controls
     "force_mode":                     ("select", "Forcible Charge-Discharge"),
     "user_work_mode":                 ("select", "User Work Mode"),
@@ -75,6 +125,10 @@ _ENTITY_MAP: dict[str, tuple[str, str]] = {
     "max_discharge_power":            ("number", "Max. Discharge Power"),
     "charging_cutoff_capacity":       ("number", "Charging Cutoff Capacity"),
     "discharging_cutoff_capacity":    ("number", "Discharging Cutoff Capacity"),
+    **{
+        key: ("binary_sensor", name)
+        for key, name, _icon in _ESPHOME_WARNING_DEFINITIONS
+    },
 }
 
 # Wire value → ESPHome select option, per select key. Wire values match the
@@ -114,6 +168,16 @@ _INVERTER_STATE_TO_CODE: dict[str, int] = {
     "ac bypass": 6,
 }
 
+_TEXT_KEYS = frozenset({
+    "software_version", "ems_version", "bms_version", "battery_runtime_estimate",
+    "esp_ip", "esp_ssid", "esp_version", "bt_status", "power_restriction",
+})
+_BINARY_TEXT_KEYS = frozenset({"wifi_status", "cloud_status"})
+_BINARY_STATE_KEYS = frozenset(
+    {"esp_wifi_status"}
+    | {key for key, _name, _icon in _ESPHOME_WARNING_DEFINITIONS}
+)
+
 # Without these the driver cannot run the control loop; connect() refuses the
 # device so the config flow can tell the user which entities are missing.
 _REQUIRED_KEYS: frozenset[str] = frozenset({
@@ -142,7 +206,8 @@ SENSOR_DEFINITIONS: list[dict] = [
      "scale": 1, "precision": 1, "scan_interval": "high", "enabled_by_default": True},
     {"name": "Internal Temperature", "key": "internal_temperature", "unit": "°C",
      "device_class": "temperature", "state_class": "measurement",
-     "scale": 1, "precision": 2, "scan_interval": "medium", "enabled_by_default": True},
+     "category": "diagnostic", "scale": 1, "precision": 1,
+     "scan_interval": "medium", "enabled_by_default": True},
     {"name": "AC Power", "key": "ac_power", "unit": "W",
      "device_class": "power", "state_class": "measurement",
      "scale": 1, "precision": 0, "scan_interval": "high", "enabled_by_default": True},
@@ -163,20 +228,69 @@ SENSOR_DEFINITIONS: list[dict] = [
      "scan_interval": "high", "enabled_by_default": True,
      "states": {
          0: "Sleep", 1: "Standby", 2: "Charge", 3: "Discharge",
-         4: "Backup Mode", 5: "OTA Upgrade", 6: "Bypass",
+         4: "Fault", 5: "Idle", 6: "AC Bypass",
      }},
     {"name": "Battery Voltage", "key": "battery_voltage", "unit": "V",
      "device_class": "voltage", "state_class": "measurement",
      "scale": 1, "precision": 1, "scan_interval": "medium", "enabled_by_default": True},
     {"name": "Max Cell Voltage", "key": "max_cell_voltage", "unit": "V",
      "device_class": "voltage", "state_class": "measurement",
-     "scale": 1, "precision": 3, "scan_interval": "high", "enabled_by_default": True},
+     "category": "diagnostic", "scale": 1, "precision": 2,
+     "scan_interval": "high", "enabled_by_default": True},
     {"name": "Min Cell Voltage", "key": "min_cell_voltage", "unit": "V",
      "device_class": "voltage", "state_class": "measurement",
-     "scale": 1, "precision": 3, "scan_interval": "high", "enabled_by_default": True},
+     "category": "diagnostic", "scale": 1, "precision": 2,
+     "scan_interval": "high", "enabled_by_default": True},
     {"name": "WiFi Signal Strength", "key": "wifi_signal_strength", "unit": "dBm",
      "device_class": "signal_strength", "state_class": "measurement",
      "category": "diagnostic", "scale": 1, "precision": 0,
+     "scan_interval": "low", "enabled_by_default": True},
+    {"name": "Software Version", "key": "software_version",
+     "icon": "mdi:factory", "category": "diagnostic",
+     "scan_interval": "low", "enabled_by_default": True},
+    {"name": "Firmware Version", "key": "ems_version",
+     "icon": "mdi:factory", "category": "diagnostic",
+     "scan_interval": "low", "enabled_by_default": True},
+    {"name": "BMS Version", "key": "bms_version",
+     "icon": "mdi:factory", "category": "diagnostic",
+     "scan_interval": "low", "enabled_by_default": True},
+    {"name": "Battery Runtime Estimate", "key": "battery_runtime_estimate",
+     "icon": "mdi:clock-outline", "scan_interval": "medium",
+     "enabled_by_default": True},
+    {"name": "ESPHome IP", "key": "esp_ip", "icon": "mdi:ip",
+     "category": "diagnostic", "scan_interval": "low", "enabled_by_default": True},
+    {"name": "ESPHome SSID", "key": "esp_ssid", "icon": "mdi:wifi",
+     "category": "diagnostic", "scan_interval": "low", "enabled_by_default": True},
+    {"name": "ESP Version", "key": "esp_version", "icon": "mdi:new-box",
+     "category": "diagnostic", "scan_interval": "low", "enabled_by_default": True},
+    {"name": "Internal MOS1 Temperature", "key": "internal_mos1_temperature",
+     "unit": "°C", "device_class": "temperature", "state_class": "measurement",
+     "category": "diagnostic", "scale": 1, "precision": 1,
+     "scan_interval": "low", "enabled_by_default": True},
+    {"name": "Internal MOS2 Temperature", "key": "internal_mos2_temperature",
+     "unit": "°C", "device_class": "temperature", "state_class": "measurement",
+     "category": "diagnostic", "scale": 1, "precision": 1,
+     "scan_interval": "low", "enabled_by_default": True},
+    {"name": "Max Cell Temperature", "key": "max_cell_temperature",
+     "unit": "°C", "device_class": "temperature", "state_class": "measurement",
+     "category": "diagnostic", "scale": 1, "precision": 1,
+     "scan_interval": "low", "enabled_by_default": True},
+    {"name": "Min Cell Temperature", "key": "min_cell_temperature",
+     "unit": "°C", "device_class": "temperature", "state_class": "measurement",
+     "category": "diagnostic", "scale": 1, "precision": 1,
+     "scan_interval": "low", "enabled_by_default": True},
+    {"name": "Cell Voltage Delta", "key": "cell_voltage_delta", "unit": "V",
+     "device_class": "voltage", "state_class": "measurement",
+     "category": "diagnostic", "scale": 1, "precision": 3,
+     "scan_interval": "low", "enabled_by_default": True},
+    {"name": "ESP WiFi Signal Strength", "key": "esp_wifi_signal_strength",
+     "unit": "dBm", "device_class": "signal_strength", "state_class": "measurement",
+     "category": "diagnostic", "scale": 1, "precision": 0,
+     "scan_interval": "low", "enabled_by_default": True},
+    {"name": "BT Status", "key": "bt_status", "icon": "mdi:bluetooth",
+     "category": "diagnostic", "scan_interval": "low", "enabled_by_default": True},
+    {"name": "Power Restriction", "key": "power_restriction",
+     "icon": "mdi:power-plug-off-outline", "category": "diagnostic",
      "scan_interval": "low", "enabled_by_default": True},
 ]
 
@@ -196,6 +310,24 @@ SWITCH_DEFINITIONS: list[dict] = [
     {"name": "RS485 Control Mode", "key": "rs485_control_mode",
      "command_on": 21930, "command_off": 21947,
      "enabled_by_default": True, "scan_interval": "medium"},
+]
+
+BINARY_SENSOR_DEFINITIONS: list[dict] = [
+    {"name": "WiFi Status", "key": "wifi_status",
+     "device_class": "connectivity", "icon": "mdi:check-network-outline",
+     "category": "diagnostic", "enabled_by_default": True, "scan_interval": "low"},
+    {"name": "Cloud Status", "key": "cloud_status",
+     "device_class": "connectivity", "icon": "mdi:cloud-outline",
+     "category": "diagnostic", "enabled_by_default": False, "scan_interval": "low"},
+    {"name": "ESP WiFi Status", "key": "esp_wifi_status",
+     "device_class": "connectivity", "icon": "mdi:wifi-alert",
+     "category": "diagnostic", "enabled_by_default": True, "scan_interval": "low"},
+    *[
+        {"name": name, "key": key, "device_class": "problem", "icon": icon,
+         "category": "diagnostic", "enabled_by_default": True,
+         "scan_interval": "low"}
+        for key, name, icon in _ESPHOME_WARNING_DEFINITIONS
+    ],
 ]
 
 NUMBER_DEFINITIONS: list[dict] = [
@@ -251,7 +383,9 @@ class EsphomeEntityDriver(BatteryDriver):
             max_charge_power_w=max_charge_power_w,
             max_discharge_power_w=max_discharge_power_w,
             has_mppt_pv=False,            # Venus E is AC-coupled
-            has_alarm_registers=False,    # firmware decodes alarms into its own binary sensors
+            # The firmware exposes individual warning entities, not the
+            # aggregate alarm/fault bitmasks expected by SystemAlarmSensor.
+            has_alarm_registers=False,
             has_rs485_control=True,
             has_energy_counters=True,
             has_daily_energy_counters=True,
@@ -269,9 +403,10 @@ class EsphomeEntityDriver(BatteryDriver):
             "number":        NUMBER_DEFINITIONS,
             "select":        SELECT_DEFINITIONS,
             "switch":        SWITCH_DEFINITIONS,
-            "binary_sensor": [],
+            "binary_sensor": BINARY_SENSOR_DEFINITIONS,
             "button":        [],
-            "all": SENSOR_DEFINITIONS + NUMBER_DEFINITIONS + SELECT_DEFINITIONS + SWITCH_DEFINITIONS,
+            "all": SENSOR_DEFINITIONS + NUMBER_DEFINITIONS + SELECT_DEFINITIONS
+                    + SWITCH_DEFINITIONS + BINARY_SENSOR_DEFINITIONS,
         }
 
         # Single read group: telemetry is a set of hass.states lookups, so
@@ -455,6 +590,7 @@ class EsphomeEntityDriver(BatteryDriver):
     @staticmethod
     def _decode(key: str, raw: str):
         """Decode one HA state string into the logical wire value."""
+        raw = str(raw).strip()
         option_map = _SELECT_OPTION_TO_WIRE.get(key)
         if option_map is not None:
             if raw in option_map:
@@ -465,7 +601,16 @@ class EsphomeEntityDriver(BatteryDriver):
                         return option_map[canonical]
             return None
         if key == "inverter_state":
-            return _INVERTER_STATE_TO_CODE.get(raw.strip().lower())
+            return _INVERTER_STATE_TO_CODE.get(raw.lower())
+        if key in _TEXT_KEYS:
+            return raw
+        if key in _BINARY_TEXT_KEYS or key in _BINARY_STATE_KEYS:
+            normalized = raw.lower()
+            if normalized in {"on", "true", "1", "active", "connected", "enabled"}:
+                return True
+            if normalized in {"off", "false", "0", "inactive", "disconnected", "disabled"}:
+                return False
+            return None
         try:
             value = float(raw)
         except (TypeError, ValueError):

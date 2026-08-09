@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from custom_components.omnibattery.drivers.esphome import (
+    BINARY_SENSOR_DEFINITIONS,
     EsphomeEntityDriver,
     NUMBER_DEFINITIONS,
     SELECT_DEFINITIONS,
@@ -50,6 +51,24 @@ _ENTITIES = {
     "ac_power":                    "sensor.marstek_ac_power",
     "battery_voltage":             "sensor.marstek_battery_voltage",
     "internal_temperature":        "sensor.marstek_internal_temperature",
+    "software_version":            "sensor.marstek_software_version",
+    "ems_version":                 "sensor.marstek_firmware_version",
+    "bms_version":                 "sensor.marstek_bms_version",
+    "battery_runtime_estimate":    "sensor.marstek_battery_runtime_estimate",
+    "esp_ip":                       "sensor.marstek_esphome_ip",
+    "esp_ssid":                     "sensor.marstek_esphome_ssid",
+    "esp_version":                  "sensor.marstek_esp_version",
+    "wifi_status":                  "sensor.marstek_battery_wifi_status",
+    "bt_status":                    "sensor.marstek_bt_status",
+    "cloud_status":                 "sensor.marstek_cloud_status",
+    "power_restriction":            "sensor.marstek_power_restriction",
+    "internal_mos1_temperature":    "sensor.marstek_internal_mos1_temperature",
+    "internal_mos2_temperature":    "sensor.marstek_internal_mos2_temperature",
+    "max_cell_temperature":         "sensor.marstek_max_cell_temperature",
+    "min_cell_temperature":         "sensor.marstek_min_cell_temperature",
+    "cell_voltage_delta":           "sensor.marstek_cell_voltage_delta",
+    "esp_wifi_signal_strength":     "sensor.marstek_esp_wifi_signal_strength",
+    "esp_wifi_status":              "binary_sensor.marstek_esp_wifi_status",
     "inverter_state":              "sensor.marstek_inverter_state",
     "force_mode":                  "select.marstek_forcible_charge_discharge",
     "user_work_mode":              "select.marstek_user_work_mode",
@@ -81,6 +100,7 @@ def test_match_entities_by_original_name():
         ("select", "Forcible Charge-Discharge", "select.marstek_forcible_charge_discharge"),
         ("number", "Forcible Charge Power", "number.marstek_forcible_charge_power"),
         ("sensor", "Battery Runtime Estimate", "sensor.marstek_battery_runtime_estimate"),
+        ("sensor", "Unmapped Diagnostic", "sensor.marstek_unmapped_diagnostic"),
     ]
     resolved = EsphomeEntityDriver._match_entities(entries)
     # original_name match survives an entity_id rename
@@ -89,8 +109,9 @@ def test_match_entities_by_original_name():
     assert resolved["max_cell_voltage"] == "sensor.marstek_max_cell_voltage"
     assert resolved["force_mode"] == "select.marstek_forcible_charge_discharge"
     assert resolved["set_charge_power"] == "number.marstek_forcible_charge_power"
+    assert resolved["battery_runtime_estimate"] == "sensor.marstek_battery_runtime_estimate"
     # unmapped upstream entities are ignored
-    assert "battery_runtime_estimate" not in resolved
+    assert "unmapped_diagnostic" not in resolved
 
 
 def test_match_entities_entity_id_fallback():
@@ -102,6 +123,22 @@ def test_match_entities_entity_id_fallback():
     resolved = EsphomeEntityDriver._match_entities(entries)
     assert resolved["battery_soc"] == "sensor.mydevice_battery_state_of_charge"
     assert resolved["force_mode"] == "select.mydevice_forcible_charge_discharge"
+
+
+def test_match_entities_includes_lilygo_diagnostics():
+    entries = [
+        ("sensor", "Software Version", "sensor.marstek_software_version"),
+        ("sensor", "Battery Wifi Status", "sensor.marstek_battery_wifi_status"),
+        ("sensor", "Internal MOS1 Temperature", "sensor.marstek_internal_mos1_temperature"),
+        ("binary_sensor", "BAT communication failure", "binary_sensor.marstek_bat_communication_failure"),
+        ("binary_sensor", "ESP WiFi Status", "binary_sensor.marstek_esp_wifi_status"),
+    ]
+    resolved = EsphomeEntityDriver._match_entities(entries)
+    assert resolved["software_version"] == "sensor.marstek_software_version"
+    assert resolved["wifi_status"] == "sensor.marstek_battery_wifi_status"
+    assert resolved["internal_mos1_temperature"] == "sensor.marstek_internal_mos1_temperature"
+    assert resolved["bat_communication_failure"] == "binary_sensor.marstek_bat_communication_failure"
+    assert resolved["esp_wifi_status"] == "binary_sensor.marstek_esp_wifi_status"
 
 
 def test_legacy_force_mode_option_names_are_still_decoded():
@@ -166,6 +203,47 @@ async def test_read_telemetry_key_filter():
     })
     snap = await driver.read_telemetry(["battery_soc"])
     assert snap == {"battery_soc": 57}
+
+
+@pytest.mark.asyncio
+async def test_read_telemetry_decodes_lilygo_diagnostics():
+    driver = _driver({
+        _ENTITIES["software_version"]: "V12",
+        _ENTITIES["ems_version"]: "V34",
+        _ENTITIES["bms_version"]: "V56",
+        _ENTITIES["battery_runtime_estimate"]: "Voll in: 1h 20min",
+        _ENTITIES["esp_ip"]: "192.168.1.42",
+        _ENTITIES["esp_ssid"]: "Home WiFi",
+        _ENTITIES["esp_version"]: "2026.7.0",
+        _ENTITIES["wifi_status"]: "Connected",
+        _ENTITIES["bt_status"]: "Active",
+        _ENTITIES["cloud_status"]: "Disconnected",
+        _ENTITIES["power_restriction"]: "800W limited",
+        _ENTITIES["internal_mos1_temperature"]: "41.5",
+        _ENTITIES["cell_voltage_delta"]: "0.012",
+        _ENTITIES["esp_wifi_signal_strength"]: "-52",
+        _ENTITIES["esp_wifi_status"]: "on",
+    })
+    snap = await driver.read_telemetry()
+    assert snap["software_version"] == "V12"
+    assert snap["ems_version"] == "V34"
+    assert snap["battery_runtime_estimate"] == "Voll in: 1h 20min"
+    assert snap["esp_ip"] == "192.168.1.42"
+    assert snap["wifi_status"] is True
+    assert snap["cloud_status"] is False
+    assert snap["bt_status"] == "Active"
+    assert snap["internal_mos1_temperature"] == 41.5
+    assert snap["cell_voltage_delta"] == 0.012
+    assert snap["esp_wifi_status"] is True
+
+
+def test_inverter_state_labels_match_lilygo_firmware():
+    definition = next(d for d in SENSOR_DEFINITIONS if d["key"] == "inverter_state")
+    assert {key: definition["states"][key] for key in (4, 5, 6)} == {
+        4: "Fault", 5: "Idle", 6: "AC Bypass"
+    }
+    assert EsphomeEntityDriver._decode("inverter_state", "Fault") == 4
+    assert EsphomeEntityDriver._decode("inverter_state", "AC bypass") == 6
 
 
 # ---------------------------------------------------------------------------
@@ -266,9 +344,30 @@ async def test_concrete_config_methods():
 # ---------------------------------------------------------------------------
 
 def test_definitions_have_no_register_and_scale_one():
-    for d in SENSOR_DEFINITIONS + NUMBER_DEFINITIONS + SELECT_DEFINITIONS + SWITCH_DEFINITIONS:
+    for d in (
+        SENSOR_DEFINITIONS
+        + NUMBER_DEFINITIONS
+        + SELECT_DEFINITIONS
+        + SWITCH_DEFINITIONS
+        + BINARY_SENSOR_DEFINITIONS
+    ):
         assert "register" not in d
         assert d.get("scale", 1) == 1  # HA states are already final values
+
+
+def test_lilygo_diagnostics_are_diagnostic_entities():
+    sensor_keys = {
+        "internal_temperature", "max_cell_voltage", "min_cell_voltage",
+        "internal_mos1_temperature", "internal_mos2_temperature",
+        "max_cell_temperature", "min_cell_temperature", "cell_voltage_delta",
+        "esp_wifi_signal_strength", "software_version", "ems_version",
+        "bms_version", "esp_version",
+    }
+    definitions = {
+        d["key"]: d for d in SENSOR_DEFINITIONS + BINARY_SENSOR_DEFINITIONS
+    }
+    assert all(definitions[key].get("category") == "diagnostic" for key in sensor_keys)
+    assert len(BINARY_SENSOR_DEFINITIONS) == 27  # 3 status + 24 warnings
 
 
 def test_capabilities_force_mode_keeps_hardware_manual_path():

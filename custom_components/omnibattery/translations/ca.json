@@ -1520,6 +1520,18 @@
       "internal_temperature": {
         "name": "Temperatura Interna"
       },
+      "internal_mos1_temperature": {
+        "name": "Temperatura MOS1 Interna"
+      },
+      "internal_mos2_temperature": {
+        "name": "Temperatura MOS2 Interna"
+      },
+      "max_cell_temperature": {
+        "name": "Temperatura Màxima de Cel·la"
+      },
+      "min_cell_temperature": {
+        "name": "Temperatura Mínima de Cel·la"
+      },
       "ac_power": {
         "name": "Potència AC"
       },
@@ -1552,6 +1564,9 @@
       },
       "min_cell_voltage": {
         "name": "Tensió Mínima de Cel·la"
+      },
+      "cell_voltage_delta": {
+        "name": "Delta de Tensió de Cel·la"
       },
       "fault_status": {
         "name": "Estat de Fallada"
@@ -1622,6 +1637,9 @@
       "software_version": {
         "name": "Versió de Programari"
       },
+      "battery_runtime_estimate": {
+        "name": "Estimació d'Autonomia de la Bateria"
+      },
       "bms_version": {
         "name": "Versió BMS"
       },
@@ -1637,8 +1655,26 @@
       "mac_address": {
         "name": "Adreça MAC"
       },
+      "esp_ip": {
+        "name": "IP d'ESPHome"
+      },
+      "esp_ssid": {
+        "name": "SSID d'ESPHome"
+      },
+      "esp_version": {
+        "name": "Versió de l'ESP"
+      },
       "wifi_signal_strength": {
         "name": "Intensitat del Senyal WiFi"
+      },
+      "esp_wifi_signal_strength": {
+        "name": "Intensitat del Senyal WiFi de l'ESP"
+      },
+      "bt_status": {
+        "name": "Estat BT"
+      },
+      "power_restriction": {
+        "name": "Restricció de Potència"
       },
       "battery_cycle_count": {
         "name": "Cicles de la Bateria"
@@ -1722,6 +1758,81 @@
       },
       "cloud_status": {
         "name": "Estat Cloud"
+      },
+      "esp_wifi_status": {
+        "name": "Estat WiFi de l'ESP"
+      },
+      "pll_abnormal_restart": {
+        "name": "Reinici anòmal del PLL"
+      },
+      "overtemperature_limit": {
+        "name": "Límit de sobretemperatura"
+      },
+      "low_temperature_limit": {
+        "name": "Límit de baixa temperatura"
+      },
+      "fan_abnormal_warning": {
+        "name": "Advertiment de ventilador anòmal"
+      },
+      "low_battery_soc_warning": {
+        "name": "Advertiment de SOC baix de bateria"
+      },
+      "output_overcurrent_warning": {
+        "name": "Advertiment de sobrecorrent de sortida"
+      },
+      "abnormal_line_sequence_detection": {
+        "name": "Detecció de seqüència de línia anòmala"
+      },
+      "wifi_abnormal": {
+        "name": "WiFi anòmal"
+      },
+      "ble_abnormal": {
+        "name": "BLE anòmal"
+      },
+      "network_abnormal": {
+        "name": "Xarxa anòmala"
+      },
+      "ct_connection_abnormal": {
+        "name": "Connexió CT anòmala"
+      },
+      "grid_overvoltage": {
+        "name": "Sobretensió de xarxa"
+      },
+      "grid_undervoltage": {
+        "name": "Subtensió de xarxa"
+      },
+      "grid_overfrequency": {
+        "name": "Sobrefreqüència de xarxa"
+      },
+      "grid_underfrequency": {
+        "name": "Subfreqüència de xarxa"
+      },
+      "grid_peak_voltage_abnormal": {
+        "name": "Pic de tensió de xarxa anòmal"
+      },
+      "current_dcover": {
+        "name": "Dcover de corrent"
+      },
+      "voltage_dcover": {
+        "name": "Dcover de tensió"
+      },
+      "bat_overvoltage": {
+        "name": "Sobretensió BAT"
+      },
+      "bat_undervoltage": {
+        "name": "Subtensió BAT"
+      },
+      "bat_overcurrent": {
+        "name": "Sobrecorrent BAT"
+      },
+      "bat_low_soc": {
+        "name": "SOC baix BAT"
+      },
+      "bat_communication_failure": {
+        "name": "Fallada de comunicació BAT"
+      },
+      "bms_protect": {
+        "name": "Protecció BMS"
       },
       "balancing_mode": {
         "name": "Mode de Balanç"
