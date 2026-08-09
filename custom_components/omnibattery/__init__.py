@@ -195,6 +195,7 @@ from .const import (
 )
 from .control.charge_delay import ChargeDelayManager
 from .infra.coordinator import MarstekVenusDataUpdateCoordinator
+from .infra.mac_tracking import publishable_macs
 from .tracking.hourly_balance import HourlyBalanceManager
 from .tracking.non_responsive_tracker import NonResponsiveTracker
 from .control.weekly_full_charge import WeeklyFullChargeManager
@@ -7196,7 +7197,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await async_get_backup(hass)
 
     coordinators = []
-    for battery_config in entry.data["batteries"]:
+    # A MAC shared by several batteries belongs to a Modbus gateway, not to a
+    # battery; publishing it would merge them into one registry device.
+    entry_macs = publishable_macs(entry.data["batteries"])
+    for battery_index, battery_config in enumerate(entry.data["batteries"]):
         coordinator = MarstekVenusDataUpdateCoordinator(
             hass,
             name=battery_config[CONF_NAME],
@@ -7230,6 +7234,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             battery_manual_mode_enabled=battery_config.get(
                 CONF_BATTERY_MANUAL_MODE_ENABLED, False
             ),
+            mac=entry_macs[battery_index],
         )
         # Physical phase is metadata for the safety limiter only.  It is never
         # used as an input to the global Grid 0 controller.

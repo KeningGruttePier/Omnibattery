@@ -6,7 +6,7 @@ from datetime import timedelta, datetime
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
-from homeassistant.helpers import entity_registry
+from homeassistant.helpers import device_registry as dr, entity_registry
 from homeassistant.util import dt as dt_util
 
 from ..const import (
@@ -27,6 +27,7 @@ from ..drivers.sessy import SessyLocalDriver
 from ..drivers.hoymiles import HoymilesMqttDriver
 from ..drivers.base import SetpointResult
 from .alarm_notifier import AlarmNotifier
+from .mac_tracking import normalise_mac
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -123,7 +124,8 @@ class MarstekVenusDataUpdateCoordinator(DataUpdateCoordinator):
                  password: str = "",
                  battery_manual_mode_enabled: bool = False,
                  device_max_charge_power: int | None = None,
-                 device_max_discharge_power: int | None = None) -> None:
+                 device_max_discharge_power: int | None = None,
+                 mac: str | None = None) -> None:
         """Initialize the data update coordinator."""
         super().__init__(
             hass,
@@ -135,6 +137,10 @@ class MarstekVenusDataUpdateCoordinator(DataUpdateCoordinator):
         self.host = host
         self.port = port
         self.slave_id = slave_id
+        # Permanent hardware address, stored only when the user opted this
+        # battery into MAC tracking. Publishing it in the device registry is
+        # what lets Home Assistant's DHCP discovery report an address change.
+        self.mac = normalise_mac(mac)
         # Physical phase metadata used only by the optional safety limiter.
         self.phase = ""
         # Serial device path when the battery is reached over Modbus RTU instead
@@ -565,6 +571,12 @@ class MarstekVenusDataUpdateCoordinator(DataUpdateCoordinator):
                 else "Venus"
             ),
         }
+        # getattr: several tests build a stub coordinator and read this
+        # property off it, so the attribute cannot be assumed present.
+        if getattr(self, "mac", None):
+            # CONNECTION_NETWORK_MAC is the prerequisite for the manifest's
+            # "registered_devices" DHCP matcher to deliver a discovery flow.
+            info["connections"] = {(dr.CONNECTION_NETWORK_MAC, self.mac)}
         if self.brand == "sessy":
             info["configuration_url"] = (
                 f"http://{self.host}"
