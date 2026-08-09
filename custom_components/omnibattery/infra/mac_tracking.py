@@ -188,6 +188,36 @@ def evaluate_lease(
     return DhcpVerdict(OK, index)
 
 
+def publishable_macs(batteries: Sequence[dict]) -> list[str | None]:
+    """Return, per battery index, the MAC that may be published to the device registry.
+
+    Home Assistant indexes devices by identifiers **and** by connections, and
+    ``DeviceRegistryItems.get_entry()`` falls through to the connection index
+    when no identifier matches. Two batteries publishing one MAC therefore
+    resolve to the *same* device entry: the second one is absorbed into the
+    first, before any DHCP lease is ever evaluated. The ``AMBIGUOUS_MAC`` guard
+    cannot help — it runs in the discovery path, and this collision happens at
+    registration.
+
+    So a MAC shared by several configured batteries — the Modbus-gateway case,
+    where the MAC belongs to the gateway rather than to any battery — is
+    published for none of them. They stay separate devices, and DHCP tracking
+    is simply inert for that gateway, which is the safe outcome.
+
+    Returns None for a battery that is not tracked, has no valid MAC, or shares
+    its MAC with another entry.
+    """
+    normalised = [
+        normalise_mac(b.get(CONF_MAC)) if tracking_enabled(b) else None
+        for b in batteries
+    ]
+    counts: dict[str, int] = {}
+    for mac in normalised:
+        if mac:
+            counts[mac] = counts.get(mac, 0) + 1
+    return [mac if mac and counts[mac] == 1 else None for mac in normalised]
+
+
 def detect_mac(discovered: Iterable[Any], host: str) -> str | None:
     """Find the MAC of ``host`` among Home Assistant's known DHCP leases.
 

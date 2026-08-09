@@ -164,7 +164,7 @@
           "battery_capacity_kwh": "Capacité utilisable nominale du pack de batteries. Elle sert à calculer l'énergie stockée et l'efficacité à partir du SOC. Pour Sessy, saisissez la capacité réelle ; pour les autres batteries, laissez 0 si elle est inconnue.",
           "battery_phase": "Phase AC physique (L1/L2/L3) à laquelle cette batterie est raccordée, ou Non assignée hors du schéma de phases protégées. Une batterie sans phase est exclue de l'enveloppe triphasée et continue à fonctionner normalement en automatique.",
           "track_mac": "L'adresse MAC est l'adresse matérielle permanente de la batterie : contrairement à l'adresse IP ci-dessus, elle ne change jamais. Home Assistant s'en sert pour retrouver la batterie et mettre l'adresse IP à jour tout seul.",
-          "mac": "Adresse matérielle permanente de la batterie, détectée automatiquement. Si ce champ est vide, copiez-la depuis la liste des appareils de votre box."
+          "mac": "Adresse matérielle permanente de l'interface que la batterie utilise sur le réseau. Prenez-la dans la liste des appareils de votre box : une batterie peut annoncer une adresse différente de celle de son interface filaire. Remplie automatiquement quand le cache DHCP de Home Assistant est disponible."
         }
       },
       "time_slots": {
@@ -824,7 +824,7 @@
           "battery_capacity_kwh": "Capacité utilisable nominale du pack de batteries. Elle sert à calculer l'énergie stockée et l'efficacité à partir du SOC. Pour Sessy, saisissez la capacité réelle ; pour les autres batteries, laissez 0 si elle est inconnue.",
           "battery_phase": "Phase AC physique (L1/L2/L3) à laquelle cette batterie est raccordée, ou Non assignée hors du schéma de phases protégées. Une batterie sans phase est exclue de l'enveloppe triphasée et continue à fonctionner normalement en automatique.",
           "track_mac": "L'adresse MAC est l'adresse matérielle permanente de la batterie : contrairement à l'adresse IP ci-dessus, elle ne change jamais. Home Assistant s'en sert pour retrouver la batterie et mettre l'adresse IP à jour tout seul.",
-          "mac": "Adresse matérielle permanente de la batterie, détectée automatiquement. Si ce champ est vide, copiez-la depuis la liste des appareils de votre box."
+          "mac": "Adresse matérielle permanente de l'interface que la batterie utilise sur le réseau. Prenez-la dans la liste des appareils de votre box : une batterie peut annoncer une adresse différente de celle de son interface filaire. Remplie automatiquement quand le cache DHCP de Home Assistant est disponible."
         }
       },
       "time_slots": {

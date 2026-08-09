@@ -877,7 +877,12 @@ def _mac_defaults(hass, battery: dict) -> dict:
         from homeassistant.components import dhcp
 
         discovered = dhcp.async_discovered_service_info(hass)
-    except Exception:  # noqa: BLE001 - absence of the cache is not an error
+    except Exception as err:  # noqa: BLE001 - absence of the cache is not an error
+        # Expected on a large part of the supported range: the helper does not
+        # exist before recent Home Assistant releases, and the dhcp component
+        # itself may be absent. Log it so an empty field is explainable rather
+        # than mysterious; the user types the MAC by hand.
+        _LOGGER.debug("MAC auto-detection unavailable, manual entry required: %s", err)
         return defaults
     if detected := detect_mac(discovered or [], defaults.get(CONF_HOST) or ""):
         defaults[CONF_MAC] = detected

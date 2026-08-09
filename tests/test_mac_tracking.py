@@ -26,6 +26,7 @@ from custom_components.omnibattery.infra.mac_tracking import (
     UNCHANGED,
     detect_mac,
     evaluate_lease,
+    publishable_macs,
     is_ip_based,
     normalise_mac,
     tracking_enabled,
@@ -243,3 +244,51 @@ def test_detect_mac_finds_the_configured_host():
 def test_detect_mac_returns_none_when_home_assistant_never_saw_the_device():
     """Normal on installs where Home Assistant is not on the batteries' network."""
     assert detect_mac([_lease("192.168.1.64", "dc045a7ddec6")], "192.168.1.181") is None
+
+
+# --- what may be published to the device registry ---------------------------
+# Home Assistant indexes devices by connections as well as by identifiers, so a
+# MAC published twice merges two batteries into one device — at registration,
+# long before any lease is evaluated.
+
+
+def test_a_unique_mac_is_published():
+    assert publishable_macs([battery(mac=MAC_A)]) == [MAC_A]
+
+
+def test_a_mac_shared_by_two_batteries_is_published_for_neither():
+    """The Modbus-gateway case: the MAC is the gateway's, not either battery's."""
+    batteries = [
+        battery(host="192.168.1.50", slave_id=1, mac=MAC_A),
+        battery(host="192.168.1.50", slave_id=2, mac=MAC_A),
+    ]
+    assert publishable_macs(batteries) == [None, None]
+
+
+def test_a_shared_mac_does_not_suppress_an_unrelated_battery():
+    batteries = [
+        battery(host="192.168.1.50", slave_id=1, mac=MAC_A),
+        battery(host="192.168.1.50", slave_id=2, mac=MAC_A),
+        battery(host="192.168.1.64", mac=MAC_B),
+    ]
+    assert publishable_macs(batteries) == [None, None, MAC_B]
+
+
+def test_untracked_and_invalid_entries_publish_nothing():
+    batteries = [battery(track=False, mac=MAC_A), battery(mac="nonsense"), battery(mac="")]
+    assert publishable_macs(batteries) == [None, None, None]
+
+
+def test_publication_is_blind_to_mac_formatting():
+    """Two spellings of one MAC are still one MAC, and must both be withheld."""
+    batteries = [battery(mac="DC-04-5A-14-6B-33"), battery(mac="dc045a146b33")]
+    assert publishable_macs(batteries) == [None, None]
+
+
+def test_a_shared_gateway_still_refuses_the_lease():
+    """Belt and braces: the discovery guard holds even if a MAC did get published."""
+    batteries = [
+        battery(host="192.168.1.50", slave_id=1, mac=MAC_A),
+        battery(host="192.168.1.50", slave_id=2, mac=MAC_A),
+    ]
+    assert evaluate_lease(batteries, MAC_A, "192.168.1.51").reason == AMBIGUOUS_MAC
