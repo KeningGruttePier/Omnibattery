@@ -4,8 +4,8 @@ The slider used to be pinned at -2500..+2500 W regardless of system size, so a
 three-battery Venus E system could not be asked to move more than one battery's
 worth of power. Its bounds now follow the *configured* system power envelope:
 
-    max = +sum(max_charge_power)      positive = import from grid, battery charges
-    min = -sum(max_discharge_power)   negative = export to grid, battery discharges
+    max = +sum(effective max charge power)      positive = import from grid
+    min = -sum(effective max discharge power)   negative = export to grid
 
 narrowed by the optional system-wide cap when that feature is on.
 
@@ -27,6 +27,7 @@ from custom_components.omnibattery.const import (
     CONF_SYSTEM_MAX_DISCHARGE_POWER,
     CONF_TARGET_GRID_POWER,
     DYNAMIC_BOUNDS_SYSTEM_POWER,
+    effective_battery_power_limits,
     effective_system_power,
     total_battery_power,
 )
@@ -66,6 +67,25 @@ def test_single_battery_matches_legacy_range():
 def test_bounds_are_asymmetric():
     """Brands with unequal ceilings (Sessy 2200/1700) bound each direction on its own."""
     assert _bounds({"batteries": [_bat(2200, 1700)] * 2}) == (-3400, 4400)
+
+
+def test_soft_limits_are_used_for_the_effective_system_envelope():
+    """Soft-max drivers must contribute their user ceiling, not only hardware cap."""
+    battery = _bat(2400, 2400)
+    battery.update(user_max_charge_power=600, user_max_discharge_power=700)
+
+    assert effective_battery_power_limits(battery) == (600, 700)
+    assert total_battery_power({"batteries": [battery]}) == (600, 700)
+    assert _bounds({"batteries": [battery]}) == (-700, 600)
+
+
+def test_missing_soft_limit_keeps_the_configured_limit():
+    """Legacy entries without one of the optional soft caps remain compatible."""
+    battery = _bat(2400, 2400)
+    battery["user_max_charge_power"] = 600
+
+    assert effective_battery_power_limits(battery) == (600, 2400)
+    assert _bounds({"batteries": [battery]}) == (-2400, 600)
 
 
 def test_system_cap_narrows_each_direction_independently():

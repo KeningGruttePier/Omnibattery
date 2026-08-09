@@ -554,12 +554,37 @@ def _non_negative_int(value) -> int:
         return 0
 
 
+def effective_battery_power_limits(battery) -> tuple[int, int]:
+    """Return the static effective (charge_w, discharge_w) limits for one battery.
+
+    ``max_*_power`` is the configured/device envelope for register-backed
+    batteries, but soft-max drivers (for example Zendure and Anker) keep the
+    user's additional ceiling in ``user_max_*_power``.  Treat that optional
+    value as another cap so every brand contributes the same effective limit to
+    system-level calculations.  Missing soft-limit keys preserve legacy entries.
+    """
+    charge_w = _non_negative_int(battery.get("max_charge_power"))
+    discharge_w = _non_negative_int(battery.get("max_discharge_power"))
+
+    if battery.get("user_max_charge_power") is not None:
+        charge_w = min(
+            charge_w, _non_negative_int(battery.get("user_max_charge_power"))
+        )
+    if battery.get("user_max_discharge_power") is not None:
+        discharge_w = min(
+            discharge_w, _non_negative_int(battery.get("user_max_discharge_power"))
+        )
+
+    return charge_w, discharge_w
+
+
 def total_battery_power(data) -> tuple[int, int]:
-    """Return (charge_w, discharge_w) summed over the configured battery limits."""
+    """Return summed static effective (charge_w, discharge_w) limits."""
     batteries = data.get("batteries") or []
+    limits = [effective_battery_power_limits(battery) for battery in batteries]
     return (
-        sum(_non_negative_int(b.get("max_charge_power")) for b in batteries),
-        sum(_non_negative_int(b.get("max_discharge_power")) for b in batteries),
+        sum(charge_w for charge_w, _ in limits),
+        sum(discharge_w for _, discharge_w in limits),
     )
 
 
