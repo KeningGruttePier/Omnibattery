@@ -37,6 +37,14 @@ from homeassistant.helpers.selector import (
     TextSelectorType,
 )
 
+from .infra.mac_tracking import (
+    CONF_MAC,
+    CONF_TRACK_MAC,
+    detect_mac,
+    evaluate_lease,
+    is_ip_based,
+    normalise_mac,
+)
 from .migration_flow import (
     LegacyDomainMigrationMixin,
     async_has_legacy_entries,
@@ -836,6 +844,67 @@ def _finalize_slot(step_a: dict, step_b: dict | None) -> dict:
     }
 
 
+
+def _mac_tracking_schema(defaults: dict) -> dict:
+    """Schema entries for the per-battery "find me again by MAC" opt-in.
+
+    Offered only for batteries addressed by IP; serial, ESPHome and MQTT are
+    reached by a device path or device id, so they have no address that can
+    drift. Defaults to off, so an install that never touches it is unaffected.
+    """
+    return {
+        vol.Optional(
+            CONF_TRACK_MAC, default=bool(defaults.get(CONF_TRACK_MAC, False))
+        ): BooleanSelector(),
+        vol.Optional(CONF_MAC, default=defaults.get(CONF_MAC) or ""): str,
+    }
+
+
+def _mac_defaults(hass, battery: dict) -> dict:
+    """Battery values with the MAC pre-filled from Home Assistant's DHCP cache.
+
+    Home Assistant keeps the leases it has seen, so on a setup where it shares a
+    network with the batteries the field arrives already filled and the user
+    only ticks the box. Where that cache is empty — Home Assistant on another
+    subnet, or in a container without host networking — the field stays blank
+    and is typed in by hand. The import is local and guarded because the dhcp
+    component is not a declared dependency of this integration.
+    """
+    defaults = dict(battery)
+    if defaults.get(CONF_MAC):
+        return defaults
+    try:
+        from homeassistant.components import dhcp
+
+        discovered = dhcp.async_discovered_service_info(hass)
+    except Exception:  # noqa: BLE001 - absence of the cache is not an error
+        return defaults
+    if detected := detect_mac(discovered or [], defaults.get(CONF_HOST) or ""):
+        defaults[CONF_MAC] = detected
+    return defaults
+
+
+def _validate_mac_tracking(user_input: dict) -> str | None:
+    """Return an error key when tracking is enabled without a usable MAC.
+
+    Refusing here rather than storing a malformed value keeps the lookup in
+    ``evaluate_lease`` a plain comparison: whatever is stored is already
+    normalised, so a lease can never silently fail to match.
+    """
+    if not user_input.get(CONF_TRACK_MAC):
+        return None
+    if normalise_mac(user_input.get(CONF_MAC)) is None:
+        return "invalid_mac"
+    return None
+
+
+def _apply_mac_tracking(user_input: dict, merged: dict) -> None:
+    """Persist the opt-in and the normalised MAC onto a battery entry."""
+    enabled = bool(user_input.get(CONF_TRACK_MAC))
+    merged[CONF_TRACK_MAC] = enabled
+    merged[CONF_MAC] = (normalise_mac(user_input.get(CONF_MAC)) or "") if enabled else ""
+
+
 class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Omnibattery."""
 
@@ -1366,6 +1435,8 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
             phase = user_input.get(CONF_BATTERY_PHASE, "")
             if self.config_data.get(CONF_THREE_PHASE_ENABLED) and not _phase_assignment_is_valid(phase):
                 errors[CONF_BATTERY_PHASE] = "battery_phase_required"
+            if mac_error := _validate_mac_tracking(user_input):
+                errors[CONF_MAC] = mac_error
             if errors:
                 user_input = None
             else:
@@ -1396,6 +1467,7 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
                 )
                 if brand in ("zendure", "sessy", "hoymiles"):
                     merged["battery_capacity_kwh"] = round(float(user_input.get("battery_capacity_kwh", 2.24 if brand == "hoymiles" else 0.0)), 2)
+                _apply_mac_tracking(user_input, merged)
                 self.battery_configs.append(merged)
                 self.battery_index += 1
 
@@ -1445,6 +1517,10 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
             # allowing the explicit Unassigned option when needed.
             phase_field, phase_selector = _battery_phase_schema(PHASE_L1)
             _schema[phase_field] = phase_selector
+        if is_ip_based(self._current_battery_data):
+            _schema.update(
+                _mac_tracking_schema(_mac_defaults(self.hass, self._current_battery_data))
+            )
         return self.async_show_form(
             step_id="battery_limits",
             data_schema=vol.Schema(_schema),
@@ -2575,6 +2651,79 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
         return OptionsFlowHandler(config_entry)
 
 
+    async def async_step_dhcp(self, discovery_info: Any) -> FlowResult:
+        """Follow a tracked battery when its router hands it a different address.
+
+        Reached through the ``registered_devices`` matcher in the manifest, which
+        fires for any device whose MAC sits in the device registry. All this step
+        does is turn the lease into a verdict and act on it; every guard lives in
+        ``infra.mac_tracking`` so it can be tested without a running Home
+        Assistant. It always aborts — there is no user-facing flow here.
+        """
+        reason = await self._async_apply_dhcp_lease(
+            getattr(discovery_info, "macaddress", None),
+            getattr(discovery_info, "ip", "") or "",
+        )
+        return self.async_abort(reason=reason)
+
+    def _dhcp_reachability_probe(self, entry: ConfigEntry):
+        """Return a callable answering whether battery *index* still responds.
+
+        A device can hold two addresses at once, so a lease for a new address is
+        not on its own a reason to abandon one that still works.
+        """
+
+        def _is_reachable(index: int) -> bool:
+            data = (self.hass.data.get(DOMAIN) or {}).get(entry.entry_id) or {}
+            coordinators = data.get("coordinators") or []
+            if index >= len(coordinators):
+                return False
+            return bool(getattr(coordinators[index], "is_available", False))
+
+        return _is_reachable
+
+    async def _async_apply_dhcp_lease(self, mac: Any, host: str) -> str:
+        """Move a battery onto ``host`` when exactly one may safely be moved.
+
+        Returns the abort reason, which doubles as the log line: every refusal
+        names the single guard that fired.
+        """
+        for entry in self.hass.config_entries.async_entries(DOMAIN):
+            batteries = [dict(b) for b in entry.data.get("batteries", [])]
+            verdict = evaluate_lease(
+                batteries, mac, host, self._dhcp_reachability_probe(entry)
+            )
+            if not verdict.should_update:
+                if verdict.reason not in ("no_match", "invalid_mac"):
+                    _LOGGER.debug(
+                        "DHCP lease %s -> %s not applied to %s: %s",
+                        mac, host, entry.title, verdict.reason,
+                    )
+                continue
+
+            battery = batteries[verdict.index]
+            old_host = battery.get(CONF_HOST) or ""
+            port = battery.get(CONF_PORT)
+            slave = battery.get(CONF_SLAVE_ID, DEFAULT_SLAVE_ID)
+            battery[CONF_HOST] = host
+
+            # Rewrites the device key and the entity unique_ids while keeping the
+            # entity_ids, so history and long-term statistics survive the move.
+            self._migrate_battery_registry_ids(
+                entry, old_host, port, host, port, slave, slave
+            )
+            self.hass.config_entries.async_update_entry(
+                entry, data={**entry.data, "batteries": batteries}
+            )
+            _LOGGER.info(
+                "Battery %s moved from %s to %s (MAC %s); connection updated",
+                battery.get(CONF_NAME, "?"), old_host, host, mac,
+            )
+            await self.hass.config_entries.async_reload(entry.entry_id)
+            return "ip_updated"
+        return "no_tracked_battery"
+
+
 class OptionsFlowHandler(OptionsFlow):
     def __init__(self, config_entry: ConfigEntry) -> None:
         """Initialize options flow."""
@@ -3302,6 +3451,11 @@ class OptionsFlowHandler(OptionsFlow):
                 ) and not _phase_assignment_is_valid(phase):
                     errors[CONF_BATTERY_PHASE] = "battery_phase_required"
                     user_input = None
+                if user_input is not None and (
+                    mac_error := _validate_mac_tracking(user_input)
+                ):
+                    errors[CONF_MAC] = mac_error
+                    user_input = None
 
             if user_input is not None:
                 # Start from existing battery config to preserve persisted keys not in this form.
@@ -3338,6 +3492,7 @@ class OptionsFlowHandler(OptionsFlow):
                 )
                 if brand in ("zendure", "sessy", "hoymiles"):
                     merged["battery_capacity_kwh"] = round(float(user_input.get("battery_capacity_kwh", 2.24 if brand == "hoymiles" else 0.0)), 2)
+                _apply_mac_tracking(user_input, merged)
                 self.battery_configs.append(merged)
                 self.battery_index += 1
 
@@ -3438,6 +3593,10 @@ class OptionsFlowHandler(OptionsFlow):
                 defaults.get(CONF_BATTERY_PHASE, PHASE_UNASSIGNED)
             )
             _schema[phase_field] = phase_selector
+        if is_ip_based(self._current_battery_data):
+            _schema.update(
+                _mac_tracking_schema(_mac_defaults(self.hass, self._current_battery_data))
+            )
         return self.async_show_form(
             step_id="battery_limits",
             data_schema=vol.Schema(_schema),

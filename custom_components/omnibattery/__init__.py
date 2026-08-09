@@ -7230,6 +7230,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             battery_manual_mode_enabled=battery_config.get(
                 CONF_BATTERY_MANUAL_MODE_ENABLED, False
             ),
+            mac=battery_config.get("mac") if battery_config.get("track_mac") else None,
         )
         # Physical phase is metadata for the safety limiter only.  It is never
         # used as an input to the global Grid 0 controller.
