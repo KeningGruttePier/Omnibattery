@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.3.0b6] - 2026-08-09
+
+### Fixed
+- **Voltage taper could stop coupled Venus A/D packs at 3.60 V**: Venus A/D
+  now keep the tapered charge at 200 W until the debounced BMS cutoff, so a
+  full first pack cannot leave the remaining coupled packs undercharged. After
+  the cutoff, the integration waits 60 seconds without charging and records a
+  one-shot cell-delta measurement with phase `top_charge_bms_cutoff`, including
+  weekly full-charge runs. Venus E top-voltage behavior remains unchanged.
+
 ## [1.3.0b5] - 2026-08-08
 
 ### Added
@@ -15,11 +25,6 @@
 - **Active-balance notifications could use an instantaneous starting delta**: the blueprint now reads the integration's persisted `Cell Delta` value from the last formal 100%/OCV measurement and shows `n/a` when no official reading exists.
 
 ### Fixed
-- **Voltage taper could stop coupled Venus A/D packs at 3.60 V**: Venus A/D
-  now keep the 200 W tapered charge active through the top-voltage reading and
-  wait for the BMS cutoff, then take the 60-second cell-delta measurement, so a
-  full first pack cannot leave coupled packs undercharged. The normal
-  top-voltage pause and measurement remain unchanged for Venus E models.
 - **Marstek Venus E v2/v3 power caps could be overwritten or displayed as 2500 W**: writes now use the app-supported 800/2500 W hardware values while the integration preserves and displays the user's lower software limit.
 - **Manual charge/discharge sliders could exceed their configured maximums**: the setpoint sliders now follow the live `max_charge_power` / `max_discharge_power` limits, and direct/manual commands are capped at the same boundary.
 - **Smart Pre-discharge could block battery self-consumption during negative-injection windows**: the runtime now holds the net grid target at `0 W` instead of blocking all discharge, while preserving safety floors and preventing deliberate export; plans are automatically rebuilt after material battery-headroom changes so morning charging is reflected without manual Dynamic Pricing reevaluation.
