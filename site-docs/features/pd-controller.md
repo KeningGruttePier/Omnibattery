@@ -69,6 +69,7 @@ The following controls tune the internal PD controller. They can also be adjuste
 | **Direction hysteresis** | `60 W` | 0–200 W | Margin required to switch between charging and discharging. |
 | **Min charge power** | `0 W` | 0–2000 W | If calculated charge is below this value, the controller stays idle. `0` disables it. |
 | **Min discharge power** | `0 W` | 0–2000 W | Same as above, for discharge. `0` disables it. |
+| **Target grid power** | `0 W` | −(total configured discharge power) … +(total configured charge power) | Grid setpoint the PD regulates to. Positive = import from grid (the battery charges), negative = export to grid (the battery discharges), `0` = net zero. The range follows your batteries: three 2500 W units give ±7500 W. Enabling the system power limits narrows each direction to its configured cap. |
 | **Enable system power limits** | `off` | on/off | Enables the combined charge/discharge cap for all active batteries. |
 | **System max charge power** | `0 W` | 0–15000 W | Optional cap for combined charge power. `0` disables it. |
 | **System max discharge power** | `0 W` | 0–15000 W | Optional cap for combined discharge power. `0` disables it. |

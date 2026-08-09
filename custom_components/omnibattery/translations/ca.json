@@ -504,7 +504,7 @@
           "pd_direction_hysteresis": "Llindar de potència necessari per canviar entre càrrega i descàrrega. Prevé canvis ràpids de direcció. Rang: 0-200W, predeterminat: 60W",
           "pd_min_charge_power": "Potència mínima per carregar. Per sota d'aquest llindar, el controlador queda en repòs en lloc de carregar a baixa potència. 0 = desactivat.",
           "pd_min_discharge_power": "Potència mínima per descarregar. Per sota d'aquest llindar, el controlador queda en repòs en lloc de descarregar a baixa potència. 0 = desactivat.",
-          "pd_target_grid_power": "Consigna de potència de xarxa que regula el controlador. Negatiu = exportar a xarxa, positiu = importar de xarxa, 0 = balanç net zero. Rang: -500 a +500 W, valor per defecte: 0 W.",
+          "pd_target_grid_power": "Consigna de potència de xarxa que regula el controlador. Positiu = importar de la xarxa (la bateria carrega), negatiu = exportar a la xarxa (la bateria descarrega), 0 = balanç net zero. El rang segueix la potència total configurada de les teves bateries, limitat pels límits de potència del sistema quan estan actius. Valor per defecte: 0 W.",
           "enable_system_power_limits": "En activar-lo, els dos sliders inferiors limiten la potència combinada de càrrega/descàrrega de totes les bateries actives.",
           "system_max_charge_power": "Límit opcional per a la potència de càrrega combinada de totes les bateries actives. 0 = desactivat; els límits per bateria segueixen aplicant-se.",
           "system_max_discharge_power": "Límit opcional per a la potència de descàrrega combinada de totes les bateries actives. 0 = desactivat; els límits per bateria segueixen aplicant-se."
@@ -1150,7 +1150,7 @@
           "pd_direction_hysteresis": "Llindar de potència necessari per canviar entre càrrega i descàrrega. Prevé canvis ràpids de direcció. Rang: 0-200W, predeterminat: 60W",
           "pd_min_charge_power": "Potència mínima per carregar. Per sota d'aquest llindar, el controlador queda en repòs en lloc de carregar a baixa potència. 0 = desactivat.",
           "pd_min_discharge_power": "Potència mínima per descarregar. Per sota d'aquest llindar, el controlador queda en repòs en lloc de descarregar a baixa potència. 0 = desactivat.",
-          "pd_target_grid_power": "Consigna de potència de xarxa que regula el controlador. Negatiu = exportar a xarxa, positiu = importar de xarxa, 0 = balanç net zero. Rang: -500 a +500 W, valor per defecte: 0 W.",
+          "pd_target_grid_power": "Consigna de potència de xarxa que regula el controlador. Positiu = importar de la xarxa (la bateria carrega), negatiu = exportar a la xarxa (la bateria descarrega), 0 = balanç net zero. El rang segueix la potència total configurada de les teves bateries, limitat pels límits de potència del sistema quan estan actius. Valor per defecte: 0 W.",
           "enable_system_power_limits": "En activar-lo, els dos sliders inferiors limiten la potència combinada de càrrega/descàrrega de totes les bateries actives.",
           "system_max_charge_power": "Límit opcional per a la potència de càrrega combinada de totes les bateries actives. 0 = desactivat; els límits per bateria segueixen aplicant-se.",
           "system_max_discharge_power": "Límit opcional per a la potència de descàrrega combinada de totes les bateries actives. 0 = desactivat; els límits per bateria segueixen aplicant-se."
