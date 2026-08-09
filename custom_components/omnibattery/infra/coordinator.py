@@ -51,6 +51,14 @@ _CRITICAL_CONTROL_KEYS = frozenset({
 _CRITICAL_GROUP_FAILURES_BEFORE_RECONNECT = 3
 
 
+def _normalise_power_limit(value) -> int:
+    """Return a non-negative integer power limit."""
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return 0
+
+
 def group_scan_interval_s(
     group_keys: tuple[str, ...],
     nominal_interval_s: float,
@@ -113,7 +121,9 @@ class MarstekVenusDataUpdateCoordinator(DataUpdateCoordinator):
                  esphome_device_id: str | None = None,
                  username: str = "",
                  password: str = "",
-                 battery_manual_mode_enabled: bool = False) -> None:
+                 battery_manual_mode_enabled: bool = False,
+                 device_max_charge_power: int | None = None,
+                 device_max_discharge_power: int | None = None) -> None:
         """Initialize the data update coordinator."""
         super().__init__(
             hass,
@@ -146,8 +156,20 @@ class MarstekVenusDataUpdateCoordinator(DataUpdateCoordinator):
 
         _LOGGER.info("[%s] Initialized as %s battery", name, self.battery_version)
 
-        self.max_charge_power = max_charge_power
-        self.max_discharge_power = max_discharge_power
+        # Power limits are deliberately kept as three separate concepts:
+        # ``device_max_*`` is the physical/device envelope, ``configured_max_*``
+        # is the user's selected ceiling, and ``effective_max_*`` is the value
+        # that control and UI code may actually use.  The old ``max_*`` names
+        # remain read/write aliases for the effective value for compatibility
+        # with existing integrations and persisted state.
+        initial_charge_limit = _normalise_power_limit(max_charge_power)
+        initial_discharge_limit = _normalise_power_limit(max_discharge_power)
+        self._device_max_charge_power = initial_charge_limit
+        self._device_max_discharge_power = initial_discharge_limit
+        self._configured_max_charge_power = initial_charge_limit
+        self._configured_max_discharge_power = initial_discharge_limit
+        self._effective_max_charge_power = initial_charge_limit
+        self._effective_max_discharge_power = initial_discharge_limit
         self.max_soc = max_soc
         self.min_soc = min_soc
         # Hysteresis is mandatory; floor the percent so SOC drift can't shrink the
@@ -175,12 +197,8 @@ class MarstekVenusDataUpdateCoordinator(DataUpdateCoordinator):
         # register entities do. Not persisted; seeded from the manual targets.
         self.commanded_charge_power = 0
         self.commanded_discharge_power = 0
-        # Software charge-power ceiling for drivers whose reported max_charge_power
-        # is a read-only device cap (Zendure chargeMaxLimit / Anker 10036). Caps PD
-        # allocation below the device limit; default = device max (no extra cap).
-        # Persisted. Same idea for discharge on Anker (10038).
-        self.user_max_charge_power = max_charge_power
-        self.user_max_discharge_power = max_discharge_power
+        # ``user_max_*`` is retained below as a compatibility alias for the
+        # normalized configured limit.  It is no longer a second source of truth.
         self.allow_charge = allow_charge
         self.allow_discharge = allow_discharge
         setattr(self, CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED, full_charge_voltage_taper_enabled)
@@ -248,43 +266,62 @@ class MarstekVenusDataUpdateCoordinator(DataUpdateCoordinator):
             self.driver = EsphomeEntityDriver(
                 hass,
                 esphome_device_id or self.host,
-                max_charge_power_w=self.max_charge_power,
-                max_discharge_power_w=self.max_discharge_power,
+                max_charge_power_w=self.configured_max_charge_power,
+                max_discharge_power_w=self.configured_max_discharge_power,
             )
         elif self.brand == "anker":
             self.driver = AnkerModbusDriver(
                 self.host,
                 self.port,
                 self.slave_id,
-                max_charge_power_w=self.max_charge_power,
-                max_discharge_power_w=self.max_discharge_power,
+                max_charge_power_w=self.configured_max_charge_power,
+                max_discharge_power_w=self.configured_max_discharge_power,
             )
         elif self.brand == "sessy":
             self.driver = SessyLocalDriver(
                 self.host, port=self.port,
                 username=username,
                 password=password,
-                max_charge_power_w=self.max_charge_power,
-                max_discharge_power_w=self.max_discharge_power,
+                max_charge_power_w=self.configured_max_charge_power,
+                max_discharge_power_w=self.configured_max_discharge_power,
             )
-            # Clamp legacy entries saved with the former symmetric 2,200 W
-            # ceiling before the controller uses these values for allocation.
-            self.max_charge_power = self.driver.capabilities.max_charge_power_w
-            self.max_discharge_power = self.driver.capabilities.max_discharge_power_w
-            self.user_max_charge_power = self.max_charge_power
-            self.user_max_discharge_power = self.max_discharge_power
         elif self.brand == "hoymiles":
             self.driver = HoymilesMqttDriver(
                 hass, self.host,
-                max_charge_power_w=self.max_charge_power,
-                max_discharge_power_w=self.max_discharge_power,
+                max_charge_power_w=self.configured_max_charge_power,
+                max_discharge_power_w=self.configured_max_discharge_power,
             )
         else:
             self.driver = MarstekModbusDriver(
                 self.host, self.port, self.battery_version, self.slave_id,
-                max_charge_power_w=self.max_charge_power,
-                max_discharge_power_w=self.max_discharge_power,
+                max_charge_power_w=self.configured_max_charge_power,
+                max_discharge_power_w=self.configured_max_discharge_power,
                 serial_port=self.serial_port,
+            )
+
+        # Driver capabilities are the fallback physical envelope. Config-flow
+        # probe metadata wins when available because some drivers (notably
+        # Hoymiles/Anker) also expose a configured or effective value through
+        # their public capability object.
+        self.device_max_charge_power = (
+            device_max_charge_power
+            if device_max_charge_power is not None
+            else self.driver.capabilities.max_charge_power_w
+        )
+        self.device_max_discharge_power = (
+            device_max_discharge_power
+            if device_max_discharge_power is not None
+            else self.driver.capabilities.max_discharge_power_w
+        )
+        if self.brand == "sessy":
+            # Sessy has a fixed asymmetric envelope. Clamp malformed legacy
+            # entries (for example the former symmetric 5,000 W default) so
+            # the configured value also remains representable by its entity.
+            self.configured_max_charge_power = min(
+                self.configured_max_charge_power, self.device_max_charge_power
+            )
+            self.configured_max_discharge_power = min(
+                self.configured_max_discharge_power, self.device_max_discharge_power
             )
 
         # Fast key -> definition lookup so the poll loop can scale each raw value by
@@ -304,6 +341,107 @@ class MarstekVenusDataUpdateCoordinator(DataUpdateCoordinator):
         version string, keeping them device-agnostic.
         """
         return self.driver.capabilities
+
+    def _recompute_effective_power_limits(self) -> None:
+        """Recompute the control envelope from device and configured limits."""
+        self._effective_max_charge_power = min(
+            self._device_max_charge_power, self._configured_max_charge_power
+        )
+        self._effective_max_discharge_power = min(
+            self._device_max_discharge_power, self._configured_max_discharge_power
+        )
+
+    @property
+    def device_max_charge_power(self) -> int:
+        """Physical/device charge-power ceiling in watts."""
+        return self._device_max_charge_power
+
+    @device_max_charge_power.setter
+    def device_max_charge_power(self, value: int) -> None:
+        self._device_max_charge_power = _normalise_power_limit(value)
+        if hasattr(self, "_configured_max_charge_power"):
+            self._recompute_effective_power_limits()
+
+    @property
+    def device_max_discharge_power(self) -> int:
+        """Physical/device discharge-power ceiling in watts."""
+        return self._device_max_discharge_power
+
+    @device_max_discharge_power.setter
+    def device_max_discharge_power(self, value: int) -> None:
+        self._device_max_discharge_power = _normalise_power_limit(value)
+        if hasattr(self, "_configured_max_discharge_power"):
+            self._recompute_effective_power_limits()
+
+    @property
+    def configured_max_charge_power(self) -> int:
+        """User-selected charge-power ceiling in watts."""
+        return self._configured_max_charge_power
+
+    @configured_max_charge_power.setter
+    def configured_max_charge_power(self, value: int) -> None:
+        self._configured_max_charge_power = _normalise_power_limit(value)
+        if hasattr(self, "_device_max_charge_power"):
+            self._recompute_effective_power_limits()
+
+    @property
+    def configured_max_discharge_power(self) -> int:
+        """User-selected discharge-power ceiling in watts."""
+        return self._configured_max_discharge_power
+
+    @configured_max_discharge_power.setter
+    def configured_max_discharge_power(self, value: int) -> None:
+        self._configured_max_discharge_power = _normalise_power_limit(value)
+        if hasattr(self, "_device_max_discharge_power"):
+            self._recompute_effective_power_limits()
+
+    @property
+    def effective_max_charge_power(self) -> int:
+        """Charge-power ceiling safe for all control paths."""
+        return self._effective_max_charge_power
+
+    @property
+    def effective_max_discharge_power(self) -> int:
+        """Discharge-power ceiling safe for all control paths."""
+        return self._effective_max_discharge_power
+
+    @property
+    def max_charge_power(self) -> int:
+        """Backward-compatible alias for :attr:`effective_max_charge_power`."""
+        return self.effective_max_charge_power
+
+    @max_charge_power.setter
+    def max_charge_power(self, value: int) -> None:
+        """Treat legacy direct writes as updates to the configured ceiling."""
+        self.configured_max_charge_power = value
+
+    @property
+    def max_discharge_power(self) -> int:
+        """Backward-compatible alias for :attr:`effective_max_discharge_power`."""
+        return self.effective_max_discharge_power
+
+    @max_discharge_power.setter
+    def max_discharge_power(self, value: int) -> None:
+        """Treat legacy direct writes as updates to the configured ceiling."""
+        self.configured_max_discharge_power = value
+
+    @property
+    def user_max_charge_power(self) -> int:
+        """Legacy alias for the normalized configured charge limit."""
+        return self.configured_max_charge_power
+
+    @user_max_charge_power.setter
+    def user_max_charge_power(self, value: int) -> None:
+        self.configured_max_charge_power = value
+
+    @property
+    def user_max_discharge_power(self) -> int:
+        """Legacy alias for the normalized configured discharge limit."""
+        return self.configured_max_discharge_power
+
+    @user_max_discharge_power.setter
+    def user_max_discharge_power(self, value: int) -> None:
+        self.configured_max_discharge_power = value
 
     # Per-platform entity definitions, owned by the driver (it loads this
     # version's register/entity set). Platform setups and the poll loop read
@@ -929,21 +1067,32 @@ class MarstekVenusDataUpdateCoordinator(DataUpdateCoordinator):
         if "max_charge_power" in self.data:
             device_cap = int(self.data["max_charge_power"])
             # Soft-max drivers (Zendure telemetry, Anker read-only sensor) and
-            # Venus E v2/v3 honour the user's software ceiling on top of the
-            # device/hardware cap; otherwise the polled register value is itself
-            # the effective limit.
-            self.max_charge_power = (
-                min(device_cap, self.user_max_charge_power)
-                if self.needs_software_max_charge or self.needs_software_power_cap
-                else device_cap
-            )
+            # Venus E v2/v3 report the physical/device ceiling. Writable
+            # register drivers report the user's configured ceiling instead.
+            if self.needs_software_max_charge or self.needs_software_power_cap:
+                self.device_max_charge_power = device_cap
+            else:
+                self.configured_max_charge_power = device_cap
+            # Keep the legacy alias synchronized for lightweight coordinator
+            # doubles that do not have the normalized backing fields.
+            if not hasattr(self, "_configured_max_charge_power"):
+                self.max_charge_power = (
+                    min(device_cap, getattr(self, "user_max_charge_power", device_cap))
+                    if self.needs_software_max_charge or self.needs_software_power_cap
+                    else device_cap
+                )
         if "max_discharge_power" in self.data:
             device_cap = int(self.data["max_discharge_power"])
-            self.max_discharge_power = (
-                min(device_cap, self.user_max_discharge_power)
-                if self.needs_software_max_discharge or self.needs_software_power_cap
-                else device_cap
-            )
+            if self.needs_software_max_discharge or self.needs_software_power_cap:
+                self.device_max_discharge_power = device_cap
+            else:
+                self.configured_max_discharge_power = device_cap
+            if not hasattr(self, "_configured_max_discharge_power"):
+                self.max_discharge_power = (
+                    min(device_cap, getattr(self, "user_max_discharge_power", device_cap))
+                    if self.needs_software_max_discharge or self.needs_software_power_cap
+                    else device_cap
+                )
 
         if updated_data:
             _LOGGER.debug(
@@ -1054,13 +1203,19 @@ class MarstekVenusDataUpdateCoordinator(DataUpdateCoordinator):
         # drivers, which do not go through a setpoint number entity. Enforce the
         # same effective per-direction ceiling at this common command boundary.
         try:
+            charge_limit = getattr(
+                self, "effective_max_charge_power", self.max_charge_power
+            )
+            discharge_limit = getattr(
+                self, "effective_max_discharge_power", self.max_discharge_power
+            )
             if net_power_w > 0:
                 net_power_w = min(
-                    int(net_power_w), max(0, int(self.max_charge_power))
+                    int(net_power_w), max(0, int(charge_limit))
                 )
             elif net_power_w < 0:
                 net_power_w = -min(
-                    -int(net_power_w), max(0, int(self.max_discharge_power))
+                    -int(net_power_w), max(0, int(discharge_limit))
                 )
         except (AttributeError, TypeError, ValueError):
             net_power_w = int(net_power_w)

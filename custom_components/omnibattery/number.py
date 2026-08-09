@@ -13,6 +13,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
     CONFIG_NUMBER_DEFINITIONS,
+    DYNAMIC_BOUNDS_SYSTEM_POWER,
     CONF_ENABLE_SYSTEM_POWER_LIMITS,
     CONF_MAX_PRICE_THRESHOLD,
     CONF_DISCHARGE_PRICE_THRESHOLD,
@@ -42,6 +43,7 @@ from .const import (
     MIN_CHARGE_HYSTERESIS_PERCENT,
     MAX_CHARGE_HYSTERESIS_PERCENT,
     DOMAIN,
+    effective_system_power,
 )
 from .infra.coordinator import MarstekVenusDataUpdateCoordinator
 from .infra.entity_naming import (
@@ -61,7 +63,13 @@ def _effective_setpoint_max(
 ) -> int:
     """Return the current per-direction ceiling for a manual setpoint."""
     try:
-        configured_max = int(getattr(coordinator, f"max_{kind}_power"))
+        configured_max = int(
+            getattr(
+                coordinator,
+                f"effective_max_{kind}_power",
+                getattr(coordinator, f"max_{kind}_power"),
+            )
+        )
     except (AttributeError, TypeError, ValueError):
         configured_max = int(hardware_max)
     return max(0, min(int(hardware_max), configured_max))
@@ -204,9 +212,21 @@ class MarstekVenusNumber(CoordinatorEntity, NumberEntity):
         key = self.definition["key"]
         if getattr(self.coordinator, "needs_software_power_cap", False):
             if key == "max_charge_power":
-                return float(self.coordinator.user_max_charge_power)
+                return float(
+                    getattr(
+                        self.coordinator,
+                        "configured_max_charge_power",
+                        self.coordinator.user_max_charge_power,
+                    )
+                )
             if key == "max_discharge_power":
-                return float(self.coordinator.user_max_discharge_power)
+                return float(
+                    getattr(
+                        self.coordinator,
+                        "configured_max_discharge_power",
+                        self.coordinator.user_max_discharge_power,
+                    )
+                )
         if self.coordinator.data is None:
             return None
         value = self.coordinator.data.get(key)
@@ -288,15 +308,23 @@ class MarstekVenusNumber(CoordinatorEntity, NumberEntity):
                          self.coordinator.name, old_min_soc, value)
 
         elif self.definition['key'] == 'max_charge_power':
-            old_value = self.coordinator.max_charge_power
-            self.coordinator.max_charge_power = int(value)
+            old_value = getattr(
+                self.coordinator,
+                "effective_max_charge_power",
+                self.coordinator.max_charge_power,
+            )
+            self.coordinator.configured_max_charge_power = int(value)
             self.coordinator.persist_battery_config("max_charge_power", int(value))
             _LOGGER.info("%s: Updated max_charge_power %dW → %dW (immediate sync)",
                          self.coordinator.name, old_value, int(value))
 
         elif self.definition['key'] == 'max_discharge_power':
-            old_value = self.coordinator.max_discharge_power
-            self.coordinator.max_discharge_power = int(value)
+            old_value = getattr(
+                self.coordinator,
+                "effective_max_discharge_power",
+                self.coordinator.max_discharge_power,
+            )
+            self.coordinator.configured_max_discharge_power = int(value)
             self.coordinator.persist_battery_config("max_discharge_power", int(value))
             _LOGGER.info("%s: Updated max_discharge_power %dW → %dW (immediate sync)",
                          self.coordinator.name, old_value, int(value))
@@ -305,6 +333,57 @@ class MarstekVenusNumber(CoordinatorEntity, NumberEntity):
     def device_info(self):
         """Return device information."""
         return self.coordinator.battery_device_info
+
+
+def _floor_to_step(value: int, step) -> int:
+    """Floor a bound magnitude onto the slider's absolute step grid.
+
+    HA number sliders snap to absolute multiples of ``step``, and the dashboard
+    panel floors the element's min the same way (marstek-panel.js ``_sliderMin``).
+    Rounding *down* keeps every advertised bound reachable and never advertises
+    more power than the user actually configured.
+    """
+    try:
+        s = float(step)
+    except (TypeError, ValueError):
+        return value
+    if s <= 0:
+        return value
+    return int(value // s * s)
+
+
+def config_number_bounds(definition: dict, data) -> tuple[float, float]:
+    """Return (min, max) for a CONFIG_NUMBER_DEFINITIONS entry.
+
+    Entries without a ``dynamic_bounds`` marker keep their authored min/max.
+    The system-power marker derives them from the configured per-battery limits,
+    narrowed by the optional system cap:
+
+        max = +sum(max_charge_power)     (positive = import -> battery charges)
+        min = -sum(max_discharge_power)  (negative = export -> battery discharges)
+
+    Units: authored min/max are already in *display* units (the charge-delay
+    margin is authored in hours with ``scale: 60``), while a dynamic source
+    yields *stored* units — so only the dynamic branch divides by ``scale``.
+
+    Each direction independently falls back to its authored bound when its sum
+    floors to 0. That keeps the slider non-degenerate (HA needs min < max, and
+    the frontend divides by ``max - min``) and preserves the historical
+    +/-2500 W range for a not-yet-configured entry.
+    """
+    static_min, static_max = definition["min"], definition["max"]
+    if definition.get("dynamic_bounds") != DYNAMIC_BOUNDS_SYSTEM_POWER:
+        return static_min, static_max
+
+    charge_w, discharge_w = effective_system_power(data)
+    step = definition.get("step", 1)
+    scale = definition.get("scale", 1) or 1
+    hi = _floor_to_step(charge_w, step)
+    lo = _floor_to_step(discharge_w, step)
+    return (
+        -lo / scale if lo > 0 else static_min,
+        hi / scale if hi > 0 else static_max,
+    )
 
 
 class MarstekConfigNumberEntity(NumberEntity):
@@ -323,8 +402,8 @@ class MarstekConfigNumberEntity(NumberEntity):
         self.entity_id = system_entity_id("number", definition["key"])
         self._attr_icon = definition.get("icon")
         self._attr_native_unit_of_measurement = definition.get("unit")
-        self._attr_native_min_value = definition["min"]
-        self._attr_native_max_value = definition["max"]
+        # min/max are not set here: they are properties, so entries marked
+        # dynamic_bounds can follow config_entry.data without a reload.
         self._attr_native_step = definition["step"]
         self._attr_mode = NumberMode.SLIDER
         self._attr_entity_category = EntityCategory.CONFIG
@@ -343,6 +422,24 @@ class MarstekConfigNumberEntity(NumberEntity):
     async def _handle_entry_update(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         """Re-render the slider value after a config entry update."""
         self.async_write_ha_state()
+
+    @property
+    def native_min_value(self) -> float:
+        """Lower bound; dynamic for entries marked ``dynamic_bounds``.
+
+        A plain property rather than ``_attr_native_min_value``: the bound has
+        to follow config_entry.data (per-battery limits, system caps), and every
+        write path goes through ``async_update_entry`` -> ``_handle_entry_update``
+        -> ``async_write_ha_state``, at which point HA recomputes the entity's
+        capability attributes. Freezing the value in __init__ would only refresh
+        on a full platform reload.
+        """
+        return config_number_bounds(self._definition, self.entry.data)[0]
+
+    @property
+    def native_max_value(self) -> float:
+        """Upper bound; see :meth:`native_min_value`."""
+        return config_number_bounds(self._definition, self.entry.data)[1]
 
     @property
     def native_value(self):
@@ -1000,7 +1097,11 @@ class MarstekSoftMaxChargeNumber(CoordinatorEntity, NumberEntity):
         self._attr_icon = "mdi:battery-arrow-up-outline"
         self._attr_native_unit_of_measurement = "W"
         self._attr_native_min_value = 0
-        self._attr_native_max_value = coordinator.capabilities.max_charge_power_w
+        self._attr_native_max_value = getattr(
+            coordinator,
+            "device_max_charge_power",
+            coordinator.capabilities.max_charge_power_w,
+        )
         self._attr_native_step = 10
         self._attr_should_poll = False
 
@@ -1018,9 +1119,13 @@ class MarstekSoftMaxChargeNumber(CoordinatorEntity, NumberEntity):
         device_cap = None
         if self.coordinator.data is not None:
             device_cap = self.coordinator.data.get("max_charge_power")
-        self.coordinator.max_charge_power = (
-            min(int(device_cap), new_value) if device_cap is not None else new_value
-        )
+        if device_cap is not None and hasattr(self.coordinator, "device_max_charge_power"):
+            self.coordinator.device_max_charge_power = int(device_cap)
+        effective = getattr(self.coordinator, "effective_max_charge_power", None)
+        if effective is None:
+            effective = min(int(device_cap), new_value) if device_cap is not None else new_value
+        if not hasattr(self.coordinator, "_configured_max_charge_power"):
+            self.coordinator.max_charge_power = int(effective)
         _LOGGER.info("%s: user_max_charge_power → %dW", self.coordinator.name, new_value)
         self.async_write_ha_state()
 
@@ -1045,7 +1150,11 @@ class MarstekSoftMaxDischargeNumber(CoordinatorEntity, NumberEntity):
         self._attr_icon = "mdi:battery-arrow-down-outline"
         self._attr_native_unit_of_measurement = "W"
         self._attr_native_min_value = 0
-        self._attr_native_max_value = coordinator.capabilities.max_discharge_power_w
+        self._attr_native_max_value = getattr(
+            coordinator,
+            "device_max_discharge_power",
+            coordinator.capabilities.max_discharge_power_w,
+        )
         self._attr_native_step = 10
         self._attr_should_poll = False
 
@@ -1062,9 +1171,13 @@ class MarstekSoftMaxDischargeNumber(CoordinatorEntity, NumberEntity):
         device_cap = None
         if self.coordinator.data is not None:
             device_cap = self.coordinator.data.get("max_discharge_power")
-        self.coordinator.max_discharge_power = (
-            min(int(device_cap), new_value) if device_cap is not None else new_value
-        )
+        if device_cap is not None and hasattr(self.coordinator, "device_max_discharge_power"):
+            self.coordinator.device_max_discharge_power = int(device_cap)
+        effective = getattr(self.coordinator, "effective_max_discharge_power", None)
+        if effective is None:
+            effective = min(int(device_cap), new_value) if device_cap is not None else new_value
+        if not hasattr(self.coordinator, "_configured_max_discharge_power"):
+            self.coordinator.max_discharge_power = int(effective)
         _LOGGER.info("%s: user_max_discharge_power → %dW", self.coordinator.name, new_value)
         self.async_write_ha_state()
 

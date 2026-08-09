@@ -497,7 +497,7 @@
           "pd_direction_hysteresis": "Seuil de puissance requis pour basculer entre charge et décharge. Empêche les changements rapides de direction. Plage : 0-200W, par défaut : 60W",
           "pd_min_charge_power": "Puissance minimale pour charger. En dessous de ce seuil, le contrôleur reste en veille au lieu de charger à faible puissance. 0 = désactivé.",
           "pd_min_discharge_power": "Puissance minimale pour décharger. En dessous de ce seuil, le contrôleur reste en veille au lieu de décharger à faible puissance. 0 = désactivé.",
-          "pd_target_grid_power": "Consigne de puissance réseau que le contrôleur régule. Négatif = injection réseau, positif = soutirage, 0 = bilan nul. Plage : -500 à +500 W, défaut : 0 W.",
+          "pd_target_grid_power": "Consigne de puissance réseau que le contrôleur régule. Positif = soutirage du réseau (la batterie charge), négatif = injection vers le réseau (la batterie décharge), 0 = bilan nul. La plage suit la puissance totale configurée de vos batteries, limitée par les limites de puissance système lorsqu'elles sont actives. Défaut : 0 W.",
           "enable_system_power_limits": "Si active, les deux curseurs ci-dessous limitent la puissance combinee de charge/decharge de toutes les batteries actives.",
           "system_max_charge_power": "Limite optionnelle pour la puissance de charge combinee de toutes les batteries actives. 0 = desactive; les limites par batterie s'appliquent toujours.",
           "system_max_discharge_power": "Limite optionnelle pour la puissance de decharge combinee de toutes les batteries actives. 0 = desactive; les limites par batterie s'appliquent toujours."
@@ -1150,7 +1150,7 @@
           "pd_direction_hysteresis": "Seuil de puissance requis pour basculer entre charge et décharge. Empêche les changements rapides de direction. Plage : 0-200W, par défaut : 60W",
           "pd_min_charge_power": "Puissance minimale pour charger. En dessous de ce seuil, le contrôleur reste en veille au lieu de charger à faible puissance. 0 = désactivé.",
           "pd_min_discharge_power": "Puissance minimale pour décharger. En dessous de ce seuil, le contrôleur reste en veille au lieu de décharger à faible puissance. 0 = désactivé.",
-          "pd_target_grid_power": "Consigne de puissance réseau que le contrôleur régule. Négatif = injection réseau, positif = soutirage, 0 = bilan nul. Plage : -500 à +500 W, défaut : 0 W.",
+          "pd_target_grid_power": "Consigne de puissance réseau que le contrôleur régule. Positif = soutirage du réseau (la batterie charge), négatif = injection vers le réseau (la batterie décharge), 0 = bilan nul. La plage suit la puissance totale configurée de vos batteries, limitée par les limites de puissance système lorsqu'elles sont actives. Défaut : 0 W.",
           "enable_system_power_limits": "Si active, les deux curseurs ci-dessous limitent la puissance combinee de charge/decharge de toutes les batteries actives.",
           "system_max_charge_power": "Limite optionnelle pour la puissance de charge combinee de toutes les batteries actives. 0 = desactive; les limites par batterie s'appliquent toujours.",
           "system_max_discharge_power": "Limite optionnelle pour la puissance de decharge combinee de toutes les batteries actives. 0 = desactive; les limites par batterie s'appliquent toujours."
