@@ -151,7 +151,9 @@
           "backup_offgrid_threshold": "Backup offgrid load threshold (W)",
           "full_charge_voltage_taper_enabled": "Enable 100% charge voltage taper",
           "battery_capacity_kwh": "Battery nominal capacity (kWh)",
-          "battery_phase": "Physical battery phase"
+          "battery_phase": "Physical battery phase",
+          "track_mac": "Re-find this battery by its MAC address if its IP address changes",
+          "mac": "MAC Address"
         },
         "data_description": {
           "max_charge_power": "Maximum power allowed to charge the battery",
@@ -162,7 +164,9 @@
           "backup_offgrid_threshold": "Offgrid load above this value is treated as an active backup event, excluding the battery from PD control. Set higher if you have permanent loads (router, cameras) on the offgrid port.",
           "full_charge_voltage_taper_enabled": "When the target is 100%, limit charge to 200 W from 3.48 V max cell voltage. Venus E models stop at 3.60 V to measure imbalance after 60 seconds; Venus A/D with coupled packs keep charging at 200 W until the BMS cuts off.",
           "battery_capacity_kwh": "Nominal usable capacity of the battery pack. Used to calculate stored energy and efficiency from SOC. Sessy requires its actual capacity; for other batteries, leave at 0 if unknown.",
-          "battery_phase": "Physical AC phase (L1/L2/L3) where this battery is wired, or Unassigned when it is outside the protected phase layout. An unassigned battery is outside the three-phase envelope and continues normal automatic operation."
+          "battery_phase": "Physical AC phase (L1/L2/L3) where this battery is wired, or Unassigned when it is outside the protected phase layout. An unassigned battery is outside the three-phase envelope and continues normal automatic operation.",
+          "track_mac": "The MAC address is the battery's permanent hardware address: unlike the IP address above, it never changes. Home Assistant uses it to find the battery again and update the IP address by itself.",
+          "mac": "Permanent hardware address of the interface the battery uses on your network. Take it from your router's device list: a battery can report a different MAC than the one its wired interface actually uses. Filled in automatically when Home Assistant's DHCP cache is available."
         }
       },
       "time_slots": {
@@ -627,6 +631,7 @@
       }
     },
     "error": {
+      "invalid_mac": "That does not look like a MAC address. Six pairs of hexadecimal digits are expected, for example dc:04:5a:14:6b:33.",
       "cannot_connect": "Cannot connect to the battery. Check the IP address and that the battery is accessible on the network.",
       "esphome_entities_missing": "The selected ESPHome device is missing required entities: {missing}. Make sure it runs the marstek-lilygo-rs485 firmware with the stock entity names.",
       "sensor_not_found": "Solar forecast sensor does not exist. Verify the sensor is available.",
@@ -653,6 +658,8 @@
       "missing_activity_sensor": "Select an Activity / EV charging sensor for Dynamic Power Control or an EV charger without power telemetry."
     },
     "abort": {
+      "ip_updated": "The battery's IP address changed; the connection was updated automatically.",
+      "no_tracked_battery": "No configured battery is tracked by this device's MAC address.",
       "already_configured": "This integration is already configured.",
       "reconfigure_successful": "Battery connection settings updated successfully.",
       "no_legacy_entries": "No legacy Marstek Venus configuration was found to migrate.",
@@ -801,7 +808,9 @@
           "backup_offgrid_threshold": "Backup offgrid load threshold (W)",
           "full_charge_voltage_taper_enabled": "Enable 100% charge voltage taper",
           "battery_capacity_kwh": "Battery nominal capacity (kWh)",
-          "battery_phase": "Physical battery phase"
+          "battery_phase": "Physical battery phase",
+          "track_mac": "Re-find this battery by its MAC address if its IP address changes",
+          "mac": "MAC Address"
         },
         "data_description": {
           "max_charge_power": "Maximum power allowed to charge the battery",
@@ -812,7 +821,9 @@
           "backup_offgrid_threshold": "Offgrid load above this value is treated as an active backup event, excluding the battery from PD control. Set higher if you have permanent loads (router, cameras) on the offgrid port.",
           "full_charge_voltage_taper_enabled": "When the target is 100%, limit charge to 200 W from 3.48 V max cell voltage. Venus E models stop at 3.60 V to measure imbalance after 60 seconds; Venus A/D with coupled packs keep charging at 200 W until the BMS cuts off.",
           "battery_capacity_kwh": "Nominal usable capacity of the battery pack. Used to calculate stored energy and efficiency from SOC. Sessy requires its actual capacity; for other batteries, leave at 0 if unknown.",
-          "battery_phase": "Physical AC phase (L1/L2/L3) where this battery is wired, or Unassigned when it is outside the protected phase layout. An unassigned battery is outside the three-phase envelope and continues normal automatic operation."
+          "battery_phase": "Physical AC phase (L1/L2/L3) where this battery is wired, or Unassigned when it is outside the protected phase layout. An unassigned battery is outside the three-phase envelope and continues normal automatic operation.",
+          "track_mac": "The MAC address is the battery's permanent hardware address: unlike the IP address above, it never changes. Home Assistant uses it to find the battery again and update the IP address by itself.",
+          "mac": "Permanent hardware address of the interface the battery uses on your network. Take it from your router's device list: a battery can report a different MAC than the one its wired interface actually uses. Filled in automatically when Home Assistant's DHCP cache is available."
         }
       },
       "time_slots": {
@@ -1196,6 +1207,7 @@
       }
     },
     "error": {
+      "invalid_mac": "That does not look like a MAC address. Six pairs of hexadecimal digits are expected, for example dc:04:5a:14:6b:33.",
       "cannot_connect": "Cannot connect to the battery. Check the IP address and that the battery is accessible on the network.",
       "esphome_entities_missing": "The selected ESPHome device is missing required entities: {missing}. Make sure it runs the marstek-lilygo-rs485 firmware with the stock entity names.",
       "sensor_not_found": "Solar forecast sensor does not exist. Verify the sensor is available.",
