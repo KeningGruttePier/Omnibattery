@@ -48,7 +48,23 @@ If price data is unavailable at 00:05, the system retries every 15 minutes for t
 
 ### HA restart mid-day
 
-If HA restarts after the 00:05 window without a prior evaluation, the controller runs an automatic evaluation at startup (after 15 seconds) considering only the remaining slots of the current day.
+If HA restarts after the 00:05 window without a prior evaluation, the controller runs an automatic evaluation at startup (after 15 seconds). It considers the remaining slots of the current day and, when the provider has already published them, the next **12 hours** so a restart does not leave the next overnight window without a plan.
+
+## Automatic re-evaluation during the day
+
+The 00:05 plan is not immutable. Dynamic Pricing adapts it as the real day develops:
+
+- **One hour before each selected future slot**, the energy balance is checked again. A slot is silently skipped when the battery and expected solar now cover the need. If a deficit remains, a persistent notification confirms that the slot will be used. Back-to-back slots are not re-evaluated while the previous slot is still charging.
+- **Late afternoon / evening**, the controller performs one additional recharge assessment. When solar start was detected, it runs approximately **1.5 hours before the estimated end of production**; if no start was detected, it uses a safe fallback at **16:00**. It projects the remaining household consumption until midnight, subtracts usable battery energy and remaining solar, and adds only the cheap future slots needed to cover a material deficit (at least **0.3 kWh**). This is a safety top-up, so it is not blocked by the optional arbitrage-margin gate.
+- **After a 30-point SOC drop**, it performs the same late-day deficit assessment immediately instead of waiting for the evening trigger. The comparison is against the average battery SOC recorded at the last Dynamic Pricing evaluation; only drops of at least 30 percentage points trigger it, the reference is reset after reevaluation, and an SOC rise never triggers it.
+
+These reevaluations keep existing charge limits, SOC floors, time-slot ownership, manual mode, backup and availability protections authoritative. The daily reference and once-per-day evening guard reset at midnight.
+
+### Re-evaluate Dynamic Pricing button
+
+When Dynamic Pricing is enabled, the system device exposes **Re-evaluate Dynamic Pricing** (`button.*_reevaluate_dynamic_pricing`) in the dashboard and in Home Assistant. Pressing it immediately rebuilds the schedule with the latest price and solar data, using the same extended horizon as the startup catch-up path (end of today or **now + 12 hours**, whichever is later).
+
+This button is useful after changing a price threshold, forecast or runtime option. It is deliberately not a full multi-day planner: pressing it in the afternoon does not reserve tomorrow afternoon's energy against today's deficit. Tomorrow's normal plan is built at 00:05 once that day's balance is known.
 
 ---
 

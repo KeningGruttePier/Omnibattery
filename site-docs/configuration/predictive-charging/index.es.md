@@ -75,6 +75,7 @@ La integración envía notificaciones de Home Assistant:
 
 - **1 hora antes** del inicio del slot: análisis del balance energético y decisión de carga.
 - **Al inicio del slot**: confirmación de que la carga ha comenzado.
+- En modo Precio Dinámico, el plan también se comprueba **1 hora antes de cada franja futura**, una vez a **última hora de la tarde/noche** y después de una **caída de 30 puntos porcentuales de SOC**.
 
 Usa el switch **Override Predictive Charging** para cancelar la carga predictiva en cualquier momento.
 

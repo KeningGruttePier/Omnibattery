@@ -48,7 +48,23 @@ Si los datos de precios no están disponibles a las 00:05, el sistema reintenta 
 
 ### Reinicio de HA a mitad del día
 
-Si HA se reinicia después de la ventana de las 00:05 sin evaluación previa, el controlador lanza una evaluación automática en el arranque (tras 15 segundos) considerando solo los slots del día actual.
+Si HA se reinicia después de la ventana de las 00:05 sin evaluación previa, el controlador lanza una evaluación automática en el arranque (tras 15 segundos). Considera los slots restantes del día actual y, cuando el proveedor ya los ha publicado, las próximas **12 horas**, para que un reinicio no deje sin plan la siguiente ventana nocturna.
+
+## Reevaluación automática durante el día
+
+El plan de las 00:05 no es inmutable. Precio Dinámico lo adapta a medida que avanza el día:
+
+- **Una hora antes de cada franja futura seleccionada**, se vuelve a comprobar el balance energético. La franja se omite silenciosamente si la batería y la solar prevista ya cubren la necesidad. Si sigue existiendo déficit, se envía una notificación persistente confirmando que se utilizará. Las franjas consecutivas no se reevalúan mientras la anterior siga cargando.
+- **A última hora de la tarde / por la noche**, el controlador hace una evaluación adicional de recarga. Si se detectó el inicio de la solar, se ejecuta aproximadamente **1,5 horas antes del final estimado de producción**; si no se detectó, usa un fallback seguro a las **16:00**. Proyecta el consumo restante del hogar hasta medianoche, resta la energía utilizable de la batería y la solar restante, y añade solo las franjas baratas necesarias para cubrir un déficit material (al menos **0,3 kWh**). Es una recarga de seguridad, por lo que no la bloquea el margen de arbitraje opcional.
+- **Después de una caída de 30 puntos de SOC**, ejecuta inmediatamente esa misma evaluación de déficit de final del día, sin esperar al disparador vespertino. La comparación se hace contra el SOC medio de las baterías registrado en la última evaluación de Precio Dinámico; solo dispara una caída de al menos 30 puntos porcentuales, la referencia se reinicia después de reevaluar y una subida de SOC nunca lo dispara.
+
+Estas reevaluaciones mantienen vigentes los límites de carga, suelos de SOC, propiedad de franjas, modo manual, reserva y disponibilidad. La referencia diaria y la protección de una sola reevaluación vespertina se reinician a medianoche.
+
+### Botón Reevaluar Precios Dinámicos
+
+Cuando Precio Dinámico está activado, el dispositivo del sistema expone **Reevaluar Precios Dinámicos** (`button.*_reevaluate_dynamic_pricing`) en el panel y en Home Assistant. Al pulsarlo reconstruye inmediatamente el plan con los precios y la previsión solar más recientes, usando el mismo horizonte ampliado que la recuperación al arrancar (fin de hoy o **ahora + 12 horas**, lo que quede más lejos).
+
+El botón es útil después de cambiar un umbral de precio, la previsión o una opción en tiempo de ejecución. Deliberadamente no es un planificador de varios días: pulsarlo por la tarde no reserva la energía de mañana por la tarde contra el déficit de hoy. El plan normal de mañana se construye a las 00:05, cuando ya se conoce el balance de ese día.
 
 ---
 

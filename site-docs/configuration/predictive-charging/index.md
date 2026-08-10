@@ -75,6 +75,7 @@ The integration sends Home Assistant notifications:
 
 - **1 hour before** the slot starts: energy balance analysis and charging decision.
 - **When the slot starts**: confirmation that charging has begun.
+- In Dynamic Pricing mode, the plan is also checked **1 hour before each future slot**, once in the **late afternoon/evening**, and after a **30 percentage-point SOC drop**.
 
 Use the **Override Predictive Charging** switch to cancel predictive charging at any time.
 

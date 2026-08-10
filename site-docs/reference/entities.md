@@ -107,6 +107,7 @@ Only present when the [cell balance monitor](../features/cell-balance-monitor.md
 | Entity | Description |
 |---|---|
 | `button.*_reset` | Device reset |
+| `button.omnibattery_reevaluate_dynamic_pricing` | Rebuild the Dynamic Pricing schedule now; only created in Dynamic Pricing mode |
 
 ## System sensors
 
