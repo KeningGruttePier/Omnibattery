@@ -2923,11 +2923,20 @@ class ChargeDischargeController:
         """Delegates to PricingManager.startup_evaluation (scheduled from async_setup_entry)."""
         await self._pricing_mgr.startup_evaluation()
 
-    async def _should_activate_grid_charging(self) -> dict:
+    async def _should_activate_grid_charging(
+        self,
+        *,
+        consumption_override_kwh: float | None = None,
+        solar_forecast_override_kwh: float | None = None,
+    ) -> dict:
         """
         Evaluate whether to activate grid charging using energy balance approach.
 
         Formula: charge if (usable_energy + solar_forecast) < consumption
+
+        ``consumption_override_kwh`` and ``solar_forecast_override_kwh`` allow a
+        caller to evaluate a shorter horizon, such as the energy still needed
+        before midnight. The normal daily evaluation leaves both unset.
 
         Where:
         - usable_energy = stored_energy - cutoff_energy
@@ -3062,19 +3071,41 @@ class ChargeDischargeController:
         if self._predictive_min_soc_floor_enabled and self._predictive_min_soc_floor > 0 and avg_soc < self._predictive_min_soc_floor - FLOOR_HYSTERESIS_PCT:
             floor_deficit_kwh = (self._predictive_min_soc_floor - avg_soc) / 100.0 * total_capacity_kwh
 
-        # Get dynamic consumption forecast
-        avg_consumption_kwh = await self._consumption_tracker.get_dynamic_base_consumption()
+        # Get dynamic consumption forecast.  The normal 00:05 evaluation uses
+        # the full-day average; a pre-slot re-evaluation may provide the
+        # remaining consumption for the current day instead.
+        consumption_scope = "daily"
+        if consumption_override_kwh is None:
+            avg_consumption_kwh = await self._consumption_tracker.get_dynamic_base_consumption()
+        else:
+            try:
+                avg_consumption_kwh = max(0.0, float(consumption_override_kwh))
+                consumption_scope = "remaining"
+            except (TypeError, ValueError):
+                avg_consumption_kwh = await self._consumption_tracker.get_dynamic_base_consumption()
         days_in_history = len(self._daily_consumption_history)
 
         # === STEP 4: Get Solar Forecast ===
-        # Use the live sensor value directly — today's forecast updates throughout the day
-        # and reflects improving accuracy as actual weather conditions develop.
-        forecast_state = (
-            self.hass.states.get(self.solar_forecast_sensor)
-            if self.solar_forecast_sensor
-            else None
-        )
-        if forecast_state is None or forecast_state.state in ("unknown", "unavailable"):
+        # Use the live sensor value directly for the daily evaluation.  A
+        # pre-slot re-evaluation can provide the remaining solar explicitly so
+        # energy already produced today is not counted again.
+        solar_forecast_kwh = None
+        if solar_forecast_override_kwh is not None:
+            try:
+                solar_forecast_kwh = max(0.0, float(solar_forecast_override_kwh))
+            except (TypeError, ValueError):
+                solar_forecast_kwh = None
+
+        forecast_state = None
+        if solar_forecast_kwh is None:
+            forecast_state = (
+                self.hass.states.get(self.solar_forecast_sensor)
+                if self.solar_forecast_sensor
+                else None
+            )
+        if solar_forecast_kwh is None and (
+            forecast_state is None or forecast_state.state in ("unknown", "unavailable")
+        ):
             # Conservative mode: assume zero solar, compare usable vs consumption
             total_available_kwh = usable_energy_kwh
             energy_deficit_kwh = max(avg_consumption_kwh + safety_margin_kwh - total_available_kwh, floor_deficit_kwh)
@@ -3110,12 +3141,17 @@ class ChargeDischargeController:
                 "energy_deficit_kwh": energy_deficit_kwh,
                 "planned_grid_charge_kwh": planned_grid_charge_kwh,
                 "days_in_history": days_in_history,
+                "consumption_scope": consumption_scope,
                 "reason": f"Solar unavailable - conservative mode ({'charge' if should_charge else 'safe'})"
             }
 
-        try:
-            solar_forecast_kwh = float(forecast_state.state)
-        except (ValueError, TypeError):
+        if solar_forecast_kwh is None:
+            try:
+                solar_forecast_kwh = float(forecast_state.state)
+            except (ValueError, TypeError):
+                solar_forecast_kwh = None
+
+        if solar_forecast_kwh is None:
             # Treat invalid as unavailable - use same conservative logic
             total_available_kwh = usable_energy_kwh
             energy_deficit_kwh = max(avg_consumption_kwh + safety_margin_kwh - total_available_kwh, floor_deficit_kwh)
@@ -3151,6 +3187,7 @@ class ChargeDischargeController:
                 "energy_deficit_kwh": energy_deficit_kwh,
                 "planned_grid_charge_kwh": planned_grid_charge_kwh,
                 "days_in_history": days_in_history,
+                "consumption_scope": consumption_scope,
                 "reason": "Invalid solar forecast - conservative mode"
             }
 
@@ -3222,6 +3259,7 @@ class ChargeDischargeController:
             "solar_surplus_kwh": solar_surplus_kwh,
             "grid_charge_kwh": grid_charge_kwh,
             "floor_active": floor_active,
+            "consumption_scope": consumption_scope,
             "consumption_source": "derived (grid + battery AC + solar)",
             "reason": (
                 f"Guaranteed minimum SOC: charging {energy_deficit_kwh:.2f} kWh "

@@ -311,17 +311,21 @@ def format_dp_pre_slot_reevaluation_notification(
     avg_consumption = decision.get("avg_consumption_kwh", 0)
     energy_deficit = decision.get("energy_deficit_kwh", 0)
     days_in_history = decision.get("days_in_history", 0)
+    is_remaining = decision.get("consumption_scope") == "remaining"
 
     solar_str = f"{solar_forecast:.2f} kWh" if solar_forecast is not None else "N/A"
-    consumption_str = (
-        f"{avg_consumption:.2f} kWh ({days_in_history}-day avg)"
-        if days_in_history > 0 else f"{avg_consumption:.2f} kWh (default)"
-    )
+    solar_label = "Solar remaining" if is_remaining else "Solar forecast"
+    if is_remaining:
+        consumption_str = f"{avg_consumption:.2f} kWh (remaining until midnight)"
+    elif days_in_history > 0:
+        consumption_str = f"{avg_consumption:.2f} kWh ({days_in_history}-day avg)"
+    else:
+        consumption_str = f"{avg_consumption:.2f} kWh (default)"
 
     title = f"Predictive Charging: slot {slot.start.strftime('%H:%M')} confirmed — charging needed"
     message = (
         f"🔋 Battery: {avg_soc:.0f}% ({usable_energy:.2f} kWh usable)\n"
-        f"☀️ Solar forecast: {solar_str}\n"
+        f"☀️ {solar_label}: {solar_str}\n"
         f"📊 Consumption: {consumption_str}\n"
         f"⚡ Energy deficit: {energy_deficit:.2f} kWh\n\n"
         f"Slot: {slot.start.strftime('%H:%M')}–{slot.end.strftime('%H:%M')} "

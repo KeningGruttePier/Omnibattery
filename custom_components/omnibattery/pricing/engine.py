@@ -2238,7 +2238,7 @@ class PricingManager:
         if has_deficit and bool(
             getattr(schedule, "deficit_charging_needed", schedule.charging_needed)
         ):
-            decision = await self._controller._should_activate_grid_charging()
+            decision = await self._evaluate_remaining_grid_charging()
             self._controller._last_decision_data = decision
             deficit_needed = bool(decision["should_charge"])
 
@@ -2352,6 +2352,52 @@ class PricingManager:
             return False
         current = sum(c.data.get("battery_soc", 0) for c in coords) / len(coords)
         return (ref - current) >= SOC_REEVALUATION_THRESHOLD
+
+    async def _evaluate_remaining_grid_charging(self) -> dict:
+        """Evaluate the energy still needed before the end of today's horizon.
+
+        The daily 00:05 evaluation intentionally uses the complete daily
+        consumption and solar forecasts.  Just before a selected price slot,
+        however, energy already consumed or produced must not be counted a
+        second time.  Keep this as a separate call path so the morning plan is
+        unchanged while the live pre-slot gate uses the current remainder.
+        """
+        controller = self._controller
+        tracker = getattr(controller, "_consumption_tracker", None)
+        get_average = getattr(tracker, "get_dynamic_base_consumption", None)
+        if tracker is None or not callable(get_average):
+            # Lightweight callers/tests and partially initialised entries keep
+            # the established daily evaluation behaviour.
+            return await controller._should_activate_grid_charging()
+
+        now = datetime.now()
+        now_h = now.hour + now.minute / 60.0 + now.second / 3600.0
+        avg_daily_kwh = await get_average()
+        daily_energy_date = getattr(controller, "_daily_home_energy_date", now.date())
+        consumed_today_kwh = (
+            getattr(controller, "_daily_home_energy_kwh", 0.0) or 0.0
+            if daily_energy_date == now.date()
+            else 0.0
+        )
+        remaining_consumption_kwh, consumption_rate_kwh_h = (
+            self._project_remaining_consumption(
+                now_h, consumed_today_kwh, avg_daily_kwh
+            )
+        )
+        remaining_solar_kwh = self._remaining_solar_today_kwh(now_h)
+
+        decision = await controller._should_activate_grid_charging(
+            consumption_override_kwh=remaining_consumption_kwh,
+            solar_forecast_override_kwh=remaining_solar_kwh,
+        )
+        # Keep explicit diagnostics for the pre-slot notification and future
+        # consumers while preserving the legacy avg_consumption_kwh field.
+        decision["consumption_scope"] = "remaining"
+        decision["consumed_today_kwh"] = consumed_today_kwh
+        decision["remaining_consumption_kwh"] = remaining_consumption_kwh
+        decision["remaining_solar_kwh"] = remaining_solar_kwh
+        decision["consumption_rate_kwh_h"] = consumption_rate_kwh_h
+        return decision
 
     @staticmethod
     def _project_remaining_consumption(

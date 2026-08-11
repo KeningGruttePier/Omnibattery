@@ -18,6 +18,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from custom_components.omnibattery import ChargeDischargeController
 from custom_components.omnibattery.const import (
     DEFAULT_ROUND_TRIP_EFFICIENCY,
     PRICE_INTEGRATION_CKW,
@@ -237,6 +238,111 @@ def test_remaining_consumption_cold_accumulator_uses_avg_rate():
 def test_remaining_consumption_zero_at_midnight():
     remaining, _ = PricingManager._project_remaining_consumption(24.0, 20.0, 20.0)
     assert remaining == 0.0
+
+
+def test_pre_slot_reevaluation_uses_remaining_consumption_and_solar(monkeypatch):
+    import asyncio
+
+    now = datetime(2026, 8, 11, 12, 0)
+
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return now
+
+    monkeypatch.setattr(pricing_engine, "datetime", FixedDateTime)
+
+    async def get_average_consumption():
+        return 20.0
+
+    decision_calls = []
+
+    async def should_activate(**overrides):
+        decision_calls.append(overrides)
+        return {"should_charge": False}
+
+    slot = PriceSlot(
+        start=now + timedelta(hours=1),
+        end=now + timedelta(hours=1, minutes=15),
+        price=0.10,
+    )
+    schedule = SimpleNamespace(
+        selected_slots=[slot],
+        charging_needed=True,
+        deficit_charging_needed=True,
+        slot_purposes={slot: "deficit"},
+    )
+    ctrl = _controller(
+        _dynamic_pricing_schedule=schedule,
+        _dp_pre_evaluated_slots={},
+        _dp_pre_evaluated_purposes={},
+        _current_price_slot_active=False,
+        _consumption_tracker=SimpleNamespace(
+            get_dynamic_base_consumption=get_average_consumption,
+        ),
+        _daily_home_energy_date=now.date(),
+        _daily_home_energy_kwh=6.0,
+        _should_activate_grid_charging=should_activate,
+    )
+    manager = _mgr(ctrl)
+    manager._remaining_solar_today_kwh = lambda _now_h: 3.5
+
+    asyncio.run(manager._check_dp_pre_slot_reevaluation())
+
+    # 6 kWh used by noon at the observed 0.5 kWh/h rate → 6 kWh remain.
+    assert decision_calls == [{
+        "consumption_override_kwh": 6.0,
+        "solar_forecast_override_kwh": 3.5,
+    }]
+    assert ctrl._dp_pre_evaluated_slots[slot.start] is False
+    assert ctrl._dp_pre_evaluated_purposes[slot.start] is None
+
+
+def test_energy_balance_accepts_remaining_horizon_overrides():
+    import asyncio
+
+    def fail_if_sensor_read(_entity_id):
+        raise AssertionError("remaining-horizon evaluation must not read the daily forecast sensor")
+
+    async def fail_if_average_read():
+        raise AssertionError("remaining-horizon evaluation already supplied consumption")
+
+    coordinator = SimpleNamespace(
+        data={"battery_soc": 50.0, "battery_total_energy": 10.0},
+        min_soc=10.0,
+        max_soc=95.0,
+    )
+    ctrl = SimpleNamespace(
+        predictive_charging_enabled=True,
+        predictive_charging_overridden=False,
+        coordinators=[coordinator],
+        _predictive_safety_margin_kwh=0.0,
+        _predictive_grid_charge_margin_pct=0.0,
+        _predictive_min_soc_floor=0.0,
+        _predictive_min_soc_floor_enabled=False,
+        _daily_consumption_history=[],
+        solar_forecast_sensor="sensor.solar",
+        hass=SimpleNamespace(
+            states=SimpleNamespace(get=fail_if_sensor_read),
+        ),
+        _consumption_tracker=SimpleNamespace(
+            get_dynamic_base_consumption=fail_if_average_read,
+        ),
+    )
+
+    result = asyncio.run(
+        ChargeDischargeController._should_activate_grid_charging(
+            ctrl,
+            consumption_override_kwh=3.0,
+            solar_forecast_override_kwh=1.0,
+        )
+    )
+
+    # 4 kWh usable + 1 kWh remaining solar covers the 3 kWh remaining load.
+    assert result["should_charge"] is False
+    assert result["avg_consumption_kwh"] == 3.0
+    assert result["solar_forecast_kwh"] == 1.0
+    assert result["consumption_scope"] == "remaining"
 
 
 # ----------------------------------------------------------------------
