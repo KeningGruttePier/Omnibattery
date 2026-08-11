@@ -15,22 +15,19 @@ the final device limit.
 |---|---|---:|---:|
 | `MS-A2`, `MS-A2-FX`, `MS-A2-ZZ` | MS-A2 | 2.24 kWh per unit, up to 4.48 kWh | 1000 W per unit, up to 2000 W |
 | `HB-1920-AC-SV` | HiBattery 1920 AC | 1.92 kWh per unit, up to 11.52 kWh | 1000 W per unit, up to 6000 W |
-| `HB-4020-X`, `HB-4020-XM` | HiBattery 4020 X | 4.02 kWh per pack, up to 16.08 kWh | Base: 2000/2000 W; expanded: up to 6500/2500 W charge/discharge |
-| `HB-4020-AC`, `HB-4020-ACM` | HiBattery 4020 AC | 4.02 kWh per pack, up to 16.08 kWh | Base: 2000/2000 W; expanded: up to 2500/2500 W charge/discharge |
+| `HB-4020-X`, `HB-4020-XM` | HiBattery 4020 X | 4.02 kWh per pack, up to 16.08 kWh | Current integration ceiling: 2500/2500 W charge/discharge |
+| `HB-4020-AC`, `HB-4020-ACM` | HiBattery 4020 AC | 4.02 kWh per pack, up to 16.08 kWh | Current integration ceiling: 2500/2500 W charge/discharge |
 
 ¹ The retained MQTT `min`/`max` envelope is authoritative and may be lower or
 asymmetric for a particular hardware variant, country setting or firmware.
 
-The 4020 X manual specifies the following battery-side limits for the main unit
-plus zero to three HB-4020-S expansion packs: `2000/2000`, `4000/2500`,
-`6000/2500` and `6500/2500 W` charge/discharge. The current 4020 AC manual
-(REV1.2) specifies `2000/2000 W` without an expansion and `2500/2500 W` with
-one or more expansions. Separately, the non-M on-grid variants are rated for
-800 W output while XM/ACM are rated for 2500 W; this is not the same value as
-battery-side charge/discharge power. Omnibattery allows the full family safety
-ceiling but always reduces it to the signed range published by that particular
-system over MQTT. Verify the configured capacity when expansion packs are
-installed.
+The 4020 X manual specifies higher battery-side limits for larger expansion
+stacks, while the current 4020 AC manual (REV1.2) documents expansion-dependent
+limits as well. Omnibattery currently uses a symmetric software ceiling of
+`2500/2500 W` for both 4020 variants. Higher power operation for larger stacks
+is intentionally out of scope; open a feature request before extending it.
+The device-published MQTT envelope remains authoritative and can reduce the
+effective limit. Capacity can still reflect expansion packs.
 
 ## Prerequisites
 
@@ -57,10 +54,9 @@ address, HTTP port, manual MQTT sensor or automation is required.
 
 The next step shows the detected capacity and charge/discharge limits. These
 remain editable software ceilings and can be reduced for the installation. A
-base 4020 X, for example, uses a `4.02 kWh` capacity and `2000/2000 W`
-charge/discharge profile instead of inheriting the MS-A2's `2.24 kWh` and
-`1000/1000 W`. Expansion configurations can advertise the higher limits listed
-above, while a lower limit advertised by an individual device is preserved.
+base 4020 X, for example, uses a `4.02 kWh` capacity and a `2500/2500 W`
+software ceiling instead of inheriting the MS-A2's `2.24 kWh` and `1000/1000 W`
+defaults. Any lower limit advertised by the individual device is preserved.
 
 The MQTT protocol does not expose writable SOC cutoffs or individual cell
 voltages. Omnibattery therefore enforces SOC limits in software, and the

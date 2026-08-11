@@ -14,6 +14,7 @@ from custom_components.omnibattery.drivers.hoymiles import (
 from custom_components.omnibattery.config_flow import (
     MarstekVenusConfigFlow,
     _hoymiles_apply_probe_caps,
+    _hoymiles_power_ceilings,
 )
 
 
@@ -178,6 +179,28 @@ async def test_4020_x_discovery_uses_its_2_kw_profile_instead_of_ms_a2_limits(mq
 
 
 @pytest.mark.asyncio
+async def test_4020_x_expansion_is_limited_to_2500_w_bidirectionally(mqtt_mock):
+    driver = HoymilesMqttDriver(
+        SimpleNamespace(async_create_task=asyncio.create_task),
+        "HB-4020",
+        model="hibattery_4020_x",
+    )
+    await driver.connect()
+
+    mqtt_mock.callbacks[driver._power_config_topic](SimpleNamespace(payload='''{
+        "min": -7000,
+        "max": 3000,
+        "device": {"model": "HB-4020-X-3"}
+    }'''))
+
+    assert driver.capabilities.max_charge_power_w == 2500
+    assert driver.capabilities.max_discharge_power_w == 2500
+    assert (await driver.apply_setpoint(3000, read_back=False)).net_power_w == 2500
+    assert (await driver.apply_setpoint(-3000, read_back=False)).net_power_w == -2500
+    await driver.close()
+
+
+@pytest.mark.asyncio
 async def test_configured_4020_x_overrides_incorrect_ms_a2_discovery_model(mqtt_mock):
     driver = HoymilesMqttDriver(
         SimpleNamespace(async_create_task=asyncio.create_task),
@@ -216,10 +239,19 @@ def test_hoymiles_profiles_cover_scalable_1920_and_4020_variants():
     ) == (1000, 800)
     assert HoymilesMqttDriver._device_power_caps(
         {"min": -7000, "max": 3000, "device": {"model": "HB-4020-X-3"}}
-    ) == (6500, 2500)
+    ) == (2500, 2500)
     assert HoymilesMqttDriver._device_power_caps(
         {"min": -7000, "max": 3000, "device": {"model": "HB-4020-AC-3"}}
     ) == (2500, 2500)
+
+
+def test_4020_power_ceilings_are_bidirectional_2500_w():
+    for model in ("hibattery_4020_x", "hibattery_4020_ac"):
+        assert _hoymiles_power_ceilings({
+            "hoymiles_model": model,
+            "device_max_charge_power": 6500,
+            "device_max_discharge_power": 3000,
+        }) == (2500, 2500)
 
 
 def test_detected_4020_profile_upgrades_only_legacy_ms_a2_defaults():

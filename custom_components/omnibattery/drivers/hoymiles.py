@@ -78,7 +78,10 @@ HOYMILES_MODEL_PROFILES: tuple[HoymilesModelProfile, ...] = (
         4.02,
         2000,
         2000,
-        6500,
+        # Keep the current integration scope symmetric at 2500 W. Higher
+        # charge limits available on larger expansion stacks are reserved for
+        # a future feature request.
+        2500,
         2500,
         max_units=4,
         capacity_scales_with_units=True,
