@@ -19,6 +19,7 @@ from types import SimpleNamespace
 import pytest
 
 from custom_components.omnibattery import ChargeDischargeController
+from custom_components.omnibattery.button import ReevaluateDynamicPricingButton
 from custom_components.omnibattery.const import (
     DEFAULT_ROUND_TRIP_EFFICIENCY,
     PRICE_INTEGRATION_CKW,
@@ -35,7 +36,10 @@ from custom_components.omnibattery.pricing import (
     PriceSlot,
 )
 from custom_components.omnibattery.pricing import engine as pricing_engine
-from custom_components.omnibattery.pricing.engine import PricingManager
+from custom_components.omnibattery.pricing.engine import (
+    DynamicPricingEvaluationHorizon,
+    PricingManager,
+)
 from custom_components.omnibattery.pricing.nordpool import OfficialNordPoolSource
 from custom_components.omnibattery.pricing.curtailment import (
     EXPORT_MODE_AUTOMATIC,
@@ -213,24 +217,27 @@ def test_soc_drop_reeval_false_when_no_coordinator_data():
 # _project_remaining_consumption (evening recharge deficit, #409)
 # ----------------------------------------------------------------------
 
-def test_remaining_consumption_projects_todays_rate():
-    # 18:00, 12 kWh used so far → 0.667 kWh/h × 6h left = 4.0 kWh.
+def test_remaining_consumption_keeps_historical_remainder_when_larger():
+    # 18:00, 12 kWh used so far.  The observed rate projects 4 kWh, but the
+    # historical 20 kWh average still has 8 kWh unspent.
     remaining, rate = PricingManager._project_remaining_consumption(18.0, 12.0, 20.0)
     assert round(rate, 3) == 0.667
-    assert round(remaining, 2) == 4.0
+    assert round(remaining, 2) == 8.0
 
 
-def test_remaining_consumption_heavy_day_charges_more_than_light():
-    # Same hour: a heavy day so far projects a larger remaining need than a
-    # light day — the property "avg − consumed" got backwards.
+def test_remaining_consumption_keeps_observed_rate_when_larger_than_history():
+    # A heavy day that has already passed the daily average must still preserve
+    # the observed rate projection instead of reporting zero remaining load.
     heavy, _ = PricingManager._project_remaining_consumption(18.0, 18.0, 17.0)
-    light, _ = PricingManager._project_remaining_consumption(18.0, 6.0, 17.0)
-    assert heavy > light
+    assert heavy == pytest.approx(6.0)
 
 
 def test_remaining_consumption_cold_accumulator_uses_avg_rate():
-    # consumed_today = 0 (e.g. just after restart) → fall back to avg/24 rate.
-    remaining, rate = PricingManager._project_remaining_consumption(18.0, 0.0, 24.0)
+    # A cold accumulator after restart cannot subtract today's consumption, so
+    # project the historical hourly average over the hours that remain.
+    remaining, rate = PricingManager._project_remaining_consumption(
+        18.0, 0.0, 24.0, accumulator_ready=False
+    )
     assert rate == 1.0                  # 24 kWh / 24 h
     assert round(remaining, 2) == 6.0   # 1.0 × 6 h
 
@@ -238,6 +245,26 @@ def test_remaining_consumption_cold_accumulator_uses_avg_rate():
 def test_remaining_consumption_zero_at_midnight():
     remaining, _ = PricingManager._project_remaining_consumption(24.0, 20.0, 20.0)
     assert remaining == 0.0
+
+
+def test_remaining_consumption_discussion_263_midday_baseline():
+    # Discussion #263: at noon, 1.2 kWh already consumed from a 5.8 kWh daily
+    # average leaves at least 4.6 kWh.  The observed-rate projection is only
+    # 1.2 kWh, so the historical remainder must win.
+    remaining, rate = PricingManager._project_remaining_consumption(12.0, 1.2, 5.8)
+    assert rate == pytest.approx(0.1)
+    assert remaining == pytest.approx(4.6)
+
+
+def test_remaining_consumption_invalid_accumulator_date_uses_hourly_fallback():
+    # A restored/stale accumulator from a previous day must not be subtracted
+    # from today's average.  Its historical hourly fallback still covers the
+    # hours remaining rather than dropping the estimate to zero.
+    remaining, rate = PricingManager._project_remaining_consumption(
+        12.0, 1.2, 5.8, accumulator_ready=False
+    )
+    assert rate == pytest.approx(5.8 / 24.0)
+    assert remaining == pytest.approx(2.9)
 
 
 def test_pre_slot_reevaluation_uses_remaining_consumption_and_solar(monkeypatch):
@@ -289,13 +316,159 @@ def test_pre_slot_reevaluation_uses_remaining_consumption_and_solar(monkeypatch)
 
     asyncio.run(manager._check_dp_pre_slot_reevaluation())
 
-    # 6 kWh used by noon at the observed 0.5 kWh/h rate → 6 kWh remain.
+    # 6 kWh used by noon at the observed 0.5 kWh/h rate projects 6 kWh, but
+    # the 20 kWh historical average leaves a larger 14 kWh baseline.
     assert decision_calls == [{
-        "consumption_override_kwh": 6.0,
+        "consumption_override_kwh": 14.0,
         "solar_forecast_override_kwh": 3.5,
     }]
     assert ctrl._dp_pre_evaluated_slots[slot.start] is False
     assert ctrl._dp_pre_evaluated_purposes[slot.start] is None
+
+
+def test_midday_calendar_rebuild_uses_remaining_consumption_and_solar(monkeypatch):
+    """Manual/configuration rebuilds must use the #263 remainder, not 00:05 data."""
+    import asyncio
+
+    now = datetime(2026, 8, 11, 12, 0)
+
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return now
+
+    monkeypatch.setattr(pricing_engine, "datetime", FixedDateTime)
+
+    async def get_average_consumption():
+        return 5.8
+
+    calls = []
+
+    async def should_activate(**overrides):
+        calls.append(overrides)
+        return {"should_charge": False, "avg_soc": 50.0}
+
+    async def no_op(*_args, **_kwargs):
+        return None
+
+    ctrl = _controller(
+        predictive_charging_enabled=True,
+        predictive_charging_mode=PREDICTIVE_MODE_DYNAMIC_PRICING,
+        smart_predischarge_enabled=False,
+        _dp_arbitrage_ceiling=None,
+        _dp_last_eval_soc=None,
+        _dp_eval_retry_count=0,
+        _daily_home_energy_date=now.date(),
+        _daily_home_energy_kwh=1.2,
+        _consumption_tracker=SimpleNamespace(
+            get_dynamic_base_consumption=get_average_consumption,
+        ),
+        _should_activate_grid_charging=should_activate,
+    )
+    manager = _mgr(ctrl)
+    manager._maybe_refresh_service_prices = no_op
+    manager._parse_price_data = lambda horizon_end=None: []
+    manager._send_dynamic_pricing_notification = no_op
+    manager._remaining_solar_today_kwh = lambda _now_h: 2.4
+
+    asyncio.run(
+        manager._evaluate_dynamic_pricing(
+            horizon=DynamicPricingEvaluationHorizon.REMAINING,
+            extended_horizon=True,
+        )
+    )
+
+    assert calls == [{
+        "consumption_override_kwh": pytest.approx(4.6),
+        "solar_forecast_override_kwh": 2.4,
+    }]
+    assert ctrl._last_decision_data["consumption_scope"] == "remaining"
+    assert ctrl._last_decision_data["remaining_solar_kwh"] == 2.4
+
+
+def test_manual_button_uses_remaining_horizon_at_midday():
+    import asyncio
+
+    calls = []
+
+    class PricingStub:
+        async def _evaluate_dynamic_pricing(self, *, horizon, extended_horizon=False):
+            calls.append((horizon, extended_horizon))
+
+    button = ReevaluateDynamicPricingButton(
+        SimpleNamespace(_pricing_mgr=PricingStub())
+    )
+    asyncio.run(button.async_press())
+
+    assert calls == [(DynamicPricingEvaluationHorizon.REMAINING, True)]
+
+
+def test_startup_rebuild_uses_remaining_horizon(monkeypatch):
+    import asyncio
+
+    now = datetime(2026, 8, 11, 12, 0)
+
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return now
+
+    async def no_sleep(_seconds):
+        return None
+
+    monkeypatch.setattr(pricing_engine, "datetime", FixedDateTime)
+    monkeypatch.setattr(pricing_engine.asyncio, "sleep", no_sleep)
+    calls = []
+
+    async def evaluate(**kwargs):
+        calls.append(kwargs)
+
+    ctrl = _controller(
+        _dynamic_pricing_evaluated_date=None,
+        predictive_charging_enabled=True,
+        coordinators=[SimpleNamespace(data={"battery_soc": 50.0})],
+    )
+    manager = _mgr(ctrl)
+    manager._evaluate_dynamic_pricing = evaluate
+
+    asyncio.run(manager.startup_evaluation())
+
+    assert calls == [{
+        "horizon": DynamicPricingEvaluationHorizon.REMAINING,
+        "extended_horizon": True,
+    }]
+
+
+def test_price_retry_uses_remaining_horizon(monkeypatch):
+    import asyncio
+
+    now = datetime(2026, 8, 11, 0, 20)
+
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return now
+
+    async def no_op(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(pricing_engine, "datetime", FixedDateTime)
+    calls = []
+
+    async def evaluate(**kwargs):
+        calls.append(kwargs)
+
+    ctrl = _controller(
+        _dynamic_pricing_evaluated_date=None,
+        _dp_eval_retry_count=1,
+    )
+    manager = _mgr(ctrl)
+    manager._maybe_refresh_service_prices = no_op
+    manager._evaluate_dynamic_pricing = evaluate
+
+    asyncio.run(manager.handle_dynamic_pricing_predictive_charging())
+
+    assert calls == [{"horizon": DynamicPricingEvaluationHorizon.REMAINING}]
 
 
 def test_energy_balance_accepts_remaining_horizon_overrides():
@@ -434,7 +607,11 @@ def test_dynamic_pricing_sizes_slots_from_planned_charge_not_full_deficit():
     mgr._parse_price_data = lambda horizon_end=None: slots
     mgr._send_dynamic_pricing_notification = no_op
 
-    asyncio.run(mgr._evaluate_dynamic_pricing())
+    asyncio.run(
+        mgr._evaluate_dynamic_pricing(
+            horizon=DynamicPricingEvaluationHorizon.DAILY,
+        )
+    )
 
     assert ctrl._dynamic_pricing_schedule.hours_needed == 2.0
     assert len(ctrl._dynamic_pricing_schedule.selected_slots) == 8

@@ -51,6 +51,7 @@ from .infra.entity_naming import (
     system_entity_id,
     SYSTEM_UNIQUE_ID_PREFIX,
 )
+from .pricing.engine import DynamicPricingEvaluationHorizon
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -1879,7 +1880,10 @@ class SmartPredischargeSwitch(SwitchEntity):
         self.hass.config_entries.async_update_entry(self.entry, data=new_data)
         _LOGGER.info("Smart pre-discharge ENABLED")
         try:
-            await self.controller._pricing_mgr._evaluate_dynamic_pricing(extended_horizon=True)
+            await self.controller._pricing_mgr._evaluate_dynamic_pricing(
+                horizon=DynamicPricingEvaluationHorizon.REMAINING,
+                extended_horizon=True,
+            )
         except Exception as err:  # keep a runtime toggle fail-safe
             _LOGGER.warning("Smart pre-discharge evaluation failed after enable: %s", err)
             self.controller._pricing_mgr.clear_curtailment_runtime("evaluation_error")
@@ -1931,6 +1935,7 @@ class NegativePriceChargingSwitch(SwitchEntity):
         self.hass.config_entries.async_update_entry(self.entry, data=new_data)
         try:
             await self.controller._pricing_mgr._evaluate_dynamic_pricing(
+                horizon=DynamicPricingEvaluationHorizon.REMAINING,
                 extended_horizon=True
             )
         except Exception as err:

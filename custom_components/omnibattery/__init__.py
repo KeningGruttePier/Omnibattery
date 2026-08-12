@@ -210,7 +210,7 @@ from .pricing import (
     calculations,
     notifications,
 )
-from .pricing.engine import PricingManager
+from .pricing.engine import DynamicPricingEvaluationHorizon, PricingManager
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -7674,7 +7674,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         and controller.predictive_charging_mode == PREDICTIVE_MODE_DYNAMIC_PRICING
     ):
         async def _daily_pricing_evaluation(_now):
-            await controller._pricing_mgr._evaluate_dynamic_pricing()
+            # The scheduled 00:05 run is the sole full-day forecast.  Every
+            # later rebuild must use the live remainder to avoid counting
+            # already-consumed energy again.
+            await controller._pricing_mgr._evaluate_dynamic_pricing(
+                horizon=DynamicPricingEvaluationHorizon.DAILY,
+            )
 
         entry.async_on_unload(
             async_track_time_change(

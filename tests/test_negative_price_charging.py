@@ -10,6 +10,7 @@ import pytest
 from custom_components.omnibattery import ChargeDischargeController
 from custom_components.omnibattery.const import (
     CONF_NEGATIVE_PRICE_CHARGING_ENABLED,
+    CONF_SMART_PREDISCHARGE_ENABLED,
     DEFAULT_NEGATIVE_PRICE_CHARGING_ENABLED,
     DEFAULT_ROUND_TRIP_EFFICIENCY,
     PREDICTIVE_MODE_DYNAMIC_PRICING,
@@ -24,8 +25,14 @@ from custom_components.omnibattery.pricing import (
     SLOT_PURPOSE_NEGATIVE_PRICE,
     calculations,
 )
-from custom_components.omnibattery.pricing.engine import PricingManager
-from custom_components.omnibattery.switch import NegativePriceChargingSwitch
+from custom_components.omnibattery.pricing.engine import (
+    DynamicPricingEvaluationHorizon,
+    PricingManager,
+)
+from custom_components.omnibattery.switch import (
+    NegativePriceChargingSwitch,
+    SmartPredischargeSwitch,
+)
 
 
 class _Battery:
@@ -120,7 +127,11 @@ def _evaluate(ctrl: SimpleNamespace, slots: list[PriceSlot]) -> PricingManager:
     manager._build_curtailment_plan = lambda *_args, **_kwargs: CurtailmentPlan(
         status="no_risk", reason="none"
     )
-    asyncio.run(manager._evaluate_dynamic_pricing())
+    asyncio.run(
+        manager._evaluate_dynamic_pricing(
+            horizon=DynamicPricingEvaluationHorizon.DAILY,
+        )
+    )
     return manager
 
 
@@ -548,7 +559,11 @@ def test_evaluation_moves_opportunity_out_of_solar_risk_window():
         status="planned", reason="solar_risk", risk_slots=[risky]
     )
 
-    asyncio.run(manager._evaluate_dynamic_pricing())
+    asyncio.run(
+        manager._evaluate_dynamic_pricing(
+            horizon=DynamicPricingEvaluationHorizon.DAILY,
+        )
+    )
 
     schedule = ctrl._dynamic_pricing_schedule
     assert schedule.selected_slots == [safe]
@@ -569,7 +584,11 @@ def test_guaranteed_minimum_floor_keeps_only_deficit_in_solar_risk_window():
         status="planned", reason="solar_risk", risk_slots=[risky]
     )
 
-    asyncio.run(manager._evaluate_dynamic_pricing())
+    asyncio.run(
+        manager._evaluate_dynamic_pricing(
+            horizon=DynamicPricingEvaluationHorizon.DAILY,
+        )
+    )
 
     schedule = ctrl._dynamic_pricing_schedule
     assert schedule.selected_slots == [risky]
@@ -798,8 +817,8 @@ def test_runtime_switch_persists_enable_and_disable_with_safe_cleanup():
     calls: list = []
 
     class _Pricing:
-        async def _evaluate_dynamic_pricing(self, extended_horizon=False):
-            calls.append(("evaluate", extended_horizon))
+        async def _evaluate_dynamic_pricing(self, *, horizon, extended_horizon=False):
+            calls.append(("evaluate", horizon, extended_horizon))
 
         async def _stop_dynamic_price_slot(self, reason):
             calls.append(("stop", reason))
@@ -826,7 +845,11 @@ def test_runtime_switch_persists_enable_and_disable_with_safe_cleanup():
     asyncio.run(entity.async_turn_on())
     assert entry.data[CONF_NEGATIVE_PRICE_CHARGING_ENABLED] is True
     assert controller.negative_price_charging_enabled is True
-    assert ("evaluate", True) in calls
+    assert (
+        "evaluate",
+        DynamicPricingEvaluationHorizon.REMAINING,
+        True,
+    ) in calls
 
     controller._active_dynamic_slot_purpose = SLOT_PURPOSE_NEGATIVE_PRICE
     asyncio.run(entity.async_turn_off())
@@ -834,6 +857,44 @@ def test_runtime_switch_persists_enable_and_disable_with_safe_cleanup():
     assert controller.negative_price_charging_enabled is False
     assert ("stop", "negative_price_feature_disabled") in calls
     assert ("clear", "disabled") in calls
+
+
+def test_smart_predischarge_switch_rebuilds_remaining_horizon():
+    calls: list = []
+
+    class PricingStub:
+        async def _evaluate_dynamic_pricing(self, *, horizon, extended_horizon=False):
+            calls.append(("evaluate", horizon, extended_horizon))
+
+        def clear_curtailment_runtime(self, reason):
+            calls.append(("clear", reason))
+
+    controller = SimpleNamespace(
+        smart_predischarge_enabled=False,
+        _pricing_mgr=PricingStub(),
+    )
+    entry = SimpleNamespace(entry_id="entry", data={})
+
+    def update_entry(target, *, data):
+        target.data = data
+
+    hass = SimpleNamespace(
+        config_entries=SimpleNamespace(async_update_entry=update_entry)
+    )
+    entity = SmartPredischargeSwitch(hass, entry, controller)
+    entity.async_write_ha_state = lambda: None
+
+    asyncio.run(entity.async_turn_on())
+
+    assert entry.data[CONF_SMART_PREDISCHARGE_ENABLED] is True
+    assert controller.smart_predischarge_enabled is True
+    assert calls == [
+        (
+            "evaluate",
+            DynamicPricingEvaluationHorizon.REMAINING,
+            True,
+        )
+    ]
 
 
 def test_download_diagnostics_exposes_typed_calendar():

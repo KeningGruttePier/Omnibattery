@@ -11,6 +11,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .const import DOMAIN, PREDICTIVE_MODE_DYNAMIC_PRICING
 from .infra.coordinator import MarstekVenusDataUpdateCoordinator
 from .infra.entity_naming import english_entity_id, system_entity_id, SYSTEM_UNIQUE_ID_PREFIX
+from .pricing.engine import DynamicPricingEvaluationHorizon
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -86,10 +87,13 @@ class ReevaluateDynamicPricingButton(ButtonEntity):
         self._attr_should_poll = False
 
     async def async_press(self) -> None:
-        """Rebuild today's dynamic-pricing schedule now (same path as the 00:05 daily run)."""
-        # extended_horizon: pressed mid-day, so look past the already-elapsed slots,
-        # matching the startup catch-up evaluation.
-        await self.controller._pricing_mgr._evaluate_dynamic_pricing(extended_horizon=True)
+        """Rebuild the remaining dynamic-pricing schedule on demand."""
+        # The button is commonly pressed after a price/forecast adjustment.  It
+        # must not reuse the full-day 00:05 balance after energy has elapsed.
+        await self.controller._pricing_mgr._evaluate_dynamic_pricing(
+            horizon=DynamicPricingEvaluationHorizon.REMAINING,
+            extended_horizon=True,
+        )
 
     @property
     def device_info(self):
@@ -100,5 +104,4 @@ class ReevaluateDynamicPricingButton(ButtonEntity):
             "manufacturer": "Omnibattery",
             "model": "Multi-Battery System",
         }
-
 

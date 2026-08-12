@@ -18,6 +18,7 @@ import asyncio
 import logging
 import math
 from datetime import datetime, timedelta
+from enum import Enum
 from time import monotonic
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -94,6 +95,20 @@ _PRICE_LIST_ATTRS = {
 }
 
 
+class DynamicPricingEvaluationHorizon(Enum):
+    """Energy horizon used to construct a dynamic-pricing calendar.
+
+    The caller must choose deliberately: the automatic 00:05 run plans the
+    complete day, whereas every later reconstruction only plans what remains
+    until midnight.  Keeping this as an enum rather than inferring it from the
+    clock prevents a manual rebuild or a delayed retry from double-counting
+    energy that has already been consumed or produced.
+    """
+
+    DAILY = "daily"
+    REMAINING = "remaining"
+
+
 class PricingManager:
     """Dynamic-pricing / real-time-price engine for one config entry."""
 
@@ -146,7 +161,10 @@ class PricingManager:
             "(restarted at %s, schedule not yet built for %s)",
             now.strftime("%H:%M"), now.date()
         )
-        await self._evaluate_dynamic_pricing(extended_horizon=True)
+        await self._evaluate_dynamic_pricing(
+            horizon=DynamicPricingEvaluationHorizon.REMAINING,
+            extended_horizon=True,
+        )
 
     # =========================================================================
     # DYNAMIC PRICING: Price reading
@@ -1836,12 +1854,29 @@ class PricingManager:
     # DYNAMIC PRICING: Evaluation and notification methods
     # =========================================================================
 
-    async def _evaluate_dynamic_pricing(self, *, extended_horizon: bool = False) -> None:
-        """Main evaluation at 00:05: energy balance + prices → schedule."""
+    async def _evaluate_dynamic_pricing(
+        self,
+        *,
+        horizon: DynamicPricingEvaluationHorizon,
+        extended_horizon: bool = False,
+    ) -> None:
+        """Build a dynamic-pricing calendar for an explicit energy horizon.
+
+        ``DAILY`` is reserved for the scheduled 00:05 evaluation.  All later
+        reconstructions pass ``REMAINING`` so the balance uses only consumption
+        and solar still expected before midnight.
+        """
+        if not isinstance(horizon, DynamicPricingEvaluationHorizon):
+            raise ValueError("Dynamic pricing evaluation requires an explicit horizon")
+
         now = datetime.now()
         today = now.date()
 
-        _LOGGER.info("Dynamic pricing: running evaluation at %s", now.strftime("%H:%M"))
+        _LOGGER.info(
+            "Dynamic pricing: running %s-horizon evaluation at %s",
+            horizon.value,
+            now.strftime("%H:%M"),
+        )
 
         # Cleared up front: the early returns below can still send a notification,
         # and a ceiling from a previous evaluation must not be reported as today's.
@@ -1854,8 +1889,13 @@ class PricingManager:
         # Ensure service-based provider slots are current before evaluating.
         await self._maybe_refresh_service_prices(force=True)
 
-        # Step 1: Energy balance
-        decision_data = await self._controller._should_activate_grid_charging()
+        # Step 1: Energy balance.  The full-day forecast is valid only for the
+        # scheduled 00:05 run.  Any later reconstruction starts from the live
+        # remainder, including already-produced solar.
+        if horizon is DynamicPricingEvaluationHorizon.DAILY:
+            decision_data = await self._controller._should_activate_grid_charging()
+        else:
+            decision_data = await self._evaluate_remaining_grid_charging(now=now)
         self._controller._last_decision_data = decision_data
         # Reference SOC for the SOC-drop re-evaluation (#411): this is read before
         # the overnight discharge, so a battery that drains far below it must be
@@ -1866,10 +1906,10 @@ class PricingManager:
         # Step 2: Parse price data (always, even without deficit — for diagnostics)
         if extended_horizon:
             end_of_day = now.replace(hour=23, minute=59, second=59, microsecond=0)
-            horizon = max(end_of_day, now + timedelta(hours=12))
+            price_horizon = max(end_of_day, now + timedelta(hours=12))
         else:
-            horizon = None
-        slots = self._parse_price_data(horizon_end=horizon)
+            price_horizon = None
+        slots = self._parse_price_data(horizon_end=price_horizon)
         if slots:
             self._controller._dp_daily_avg_price = sum(s.price for s in slots) / len(slots)
             _LOGGER.debug("Dynamic pricing: daily average price %.4f from %d slots", self._controller._dp_daily_avg_price, len(slots))
@@ -2238,7 +2278,7 @@ class PricingManager:
         if has_deficit and bool(
             getattr(schedule, "deficit_charging_needed", schedule.charging_needed)
         ):
-            decision = await self._evaluate_remaining_grid_charging()
+            decision = await self._evaluate_remaining_grid_charging(now=now)
             self._controller._last_decision_data = decision
             deficit_needed = bool(decision["should_charge"])
 
@@ -2353,35 +2393,49 @@ class PricingManager:
         current = sum(c.data.get("battery_soc", 0) for c in coords) / len(coords)
         return (ref - current) >= SOC_REEVALUATION_THRESHOLD
 
-    async def _evaluate_remaining_grid_charging(self) -> dict:
+    async def _evaluate_remaining_grid_charging(self, *, now: datetime | None = None) -> dict:
         """Evaluate the energy still needed before the end of today's horizon.
 
-        The daily 00:05 evaluation intentionally uses the complete daily
-        consumption and solar forecasts.  Just before a selected price slot,
-        however, energy already consumed or produced must not be counted a
-        second time.  Keep this as a separate call path so the morning plan is
-        unchanged while the live pre-slot gate uses the current remainder.
+        The scheduled 00:05 evaluation intentionally uses the complete daily
+        consumption and solar forecasts.  Every later calendar reconstruction
+        and the live pre-slot gate call this path so energy already consumed or
+        produced is never counted a second time.
         """
         controller = self._controller
         tracker = getattr(controller, "_consumption_tracker", None)
         get_average = getattr(tracker, "get_dynamic_base_consumption", None)
         if tracker is None or not callable(get_average):
-            # Lightweight callers/tests and partially initialised entries keep
-            # the established daily evaluation behaviour.
-            return await controller._should_activate_grid_charging()
+            # A partially initialised entry cannot calculate a trustworthy
+            # remaining horizon.  Use a zero-consumption, zero-solar override
+            # rather than falling back to the full-day balance and silently
+            # double-counting today's energy.
+            return await controller._should_activate_grid_charging(
+                consumption_override_kwh=0.0,
+                solar_forecast_override_kwh=0.0,
+            )
 
-        now = datetime.now()
+        now = now or datetime.now()
         now_h = now.hour + now.minute / 60.0 + now.second / 3600.0
         avg_daily_kwh = await get_average()
-        daily_energy_date = getattr(controller, "_daily_home_energy_date", now.date())
-        consumed_today_kwh = (
-            getattr(controller, "_daily_home_energy_kwh", 0.0) or 0.0
-            if daily_energy_date == now.date()
-            else 0.0
+        daily_energy_date = getattr(controller, "_daily_home_energy_date", None)
+        raw_consumed_today_kwh = getattr(controller, "_daily_home_energy_kwh", None)
+        try:
+            consumed_today_kwh = float(raw_consumed_today_kwh)
+        except (TypeError, ValueError):
+            consumed_today_kwh = 0.0
+        accumulator_ready = (
+            daily_energy_date == now.date()
+            and math.isfinite(consumed_today_kwh)
+            and consumed_today_kwh > 0.0
         )
+        if not accumulator_ready:
+            consumed_today_kwh = 0.0
         remaining_consumption_kwh, consumption_rate_kwh_h = (
             self._project_remaining_consumption(
-                now_h, consumed_today_kwh, avg_daily_kwh
+                now_h,
+                consumed_today_kwh,
+                avg_daily_kwh,
+                accumulator_ready=accumulator_ready,
             )
         )
         remaining_solar_kwh = self._remaining_solar_today_kwh(now_h)
@@ -2397,27 +2451,56 @@ class PricingManager:
         decision["remaining_consumption_kwh"] = remaining_consumption_kwh
         decision["remaining_solar_kwh"] = remaining_solar_kwh
         decision["consumption_rate_kwh_h"] = consumption_rate_kwh_h
+        decision["consumption_accumulator_ready"] = accumulator_ready
         return decision
 
     @staticmethod
     def _project_remaining_consumption(
-        now_h: float, consumed_today_kwh: float, avg_daily_kwh: float
+        now_h: float,
+        consumed_today_kwh: float,
+        avg_daily_kwh: float,
+        *,
+        accumulator_ready: bool = True,
     ) -> tuple[float, float]:
         """Estimate house consumption from now until midnight, plus the rate used.
 
-        Projects *today's actual* consumption rate onto the hours left, rather
-        than ``average − consumed_today`` (which inverts: a heavy day, having
-        already spent its daily average, would charge less exactly when it needs
-        more). Falls back to the daily-average rate when the today-so-far
-        accumulator is cold (e.g. just after a restart). Returns
-        ``(remaining_kwh, rate_kwh_per_h)``.
+        A warm same-day accumulator provides two lower bounds: the historical
+        remainder (daily average minus what has already been used) and the
+        remainder projected from today's observed rate.  Taking the larger one
+        avoids both the noon double-counting in #263 and an unrealistically low
+        estimate when the afternoon load is concentrated.
+
+        A cold, missing, or previous-day accumulator cannot say how much of the
+        average has already elapsed.  In that case use the historical hourly
+        rate for the remaining hours.  Returns ``(remaining_kwh,
+        rate_kwh_per_h)``.
         """
-        hours_to_midnight = max(0.0, 24.0 - now_h)
-        if now_h >= 1.0 and consumed_today_kwh > 0:
-            rate = consumed_today_kwh / now_h
-        else:
+        try:
+            now_h = min(24.0, max(0.0, float(now_h)))
+        except (TypeError, ValueError):
+            now_h = 0.0
+        try:
+            avg_daily_kwh = max(0.0, float(avg_daily_kwh))
+        except (TypeError, ValueError):
+            avg_daily_kwh = 0.0
+        if not math.isfinite(avg_daily_kwh):
+            avg_daily_kwh = 0.0
+        hours_to_midnight = 24.0 - now_h
+
+        if not accumulator_ready:
             rate = avg_daily_kwh / 24.0
-        return rate * hours_to_midnight, rate
+            return rate * hours_to_midnight, rate
+
+        try:
+            consumed_today_kwh = max(0.0, float(consumed_today_kwh))
+        except (TypeError, ValueError):
+            consumed_today_kwh = 0.0
+        if not math.isfinite(consumed_today_kwh):
+            consumed_today_kwh = 0.0
+        observed_rate = consumed_today_kwh / now_h if now_h > 0.0 else 0.0
+        historical_remainder = max(0.0, avg_daily_kwh - consumed_today_kwh)
+        observed_remainder = observed_rate * hours_to_midnight
+        return max(historical_remainder, observed_remainder), observed_rate
 
     def _remaining_solar_today_kwh(self, now_h: float) -> float:
         """Solar generation still expected today (kWh), from the forecast sensor.
@@ -2515,15 +2598,29 @@ class PricingManager:
         remaining_solar_kwh = self._remaining_solar_today_kwh(now_h)
 
         # --- Remaining house consumption until midnight (handoff to the 00:05
-        # eval, which re-plans the next day). Project *today's actual* rate onto
-        # the hours left rather than "average − consumed_today": the latter
-        # inverts — a heavy day, having already spent its daily average, would
-        # charge less exactly when it needs more. Rate projection tracks the day:
-        # heavy day → high rate → charge more; light day → low rate → less. ---
-        consumed_today_kwh = getattr(self._controller, "_daily_home_energy_kwh", 0.0) or 0.0
+        # evaluation, which re-plans the next day). Keep this identical to other
+        # remaining-horizon rebuilds: never reuse consumption already spent
+        # today, while preserving both the historical remainder and a heavy
+        # observed consumption rate. ---
+        daily_energy_date = getattr(self._controller, "_daily_home_energy_date", None)
+        raw_consumed_today_kwh = getattr(self._controller, "_daily_home_energy_kwh", None)
+        try:
+            consumed_today_kwh = float(raw_consumed_today_kwh)
+        except (TypeError, ValueError):
+            consumed_today_kwh = 0.0
+        accumulator_ready = (
+            daily_energy_date == now.date()
+            and math.isfinite(consumed_today_kwh)
+            and consumed_today_kwh > 0.0
+        )
+        if not accumulator_ready:
+            consumed_today_kwh = 0.0
         avg_daily_kwh = self._controller._consumption_tracker.get_avg_daily_consumption()
         remaining_consumption_kwh, consumption_rate_kwh_h = self._project_remaining_consumption(
-            now_h, consumed_today_kwh, avg_daily_kwh
+            now_h,
+            consumed_today_kwh,
+            avg_daily_kwh,
+            accumulator_ready=accumulator_ready,
         )
         hours_to_midnight = max(0.0, 24.0 - now_h)
 
@@ -2796,7 +2893,9 @@ class PricingManager:
             expected_retry_minute = 5 + self._controller._dp_eval_retry_count * 15
             if abs(retry_minute - expected_retry_minute) <= 2:
                 _LOGGER.info("Dynamic pricing: retrying evaluation (attempt %d)", self._controller._dp_eval_retry_count + 1)
-                await self._evaluate_dynamic_pricing()
+                await self._evaluate_dynamic_pricing(
+                    horizon=DynamicPricingEvaluationHorizon.REMAINING,
+                )
                 return
 
         # Phase 2.5: Pre-slot re-evaluation (1h before each upcoming slot)
