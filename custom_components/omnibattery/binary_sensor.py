@@ -398,6 +398,9 @@ class PredictiveChargingStatusSensor(BinarySensorEntity):
         "cutoff_energy_kwh", "effective_min_soc", "avg_consumption_kwh",
         "total_available_kwh", "energy_deficit_kwh", "solar_forecast_kwh",
         "solar_surplus_kwh", "grid_charge_kwh", "planned_grid_charge_kwh",
+        "consumption_scope", "daily_avg_consumption_kwh", "consumed_today_kwh",
+        "remaining_consumption_kwh", "remaining_solar_kwh",
+        "consumption_rate_kwh_h", "consumption_accumulator_ready",
         "decision_reason",
     })
 
@@ -495,6 +498,13 @@ class PredictiveChargingStatusSensor(BinarySensorEntity):
                 "cutoff_energy_kwh": decision.get("cutoff_energy_kwh"),
                 "effective_min_soc": decision.get("effective_min_soc"),
                 "avg_consumption_kwh": decision.get("avg_consumption_kwh"),
+                "consumption_scope": decision.get("consumption_scope"),
+                "daily_avg_consumption_kwh": decision.get("daily_avg_consumption_kwh"),
+                "consumed_today_kwh": decision.get("consumed_today_kwh"),
+                "remaining_consumption_kwh": decision.get("remaining_consumption_kwh"),
+                "remaining_solar_kwh": decision.get("remaining_solar_kwh"),
+                "consumption_rate_kwh_h": decision.get("consumption_rate_kwh_h"),
+                "consumption_accumulator_ready": decision.get("consumption_accumulator_ready"),
                 "total_available_kwh": decision.get("total_available_kwh"),
                 "energy_deficit_kwh": decision.get("energy_deficit_kwh"),
                 "planned_grid_charge_kwh": decision.get("planned_grid_charge_kwh"),

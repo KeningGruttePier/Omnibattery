@@ -218,18 +218,18 @@ def test_soc_drop_reeval_false_when_no_coordinator_data():
 # ----------------------------------------------------------------------
 
 def test_remaining_consumption_keeps_historical_remainder_when_larger():
-    # 18:00, 12 kWh used so far.  The observed rate projects 4 kWh, but the
-    # historical 20 kWh average still has 8 kWh unspent.
+    # 18:00, 12 kWh used so far.  The historical 20 kWh average still has
+    # 8 kWh unspent, more than its normal 5 kWh time-prorated remainder.
     remaining, rate = PricingManager._project_remaining_consumption(18.0, 12.0, 20.0)
-    assert round(rate, 3) == 0.667
+    assert round(rate, 3) == 0.833
     assert round(remaining, 2) == 8.0
 
 
-def test_remaining_consumption_keeps_observed_rate_when_larger_than_history():
-    # A heavy day that has already passed the daily average must still preserve
-    # the observed rate projection instead of reporting zero remaining load.
+def test_remaining_consumption_uses_normal_remainder_after_heavy_day():
+    # A heavy morning that has already passed the daily average must keep the
+    # normal historical remainder, not project the morning spike until midnight.
     heavy, _ = PricingManager._project_remaining_consumption(18.0, 18.0, 17.0)
-    assert heavy == pytest.approx(6.0)
+    assert heavy == pytest.approx(4.25)
 
 
 def test_remaining_consumption_cold_accumulator_uses_avg_rate():
@@ -249,11 +249,37 @@ def test_remaining_consumption_zero_at_midnight():
 
 def test_remaining_consumption_discussion_263_midday_baseline():
     # Discussion #263: at noon, 1.2 kWh already consumed from a 5.8 kWh daily
-    # average leaves at least 4.6 kWh.  The observed-rate projection is only
-    # 1.2 kWh, so the historical remainder must win.
+    # average leaves at least 4.6 kWh.  Its normal time-prorated remainder is
+    # only 2.9 kWh, so the historical unspent energy must win.
     remaining, rate = PricingManager._project_remaining_consumption(12.0, 1.2, 5.8)
-    assert rate == pytest.approx(0.1)
+    assert rate == pytest.approx(5.8 / 24.0)
     assert remaining == pytest.approx(4.6)
+
+
+def test_remaining_consumption_does_not_extrapolate_morning_spike():
+    # Reported regression: at 07:47 the observed-rate projection turned an
+    # 17.98 kWh daily average into 40.61 kWh remaining.  Once the day has already
+    # exceeded its average, retain only the normal time-prorated remainder.
+    now_h = 7.0 + 47.0 / 60.0
+    consumed = 40.61 * now_h / (24.0 - now_h)
+    remaining, rate = PricingManager._project_remaining_consumption(
+        now_h, consumed, 17.98
+    )
+    assert remaining == pytest.approx(17.98 * (24.0 - now_h) / 24.0)
+    assert remaining < 17.98
+    assert rate == pytest.approx(17.98 / 24.0)
+
+
+def test_remaining_consumption_respects_configured_consumption_window():
+    remaining, rate = PricingManager._project_remaining_consumption(
+        8.0,
+        20.0,
+        18.0,
+        window_hours_per_day=18.0,
+        remaining_window_hours=10.0,
+    )
+    assert remaining == pytest.approx(10.0)
+    assert rate == pytest.approx(1.0)
 
 
 def test_remaining_consumption_invalid_accumulator_date_uses_hourly_fallback():
@@ -307,8 +333,8 @@ def test_pre_slot_reevaluation_uses_remaining_consumption_and_solar(monkeypatch)
         _consumption_tracker=SimpleNamespace(
             get_dynamic_base_consumption=get_average_consumption,
         ),
-        _daily_home_energy_date=now.date(),
-        _daily_home_energy_kwh=6.0,
+        _household_accumulator_date=now.date(),
+        _household_energy_accumulator=6.0,
         _should_activate_grid_charging=should_activate,
     )
     manager = _mgr(ctrl)
@@ -316,8 +342,7 @@ def test_pre_slot_reevaluation_uses_remaining_consumption_and_solar(monkeypatch)
 
     asyncio.run(manager._check_dp_pre_slot_reevaluation())
 
-    # 6 kWh used by noon at the observed 0.5 kWh/h rate projects 6 kWh, but
-    # the 20 kWh historical average leaves a larger 14 kWh baseline.
+    # 6 kWh used by noon leaves 14 kWh of the historical average.
     assert decision_calls == [{
         "consumption_override_kwh": 14.0,
         "solar_forecast_override_kwh": 3.5,
@@ -358,8 +383,12 @@ def test_midday_calendar_rebuild_uses_remaining_consumption_and_solar(monkeypatc
         _dp_arbitrage_ceiling=None,
         _dp_last_eval_soc=None,
         _dp_eval_retry_count=0,
+        _household_accumulator_date=now.date(),
+        _household_energy_accumulator=1.2,
+        # The full-day counter is deliberately incompatible with the historical
+        # window and must not participate in this calculation.
         _daily_home_energy_date=now.date(),
-        _daily_home_energy_kwh=1.2,
+        _daily_home_energy_kwh=99.0,
         _consumption_tracker=SimpleNamespace(
             get_dynamic_base_consumption=get_average_consumption,
         ),
@@ -383,6 +412,7 @@ def test_midday_calendar_rebuild_uses_remaining_consumption_and_solar(monkeypatc
         "solar_forecast_override_kwh": 2.4,
     }]
     assert ctrl._last_decision_data["consumption_scope"] == "remaining"
+    assert ctrl._last_decision_data["daily_avg_consumption_kwh"] == 5.8
     assert ctrl._last_decision_data["remaining_solar_kwh"] == 2.4
 
 

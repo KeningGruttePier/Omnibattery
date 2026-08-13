@@ -3,7 +3,7 @@
 ## [1.3.0b7] - 2026-08-12
 
 ### Fixed
-- **Dynamic Pricing intraday rebuilds could reuse the full-day energy forecast** (#263): only the scheduled 00:05 evaluation now uses the complete daily consumption and solar forecast. Manual button presses, Home Assistant startup catch-up, price-data retries and runtime-option rebuilds use the remaining household consumption and remaining solar instead. Remaining consumption takes the larger of the unspent daily average and today's observed-rate projection, preventing both double-counting earlier consumption and underestimating a heavier-than-usual day.
+- **Dynamic Pricing intraday rebuilds could reuse or inflate the full-day energy forecast** (#263): only the scheduled 00:05 evaluation now uses the complete daily consumption and solar forecast. Manual button presses, Home Assistant startup catch-up, price-data retries and runtime-option rebuilds use the remaining household consumption and remaining solar instead. Remaining consumption compares the unspent seven-day average with its normal time-prorated remainder, using the same windowed and adjusted accumulator as the historical data. This prevents both double-counting earlier consumption and extrapolating an already-finished morning spike over every hour until midnight. Notifications now distinguish the remaining forecast from the underlying daily average.
 
 ## [1.3.0b6] - 2026-08-09
 

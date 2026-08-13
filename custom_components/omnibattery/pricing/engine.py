@@ -2417,25 +2417,47 @@ class PricingManager:
         now = now or datetime.now()
         now_h = now.hour + now.minute / 60.0 + now.second / 3600.0
         avg_daily_kwh = await get_average()
-        daily_energy_date = getattr(controller, "_daily_home_energy_date", None)
-        raw_consumed_today_kwh = getattr(controller, "_daily_home_energy_kwh", None)
+        # Use the same windowed/adjusted accumulator that feeds the historical
+        # average.  The full-day Home Energy counter includes charging windows
+        # and does not apply excluded/additional-load adjustments, so comparing
+        # it with the windowed seven-day average mixes two different quantities.
+        accumulator_date = getattr(controller, "_household_accumulator_date", None)
+        raw_consumed_today_kwh = getattr(
+            controller, "_household_energy_accumulator", None
+        )
         try:
             consumed_today_kwh = float(raw_consumed_today_kwh)
         except (TypeError, ValueError):
             consumed_today_kwh = 0.0
         accumulator_ready = (
-            daily_energy_date == now.date()
+            accumulator_date == now.date()
             and math.isfinite(consumed_today_kwh)
             and consumed_today_kwh > 0.0
         )
         if not accumulator_ready:
             consumed_today_kwh = 0.0
+        get_window_hours = getattr(
+            tracker, "get_consumption_window_hours_per_day", None
+        )
+        get_remaining_window_hours = getattr(
+            tracker, "consumption_window_hours_in_range", None
+        )
+        window_hours_per_day = (
+            get_window_hours() if callable(get_window_hours) else 24.0
+        )
+        remaining_window_hours = (
+            get_remaining_window_hours(now_h, 24.0)
+            if callable(get_remaining_window_hours)
+            else 24.0 - now_h
+        )
         remaining_consumption_kwh, consumption_rate_kwh_h = (
             self._project_remaining_consumption(
                 now_h,
                 consumed_today_kwh,
                 avg_daily_kwh,
                 accumulator_ready=accumulator_ready,
+                window_hours_per_day=window_hours_per_day,
+                remaining_window_hours=remaining_window_hours,
             )
         )
         remaining_solar_kwh = self._remaining_solar_today_kwh(now_h)
@@ -2447,6 +2469,7 @@ class PricingManager:
         # Keep explicit diagnostics for the pre-slot notification and future
         # consumers while preserving the legacy avg_consumption_kwh field.
         decision["consumption_scope"] = "remaining"
+        decision["daily_avg_consumption_kwh"] = avg_daily_kwh
         decision["consumed_today_kwh"] = consumed_today_kwh
         decision["remaining_consumption_kwh"] = remaining_consumption_kwh
         decision["remaining_solar_kwh"] = remaining_solar_kwh
@@ -2461,14 +2484,17 @@ class PricingManager:
         avg_daily_kwh: float,
         *,
         accumulator_ready: bool = True,
+        window_hours_per_day: float = 24.0,
+        remaining_window_hours: float | None = None,
     ) -> tuple[float, float]:
         """Estimate house consumption from now until midnight, plus the rate used.
 
-        A warm same-day accumulator provides two lower bounds: the historical
-        remainder (daily average minus what has already been used) and the
-        remainder projected from today's observed rate.  Taking the larger one
-        avoids both the noon double-counting in #263 and an unrealistically low
-        estimate when the afternoon load is concentrated.
+        A warm same-day accumulator provides the historical unspent energy.  It
+        is never allowed below the normal time-prorated remainder, which avoids
+        underestimating a day whose load was concentrated earlier.  Crucially,
+        an already-finished morning spike is not extrapolated over every hour
+        left in the day; doing that can turn an 18 kWh daily average into a
+        fictitious 40 kWh remaining forecast.
 
         A cold, missing, or previous-day accumulator cannot say how much of the
         average has already elapsed.  In that case use the historical hourly
@@ -2486,10 +2512,35 @@ class PricingManager:
         if not math.isfinite(avg_daily_kwh):
             avg_daily_kwh = 0.0
         hours_to_midnight = 24.0 - now_h
+        try:
+            window_hours_per_day = min(
+                24.0, max(0.0, float(window_hours_per_day))
+            )
+        except (TypeError, ValueError):
+            window_hours_per_day = 24.0
+        if not math.isfinite(window_hours_per_day):
+            window_hours_per_day = 24.0
+        if remaining_window_hours is None:
+            remaining_window_hours = hours_to_midnight
+        try:
+            remaining_window_hours = min(
+                window_hours_per_day,
+                max(0.0, float(remaining_window_hours)),
+            )
+        except (TypeError, ValueError):
+            remaining_window_hours = hours_to_midnight
+        if not math.isfinite(remaining_window_hours):
+            remaining_window_hours = hours_to_midnight
+
+        historical_rate = (
+            avg_daily_kwh / window_hours_per_day
+            if window_hours_per_day > 0.0
+            else 0.0
+        )
+        normal_remaining = historical_rate * remaining_window_hours
 
         if not accumulator_ready:
-            rate = avg_daily_kwh / 24.0
-            return rate * hours_to_midnight, rate
+            return normal_remaining, historical_rate
 
         try:
             consumed_today_kwh = max(0.0, float(consumed_today_kwh))
@@ -2497,10 +2548,8 @@ class PricingManager:
             consumed_today_kwh = 0.0
         if not math.isfinite(consumed_today_kwh):
             consumed_today_kwh = 0.0
-        observed_rate = consumed_today_kwh / now_h if now_h > 0.0 else 0.0
         historical_remainder = max(0.0, avg_daily_kwh - consumed_today_kwh)
-        observed_remainder = observed_rate * hours_to_midnight
-        return max(historical_remainder, observed_remainder), observed_rate
+        return max(historical_remainder, normal_remaining), historical_rate
 
     def _remaining_solar_today_kwh(self, now_h: float) -> float:
         """Solar generation still expected today (kWh), from the forecast sensor.
@@ -2600,29 +2649,39 @@ class PricingManager:
         # --- Remaining house consumption until midnight (handoff to the 00:05
         # evaluation, which re-plans the next day). Keep this identical to other
         # remaining-horizon rebuilds: never reuse consumption already spent
-        # today, while preserving both the historical remainder and a heavy
-        # observed consumption rate. ---
-        daily_energy_date = getattr(self._controller, "_daily_home_energy_date", None)
-        raw_consumed_today_kwh = getattr(self._controller, "_daily_home_energy_kwh", None)
+        # today, while retaining the normal historical remainder when today's
+        # load was concentrated earlier. ---
+        accumulator_date = getattr(
+            self._controller, "_household_accumulator_date", None
+        )
+        raw_consumed_today_kwh = getattr(
+            self._controller, "_household_energy_accumulator", None
+        )
         try:
             consumed_today_kwh = float(raw_consumed_today_kwh)
         except (TypeError, ValueError):
             consumed_today_kwh = 0.0
         accumulator_ready = (
-            daily_energy_date == now.date()
+            accumulator_date == now.date()
             and math.isfinite(consumed_today_kwh)
             and consumed_today_kwh > 0.0
         )
         if not accumulator_ready:
             consumed_today_kwh = 0.0
-        avg_daily_kwh = self._controller._consumption_tracker.get_avg_daily_consumption()
+        tracker = self._controller._consumption_tracker
+        avg_daily_kwh = tracker.get_avg_daily_consumption()
+        window_hours_per_day = tracker.get_consumption_window_hours_per_day()
+        remaining_window_hours = tracker.consumption_window_hours_in_range(
+            now_h, 24.0
+        )
         remaining_consumption_kwh, consumption_rate_kwh_h = self._project_remaining_consumption(
             now_h,
             consumed_today_kwh,
             avg_daily_kwh,
             accumulator_ready=accumulator_ready,
+            window_hours_per_day=window_hours_per_day,
+            remaining_window_hours=remaining_window_hours,
         )
-        hours_to_midnight = max(0.0, 24.0 - now_h)
 
         # Battery energy available above the discharge floor right now.
         usable_now_kwh = sum(
@@ -2654,9 +2713,10 @@ class PricingManager:
 
         _LOGGER.info(
             "Evening recharge: deficit %.2f kWh (need=%.2f, usable=%.2f, solar=%.2f, "
-            "rate=%.2f kWh/h × %.1fh) — searching for cheap slots",
+            "historical rate=%.2f kWh/h × %.1f remaining window hours) — "
+            "searching for cheap slots",
             evening_deficit_kwh, remaining_consumption_kwh, usable_now_kwh,
-            remaining_solar_kwh, consumption_rate_kwh_h, hours_to_midnight,
+            remaining_solar_kwh, consumption_rate_kwh_h, remaining_window_hours,
         )
 
         # --- Find cheap slots (extended horizon: now + 12h to capture cheap overnight slots) ---

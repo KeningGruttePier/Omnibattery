@@ -215,6 +215,24 @@ def test_dynamic_charging_shows_cost():
     assert "Estimated cost: ~0.75 €" in message
 
 
+def test_dynamic_remaining_horizon_does_not_label_remainder_as_daily_average():
+    schedule = _schedule([0.10, 0.12], hours_needed=0.5, charging_needed=True)
+    _, message = notifications.format_dynamic_pricing_notification(
+        _decision(
+            should_charge=True,
+            avg_consumption_kwh=12.15,
+            daily_avg_consumption_kwh=17.98,
+            consumption_scope="remaining",
+            energy_deficit_kwh=2.0,
+        ),
+        schedule,
+        **_DP_CFG,
+    )
+    assert "12.15 kWh remaining until midnight (17.98 kWh 7-day avg)" in message
+    assert "12.15 kWh (7-day avg)" not in message
+    assert "Solar remaining: 3.00 kWh" in message
+
+
 # ----------------------------------------------------------------------
 # slot start / pre-slot / evening
 # ----------------------------------------------------------------------
