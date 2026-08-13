@@ -371,7 +371,7 @@ class ChargeDelayManager:
 
         # Forecast recovered / valid — clear the transient tracker.
         ctrl._forecast_unavailable_since = None
-        forecast_today = raw_forecast * 0.85  # 15% conservative correction
+        forecast_today = raw_forecast
         status["forecast_kwh"] = raw_forecast
 
         # --- Exception 2: Energy balance check (dynamic, recalculated only when forecast changes) ---
@@ -398,12 +398,8 @@ class ChargeDelayManager:
             usable_energy_kwh = max(0, ((avg_soc - min_soc) / 100) * total_capacity_kwh)
             avg_consumption_kwh = ctrl._consumption_tracker.get_avg_daily_consumption()
             prev_cache = ctrl._charge_delay_forecast_cache
-            # Binary "is grid needed today?" gate. Use the RAW forecast, not the
-            # 0.85 haircut applied below: the haircut is a conservatism for the
-            # energy SCHEDULING math, but on this all-or-nothing gate it turns a
-            # balanced day (raw forecast ~= consumption) into a false deficit and a
-            # latched pre-dawn unlock (#4). A small deadband absorbs sensor noise so
-            # a near-balanced day still holds for the cheap window. Runtime-tunable.
+            # Binary "is grid needed today?" gate. A small deadband absorbs sensor
+            # noise so a near-balanced day still holds for the cheap window.
             deadband_kwh = ctrl._charge_delay_balance_deadband_kwh
             ctrl._charge_delay_balance_needs_charge = (
                 (usable_energy_kwh + raw_forecast)
@@ -411,11 +407,11 @@ class ChargeDelayManager:
             )
             ctrl._charge_delay_forecast_cache = forecast_today
             _LOGGER.info(
-                "Charge Delay: Forecast %s (raw %.2f, scheduling %.2f kWh) → "
+                "Charge Delay: Forecast %s (%.2f kWh) → "
                 "balance: %.2f usable + %.2f solar = %.2f kWh vs %.2f kWh consumption "
                 "(deadband %.2f) → %s",
                 "initialised" if prev_cache is None else "changed",
-                raw_forecast, forecast_today,
+                forecast_today,
                 usable_energy_kwh, raw_forecast, usable_energy_kwh + raw_forecast,
                 avg_consumption_kwh, deadband_kwh,
                 "grid needed (unlock delay)" if ctrl._charge_delay_balance_needs_charge else "solar sufficient (keep delay)",

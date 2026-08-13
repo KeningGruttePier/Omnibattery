@@ -569,7 +569,7 @@ def _solar_ctrl(forecast="40.0", produced=0.0, t_start=None):
 def test_remaining_solar_predawn_uses_full_forecast():
     # #411 regression: SOC-drop re-eval fires pre-dawn (accumulator 0, no
     # T_start) → the whole forecast is still to come, not 0.
-    assert _solar_ctrl()._remaining_solar_today_kwh(6.0) == 40.0 * 0.85
+    assert _solar_ctrl()._remaining_solar_today_kwh(6.0) == 40.0
 
 
 def test_remaining_solar_zero_when_no_production_after_fallback_hour():
@@ -579,12 +579,38 @@ def test_remaining_solar_zero_when_no_production_after_fallback_hour():
 
 
 def test_remaining_solar_subtracts_produced_when_accumulator_warm():
-    assert _solar_ctrl(produced=10.0)._remaining_solar_today_kwh(12.0) == 40.0 * 0.85 - 10.0
+    assert _solar_ctrl(produced=10.0)._remaining_solar_today_kwh(12.0) == 30.0
 
 
 def test_remaining_solar_uses_fraction_when_t_start_known():
     # Accumulator cold but production started → sinusoidal fraction (stub: 50%).
-    assert _solar_ctrl(t_start=8.0)._remaining_solar_today_kwh(14.0) == 40.0 * 0.85 * 0.5
+    assert _solar_ctrl(t_start=8.0)._remaining_solar_today_kwh(14.0) == 20.0
+
+
+def test_curtailment_forecast_uses_sensor_value_without_hidden_haircut():
+    tracker = SimpleNamespace(
+        calculate_sunrise=lambda: 6.0,
+        calculate_solar_noon=lambda: 12.0,
+        get_solar_fraction_done=lambda hour, start, end: 0.5,
+        get_avg_daily_consumption=lambda: 8.0,
+    )
+    ctrl = _controller(
+        solar_forecast_sensor="sensor.solar",
+        _solar_t_start=None,
+        _consumption_tracker=tracker,
+    )
+    hass = SimpleNamespace(
+        states=SimpleNamespace(
+            get=lambda _entity_id: SimpleNamespace(state="4.03")
+        )
+    )
+
+    forecast, _model, consumption = PricingManager(
+        hass, ctrl
+    )._curtailment_forecast_model(datetime(2026, 8, 13, 5, 42))
+
+    assert forecast == pytest.approx(4.03)
+    assert consumption == 8.0
 
 
 def test_remaining_solar_zero_when_forecast_unavailable():

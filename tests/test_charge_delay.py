@@ -301,9 +301,9 @@ def test_balance_needs_charge_unlocks_low_forecast():
 
 def test_balanced_day_holds_with_deadband():
     # #4 concrete day: usable ~0.4 + raw forecast 15.76 vs 15.40 consumption.
-    # Pre-fix the 0.85 haircut (15.76 -> 13.40) flipped this into a false deficit
-    # and a latched pre-dawn unlock. With the raw forecast + deadband the gate now
-    # reads it as solar-sufficient and keeps the delay armed.
+    # A hidden 0.85 haircut (15.76 -> 13.40) would flip this into a false deficit
+    # and a latched pre-dawn unlock. The configured safety margin is the only
+    # forecast conservatism; the sensor value must remain unchanged here.
     ctrl = _controller(
         coordinators=[_coord(soc=24, total_energy=10.0, min_soc=20)],
         _consumption_tracker=_tracker(get_avg_daily_consumption=lambda: 15.40),
@@ -311,6 +311,7 @@ def test_balanced_day_holds_with_deadband():
     mgr = _make_mgr(ctrl, states={"sensor.forecast": _state(15.76)})
     mgr._should_delay_charge(80)
     assert ctrl._charge_delay_balance_needs_charge is False
+    assert ctrl._charge_delay_forecast_cache == pytest.approx(15.76)
 
 
 def test_low_forecast_price_release_holds_for_cheaper_hour():
@@ -677,7 +678,7 @@ def test_cushion_shortfall_holds_for_cheaper_hour(monkeypatch):
     # net = 3.39: below the factored 3.9 edge but still above the bare 3.0 need
     # -> hold for the cheaper hour instead of unlocking into the morning peak.
     _at_hour(monkeypatch, 9)
-    mgr = _cushion_mgr(5.7)
+    mgr = _cushion_mgr(4.85)
     mgr._price_optimal_release_h = lambda now_h, edge_h, charge_h=None: 12.0
     assert mgr._should_delay_charge(80) is True
     assert mgr._controller._charge_delay_status["estimated_unlock_time"] == "12:00"
@@ -686,7 +687,7 @@ def test_cushion_shortfall_holds_for_cheaper_hour(monkeypatch):
 
 def test_cushion_shortfall_unlocks_when_now_is_cheapest(monkeypatch):
     _at_hour(monkeypatch, 9)
-    mgr = _cushion_mgr(5.7)
+    mgr = _cushion_mgr(4.85)
     mgr._price_optimal_release_h = lambda now_h, edge_h, charge_h=None: now_h
     assert mgr._should_delay_charge(80) is False
     assert mgr._controller._charge_delay_status["unlock_reason"] == "energy_balance"
@@ -695,7 +696,7 @@ def test_cushion_shortfall_unlocks_when_now_is_cheapest(monkeypatch):
 def test_cushion_shortfall_unlocks_without_price_data(monkeypatch):
     # No price data -> legacy instant unlock preserved.
     _at_hour(monkeypatch, 9)
-    mgr = _cushion_mgr(5.7)
+    mgr = _cushion_mgr(4.85)
     mgr._price_optimal_release_h = lambda now_h, edge_h, charge_h=None: None
     assert mgr._should_delay_charge(80) is False
     assert mgr._controller._charge_delay_status["unlock_reason"] == "energy_balance"
@@ -717,7 +718,7 @@ def test_cushion_hold_window_never_passes_bare_balance_edge(monkeypatch):
     # The edge handed to the price scorer is the BARE (x1.0) balance crossing,
     # never the factored one, so the hold cannot eat into the target itself.
     _at_hour(monkeypatch, 9)
-    mgr = _cushion_mgr(5.7)
+    mgr = _cushion_mgr(4.85)
     edges = []
     mgr._price_optimal_release_h = lambda now_h, edge_h, charge_h=None: edges.append(edge_h) or now_h
     # Record what the gate actually asked the projection for, so the expected edge

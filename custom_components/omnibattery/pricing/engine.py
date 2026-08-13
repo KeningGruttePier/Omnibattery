@@ -1182,7 +1182,7 @@ class PricingManager:
         if state is None or state.state in ("unknown", "unavailable"):
             return None, None, None
         try:
-            forecast_kwh = float(state.state) * 0.85
+            forecast_kwh = float(state.state)
         except (TypeError, ValueError):
             return None, None, None
 
@@ -2570,7 +2570,7 @@ class PricingManager:
         if not forecast_state or forecast_state.state in ("unknown", "unavailable"):
             return 0.0
         try:
-            forecast_today = float(forecast_state.state) * 0.85
+            forecast_today = float(forecast_state.state)
             if self._controller._daily_solar_energy_kwh > 0:
                 return max(0.0, forecast_today - self._controller._daily_solar_energy_kwh)
             if self._controller._solar_t_start is not None:
