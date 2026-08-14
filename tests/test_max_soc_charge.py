@@ -69,6 +69,8 @@ tracks the manager's runtime state."""
         _normal_balance_date=dt_util.now().date(),
         _normal_balance_voltage_tapered={},
         _normal_balance_bms_cutoff_active={},
+        _normal_balance_bms_cutoff_retry_pending={},
+        _normal_balance_bms_cutoff_retry_active={},
         _normal_balance_bms_cutoff_measurement={},
         _normal_balance_phases={},
         _normal_balance_measure_started={},
@@ -298,11 +300,14 @@ def test_venus_ad_bms_confirmation_releases_top_charge_latch():
         battery_version="vD",
         data={"max_cell_voltage": NORMAL_BALANCE_PAUSE_CELL_VOLTAGE, "battery_soc": 98},
     )
-    cutoff_confirmed = False
+    cutoff_confirmed = {"value": False}
     ctrl = _controller(
         [c],
         _weekly_charge_mgr=SimpleNamespace(
-            is_bms_cutoff_confirmed=lambda _coordinator: cutoff_confirmed,
+            is_bms_cutoff_confirmed=lambda _coordinator: cutoff_confirmed["value"],
+            reset_bms_cutoff_confirmation=lambda _coordinator: cutoff_confirmed.__setitem__(
+                "value", False
+            ),
         ),
     )
     manager = _mgr(ctrl)
@@ -310,13 +315,89 @@ def test_venus_ad_bms_confirmation_releases_top_charge_latch():
     manager.refresh_blocks()
     assert ctrl._normal_balance_bms_cutoff_active[c] is True
 
-    cutoff_confirmed = True
+    cutoff_confirmed["value"] = True
     manager.refresh_blocks()
-    assert c not in ctrl._normal_balance_bms_cutoff_active
+    assert ctrl._normal_balance_bms_cutoff_retry_pending[c] is True
+    assert c not in ctrl._normal_balance_bms_cutoff_measurement
+
+    c.data["max_cell_voltage"] = NORMAL_BALANCE_RECAL_RETRY_CELL_VOLTAGE
+    manager.refresh_blocks()
+    assert c not in ctrl._normal_balance_bms_cutoff_retry_pending
+    assert ctrl._normal_balance_bms_cutoff_retry_active[c] is True
+    assert manager.should_charge_to_bms_cutoff(c, 100) is True
+
+    cutoff_confirmed["value"] = True
+    manager.refresh_blocks()
+    assert c not in ctrl._normal_balance_bms_cutoff_retry_active
     assert (
         ctrl._normal_balance_bms_cutoff_measurement[c]
         == manager._BMS_CUTOFF_MEASUREMENT_PENDING
     )
+    assert manager.should_charge_to_bms_cutoff(c, 100) is False
+
+
+def test_venus_ad_first_cutoff_waits_for_relaxation_then_opens_one_retry():
+    c = _Coord(
+        battery_version="vA",
+        data={
+            "max_cell_voltage": NORMAL_BALANCE_PAUSE_CELL_VOLTAGE,
+            "battery_soc": 94,
+            "battery_power": 0,
+        },
+        commanded_charge_power=200,
+    )
+    confirmed = {"value": True}
+    reset_calls = []
+    ctrl = _controller(
+        [c],
+        _weekly_charge_mgr=SimpleNamespace(
+            is_bms_cutoff_confirmed=lambda _coordinator: confirmed["value"],
+            reset_bms_cutoff_confirmation=lambda coordinator: (
+                reset_calls.append(coordinator), confirmed.__setitem__("value", False)
+            ),
+        ),
+    )
+    manager = _mgr(ctrl)
+
+    assert manager.prepare_bms_cutoff_retry(c) == manager._BMS_CUTOFF_RETRY_PENDING
+    assert ctrl._normal_balance_bms_cutoff_retry_pending[c] is True
+    assert manager.should_charge_to_bms_cutoff(c, 100) is False
+
+    c.data["max_cell_voltage"] = NORMAL_BALANCE_RECAL_RETRY_CELL_VOLTAGE
+    assert manager.prepare_bms_cutoff_retry(c) == manager._BMS_CUTOFF_RETRY_ACTIVE
+    assert c not in ctrl._normal_balance_bms_cutoff_retry_pending
+    assert ctrl._normal_balance_bms_cutoff_retry_active[c] is True
+    assert reset_calls == [c]
+    assert manager.should_charge_to_bms_cutoff(c, 100) is True
+
+
+def test_venus_ad_retry_requires_a_second_confirmed_cutoff():
+    c = _Coord(
+        battery_version="vD",
+        data={
+            "max_cell_voltage": NORMAL_BALANCE_RECAL_RETRY_CELL_VOLTAGE,
+            "battery_soc": 94,
+            "battery_power": 200,
+        },
+        commanded_charge_power=200,
+    )
+    confirmed = {"value": False}
+    ctrl = _controller(
+        [c],
+        _weekly_charge_mgr=SimpleNamespace(
+            is_bms_cutoff_confirmed=lambda _coordinator: confirmed["value"],
+            reset_bms_cutoff_confirmation=lambda _coordinator: None,
+        ),
+    )
+    ctrl._normal_balance_bms_cutoff_retry_active[c] = True
+    manager = _mgr(ctrl)
+
+    assert manager.prepare_bms_cutoff_retry(c) == manager._BMS_CUTOFF_RETRY_ACTIVE
+
+    confirmed["value"] = True
+    c.data["battery_power"] = 0
+    assert manager.prepare_bms_cutoff_retry(c) is None
+    assert c not in ctrl._normal_balance_bms_cutoff_retry_active
     assert manager.should_charge_to_bms_cutoff(c, 100) is False
 
 

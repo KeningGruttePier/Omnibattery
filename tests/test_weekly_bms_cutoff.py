@@ -19,6 +19,7 @@ from custom_components.omnibattery.control.weekly_full_charge import (
     WeeklyFullChargeManager,
     _BMS_CUTOFF_REQUIRED_CYCLES,
 )
+from custom_components.omnibattery.control.max_soc_charge import MaxSocChargeManager
 
 _IN_ZONE = NORMAL_BALANCE_TAPER_CELL_VOLTAGE + 0.05  # cell above taper entry
 _STANDBY = 1
@@ -134,3 +135,50 @@ def test_bms_cutoff_confirmation_is_read_without_soc_interpretation():
         m.tick_bms_cutoff()
 
     assert m.is_bms_cutoff_confirmed(coord) is True
+
+
+def test_venus_ad_first_cutoff_does_not_complete_until_retry_is_refused():
+    coord = _Coord(
+        "bat",
+        soc=94,
+        power=0,
+        commanded=200,
+        vmax=3.60,
+        battery_version="vA",
+    )
+    ctrl = SimpleNamespace(
+        coordinators=[coord],
+        weekly_full_charge_enabled=True,
+        _normal_balance_bms_cutoff_active={},
+        _normal_balance_bms_cutoff_retry_pending={},
+        _normal_balance_bms_cutoff_retry_active={},
+        _normal_balance_bms_cutoff_measurement={},
+        _normal_balance_date=None,
+    )
+    weekly = WeeklyFullChargeManager.__new__(WeeklyFullChargeManager)
+    weekly._controller = ctrl
+    weekly._bms_cutoff_counts = {"bat": _BMS_CUTOFF_REQUIRED_CYCLES}
+    weekly._already_complete_logged = False
+    weekly.is_active = lambda: True
+    ctrl._weekly_charge_mgr = weekly
+    ctrl._max_soc_mgr = MaxSocChargeManager(SimpleNamespace(), ctrl)
+
+    # The first five-cycle refusal is provisional and must not complete weekly
+    # charge or be exposed as a final full signal.
+    assert weekly.is_battery_full(coord) is False
+    assert ctrl._normal_balance_bms_cutoff_retry_pending[coord] is True
+
+    # Relaxation opens exactly one retry window and clears the first counter.
+    coord.data["max_cell_voltage"] = 3.57
+    assert weekly.is_battery_full(coord) is False
+    assert ctrl._normal_balance_bms_cutoff_retry_active[coord] is True
+    assert weekly._bms_cutoff_counts == {}
+
+    # The retry is accepted, then a later five-cycle refusal is final.
+    coord.data["battery_power"] = 200
+    weekly.tick_bms_cutoff()
+    coord.data["battery_power"] = 0
+    for _ in range(_BMS_CUTOFF_REQUIRED_CYCLES):
+        weekly.tick_bms_cutoff()
+    assert weekly.is_battery_full(coord) is True
+    assert coord not in ctrl._normal_balance_bms_cutoff_retry_active

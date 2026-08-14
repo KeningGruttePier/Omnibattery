@@ -149,10 +149,18 @@ class WeeklyFullChargeManager:
             else:
                 self._bms_cutoff_counts[c.name] = 0
 
+    def reset_bms_cutoff_confirmation(self, coordinator: Any) -> None:
+        """Forget a provisional cutoff before the one-shot retry begins."""
+        self._bms_cutoff_counts.pop(getattr(coordinator, "name", coordinator), None)
+        # Accept older/test state keyed directly by coordinator identity.
+        self._bms_cutoff_counts.pop(coordinator, None)
+
     def is_battery_full(self, coordinator: Any) -> bool:
         """Return True if this battery counts as fully charged.
 
-        Read-only: does not modify _bms_cutoff_counts (tick_bms_cutoff() does).
+        The cutoff counter is advanced only by tick_bms_cutoff(); a provisional
+        Venus A/D cutoff may be promoted to the one-shot retry here before the
+        battery is considered complete.
         Used by both handle_registers() (weekly completion) and
         _get_available_batteries() (normal max_soc=100% case).
         """
@@ -161,12 +169,19 @@ class WeeklyFullChargeManager:
         if not coordinator.data:
             return False
         soc = coordinator.data.get("battery_soc", 0)
+        top_charge_manager = getattr(self._controller, "_max_soc_mgr", None)
+        prepare_retry = getattr(top_charge_manager, "prepare_bms_cutoff_retry", None)
+        if prepare_retry is not None:
+            retry_state = prepare_retry(coordinator)
+            if retry_state in {"pending", "active"}:
+                # A provisional first refusal must neither complete a weekly
+                # charge nor block the normal path permanently.
+                return False
         if soc >= 100:
             # Venus A/D can expose 100% as soon as the first coupled pack is
             # full. When the voltage taper is active, let the top-charge path
             # keep the command alive until the shared BMS detector confirms the
             # real cutoff for all packs.
-            top_charge_manager = getattr(self._controller, "_max_soc_mgr", None)
             should_charge_to_bms = getattr(
                 top_charge_manager, "should_charge_to_bms_cutoff", None
             )

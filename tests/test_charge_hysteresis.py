@@ -53,6 +53,7 @@ def _controller(coord, *, bms_full=False):
     ctrl = SimpleNamespace(
         coordinators=[coord],
         _weekly_full_charge_unlocked=lambda: False,
+        _normal_balance_bms_cutoff_retry_pending={},
         _normal_balance_recal_override={},
         _weekly_charge_mgr=SimpleNamespace(is_battery_full=lambda c: bms_full),
         _effective_charge_max_soc=lambda c, weekly: (c.max_soc, "config"),
@@ -169,3 +170,19 @@ def test_venus_ad_top_voltage_remains_available_at_reported_100_soc():
     ctrl._weekly_charge_mgr = SimpleNamespace(is_battery_full=lambda _coord: True)
 
     assert ChargeDischargeController._get_available_batteries(ctrl, True, False) == [c]
+
+
+def test_venus_ad_first_cutoff_waiting_blocks_only_until_relaxation_retry():
+    c = _Coord(
+        soc=94,
+        max_soc=100,
+        vmax=3.60,
+        battery_version="vA",
+    )
+    ctrl = _controller(c)
+    ctrl._normal_balance_bms_cutoff_retry_pending[c] = True
+
+    ChargeDischargeController._refresh_battery_charge_limit_blocks(ctrl)
+
+    assert "bms_cutoff_retry" in ctrl._blocks[c]
+    assert not _hyst_blocked(ctrl, c)

@@ -169,6 +169,7 @@ from .const import (
     DEFAULT_HOURLY_BALANCE_MAX_OFFSET_W,
     NORMAL_BALANCE_PAUSE_CELL_VOLTAGE,
     NORMAL_BALANCE_RECAL_INVERTER_STANDBY,
+    NORMAL_BALANCE_RECAL_RETRY_CELL_VOLTAGE,
     BMS_DISCHARGE_CUTOFF_SOC,
     PD_READBACK_EVERY_N_WRITES,
     ACK_INEXACT_STREAK_WARN,
@@ -554,6 +555,8 @@ class ChargeDischargeController:
         self._normal_balance_date = dt_util.now().date()
         self._normal_balance_voltage_tapered: dict[MarstekVenusDataUpdateCoordinator, bool] = {}
         self._normal_balance_bms_cutoff_active: dict[MarstekVenusDataUpdateCoordinator, bool] = {}
+        self._normal_balance_bms_cutoff_retry_pending: dict[MarstekVenusDataUpdateCoordinator, bool] = {}
+        self._normal_balance_bms_cutoff_retry_active: dict[MarstekVenusDataUpdateCoordinator, bool] = {}
         self._normal_balance_bms_cutoff_measurement: dict[
             MarstekVenusDataUpdateCoordinator, str
         ] = {}
@@ -1031,6 +1034,13 @@ class ChargeDischargeController:
         bms_cutoff_state = getattr(self, "_normal_balance_bms_cutoff_active", None)
         if bms_cutoff_state is not None:
             bms_cutoff_state.pop(coordinator, None)
+        for attr in (
+            "_normal_balance_bms_cutoff_retry_pending",
+            "_normal_balance_bms_cutoff_retry_active",
+        ):
+            retry_state = getattr(self, attr, None)
+            if retry_state is not None:
+                retry_state.pop(coordinator, None)
         bms_cutoff_measurement = getattr(
             self, "_normal_balance_bms_cutoff_measurement", None
         )
@@ -1996,13 +2006,40 @@ class ChargeDischargeController:
             if ChargeDischargeController._is_battery_manual_owned(coordinator):
                 self.remove_charge_block("max_soc", coordinator=coordinator)
                 self.remove_charge_block("charge_hysteresis", coordinator=coordinator)
+                self.remove_charge_block("bms_cutoff_retry", coordinator=coordinator)
                 continue
             if coordinator.data is None:
                 self.remove_charge_block("max_soc", coordinator=coordinator)
                 self.remove_charge_block("charge_hysteresis", coordinator=coordinator)
+                self.remove_charge_block("bms_cutoff_retry", coordinator=coordinator)
                 continue
 
             current_soc = coordinator.data.get("battery_soc", 0)
+
+            retry_pending = getattr(
+                self, "_normal_balance_bms_cutoff_retry_pending", {}
+            ).get(coordinator, False)
+            if retry_pending:
+                # A first Venus A/D refusal is provisional. Keep the battery
+                # idle while the top cell relaxes; the retry path re-opens it
+                # once the cell reaches the configured relaxation voltage.
+                coordinator._hysteresis_active = False
+                coordinator._hysteresis_base_soc = None
+                self.remove_charge_block("max_soc", coordinator=coordinator)
+                self.remove_charge_block("charge_hysteresis", coordinator=coordinator)
+                self.set_charge_block(
+                    "bms_cutoff_retry",
+                    "bms_cutoff_retry",
+                    {
+                        "battery": coordinator.name,
+                        "state": "waiting_for_relaxation",
+                        "retry_voltage": NORMAL_BALANCE_RECAL_RETRY_CELL_VOLTAGE,
+                        "soc": current_soc,
+                    },
+                    coordinator=coordinator,
+                )
+                continue
+            self.remove_charge_block("bms_cutoff_retry", coordinator=coordinator)
 
             if weekly_100_unlocked:
                 if coordinator.enable_charge_hysteresis and coordinator._hysteresis_active:
@@ -2462,10 +2499,10 @@ class ChargeDischargeController:
 
                 # BMS cutoff detection: counter is maintained by tick_bms_cutoff() which
                 # runs unconditionally at the top of handle_registers() each cycle.
-                # is_battery_full() is a read-only query shared with handle_registers().
-                # A normal SOC-recalibration retry is the deliberate exception: the
-                # weekly manager still remembers the first cutoff, but this one-shot
-                # 200 W command must be allowed through until the second cutoff.
+                # is_battery_full() is shared with handle_registers() and prepares
+                # provisional Venus A/D retries before reporting a battery full.
+                # A retry keeps the one-shot 200 W command eligible until the
+                # second cutoff; the normal SOC-recalibration path does the same.
                 normal_recal_active = self._normal_balance_recal_override.get(
                     coordinator, False
                 )

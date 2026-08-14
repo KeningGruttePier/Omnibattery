@@ -12,6 +12,8 @@ drive active cell balancing. It manages the final stretch of a normal max-SOC
   at full cell voltage (coulomb-counter drift) until the BMS itself cuts off.
 - After a cutoff above 3.60 V, wait for the cell to relax to 3.57 V and make one
   additional 200 W charge attempt before latching the recalibration session.
+- Coupled Venus A/D packs use the same one-shot retry after their first provisional
+  BMS refusal, because a pack handover can look identical to a final cutoff.
 - Passive cell-delta measurement at the top, reported to the balance monitor.
 
 The latched state (the ``_normal_balance_*`` dicts) stays on the controller
@@ -52,6 +54,8 @@ class MaxSocChargeManager:
 
     _BMS_CUTOFF_MEASUREMENT_PENDING = "pending"
     _BMS_CUTOFF_MEASUREMENT_DONE = "done"
+    _BMS_CUTOFF_RETRY_PENDING = "pending"
+    _BMS_CUTOFF_RETRY_ACTIVE = "active"
 
     def __init__(self, hass: "HomeAssistant", controller: Any) -> None:
         self._hass = hass
@@ -127,6 +131,152 @@ class MaxSocChargeManager:
             return False
         return bool(is_confirmed(coordinator))
 
+    def _clear_bms_cutoff_retry_state(self, coordinator) -> None:
+        """Drop the provisional Venus A/D cutoff retry state for a battery."""
+        for attr in (
+            "_normal_balance_bms_cutoff_retry_pending",
+            "_normal_balance_bms_cutoff_retry_active",
+        ):
+            getattr(self._controller, attr, {}).pop(coordinator, None)
+
+    def _reset_bms_cutoff_counter(self, coordinator) -> None:
+        """Forget the first refusal before opening the one-shot retry window."""
+        weekly_manager = getattr(self._controller, "_weekly_charge_mgr", None)
+        reset = getattr(weekly_manager, "reset_bms_cutoff_confirmation", None)
+        if reset is not None:
+            reset(coordinator)
+
+    def prepare_bms_cutoff_retry(self, coordinator) -> str | None:
+        """Classify the first coupled-pack refusal as pending or retry-active.
+
+        Venus A/D can briefly report ``≤10 W + Standby`` while handing charge
+        from one coupled pack to another. The shared detector still debounces
+        that signature, but its first confirmation is provisional here: wait
+        for the top cell to relax to 3.57 V, then allow one 200 W attempt. A
+        later confirmed refusal remains the final cutoff.
+
+        The method is intentionally safe to call from both the weekly completion
+        check and the normal charge-block refresh, because weekly completion is
+        evaluated before the latter in each control cycle.
+        """
+        coordinator_data = coordinator.data or {}
+        if (
+            not self._uses_bms_cutoff_at_top(coordinator)
+            or not self._taper_enabled(coordinator)
+            or not coordinator_data
+        ):
+            return None
+
+        measurement_state = getattr(
+            self._controller, "_normal_balance_bms_cutoff_measurement", {}
+        ).get(coordinator)
+        if measurement_state in {
+            self._BMS_CUTOFF_MEASUREMENT_PENDING,
+            self._BMS_CUTOFF_MEASUREMENT_DONE,
+        }:
+            self._clear_bms_cutoff_retry_state(coordinator)
+            return None
+
+        retry_pending = getattr(
+            self._controller, "_normal_balance_bms_cutoff_retry_pending", {}
+        )
+        retry_active = getattr(
+            self._controller, "_normal_balance_bms_cutoff_retry_active", {}
+        )
+
+        soc_raw = coordinator_data.get("battery_soc")
+        try:
+            soc = float(soc_raw) if soc_raw is not None else None
+        except (TypeError, ValueError):
+            soc = None
+        vmax_raw = coordinator_data.get("max_cell_voltage")
+        try:
+            vmax = float(vmax_raw) if vmax_raw is not None else None
+        except (TypeError, ValueError):
+            vmax = None
+        power_raw = coordinator_data.get("battery_power")
+        try:
+            battery_power = float(power_raw) if power_raw is not None else None
+        except (TypeError, ValueError):
+            battery_power = None
+
+        if retry_pending.get(coordinator, False):
+            # The battery resumed charging by itself, so the first refusal was
+            # transient and no forced retry is needed.
+            if battery_power is not None and battery_power > NORMAL_BALANCE_RECAL_CUTOFF_POWER_W:
+                retry_pending.pop(coordinator, None)
+                _LOGGER.info(
+                    "%s: Venus A/D provisional cutoff cleared; battery resumed at %.1f W",
+                    coordinator.name,
+                    battery_power,
+                )
+                return None
+            # An aggregate 100% SOC is the other reliable completion signal.
+            if soc is not None and soc >= 100:
+                retry_pending.pop(coordinator, None)
+                return None
+            if vmax is not None and vmax <= NORMAL_BALANCE_RECAL_RETRY_CELL_VOLTAGE:
+                retry_pending.pop(coordinator, None)
+                retry_active[coordinator] = True
+                self._reset_bms_cutoff_counter(coordinator)
+                _LOGGER.info(
+                    "%s: Venus A/D cell relaxed to %.2f V — starting one %d W handover retry",
+                    coordinator.name,
+                    vmax,
+                    NORMAL_BALANCE_CHARGE_POWER_W,
+                )
+                return self._BMS_CUTOFF_RETRY_ACTIVE
+            return self._BMS_CUTOFF_RETRY_PENDING
+
+        if retry_active.get(coordinator, False):
+            # Once the one-shot retry has been accepted, keep it alive until a
+            # second refusal is confirmed. Leaving the taper zone ends this
+            # top-charge session and lets normal SOC control resume.
+            if vmax is not None and vmax < NORMAL_BALANCE_TAPER_CELL_VOLTAGE:
+                retry_active.pop(coordinator, None)
+                return None
+            if self._bms_cutoff_confirmed(coordinator):
+                retry_active.pop(coordinator, None)
+                measurement = getattr(
+                    self._controller, "_normal_balance_bms_cutoff_measurement", None
+                )
+                if measurement is None:
+                    measurement = {}
+                    self._controller._normal_balance_bms_cutoff_measurement = measurement
+                measurement.setdefault(
+                    coordinator, self._BMS_CUTOFF_MEASUREMENT_PENDING
+                )
+                return None
+            return self._BMS_CUTOFF_RETRY_ACTIVE
+
+        if not self._bms_cutoff_confirmed(coordinator):
+            return None
+        if soc is None or soc >= 100:
+            # Keep the existing aggregate-100/BMS completion behaviour for a
+            # first refusal; the retry is only for an incomplete coupled system.
+            return None
+
+        if vmax is not None and vmax <= NORMAL_BALANCE_RECAL_RETRY_CELL_VOLTAGE:
+            retry_active[coordinator] = True
+            self._reset_bms_cutoff_counter(coordinator)
+            _LOGGER.info(
+                "%s: Venus A/D first cutoff already relaxed to %.2f V — starting one %d W handover retry",
+                coordinator.name,
+                vmax,
+                NORMAL_BALANCE_CHARGE_POWER_W,
+            )
+            return self._BMS_CUTOFF_RETRY_ACTIVE
+
+        retry_pending[coordinator] = True
+        _LOGGER.info(
+            "%s: Venus A/D first cutoff at SOC %.1f%% — waiting for %.2f V before one %d W handover retry",
+            coordinator.name,
+            soc,
+            NORMAL_BALANCE_RECAL_RETRY_CELL_VOLTAGE,
+            NORMAL_BALANCE_CHARGE_POWER_W,
+        )
+        return self._BMS_CUTOFF_RETRY_PENDING
+
     def should_charge_to_bms_cutoff(
         self, coordinator, effective_max_soc: float | None = None
     ) -> bool:
@@ -149,9 +299,6 @@ class MaxSocChargeManager:
             except (TypeError, ValueError):
                 return False
 
-        if self._bms_cutoff_confirmed(coordinator):
-            return False
-
         measurement_state = getattr(
             self._controller, "_normal_balance_bms_cutoff_measurement", {}
         ).get(coordinator)
@@ -159,6 +306,15 @@ class MaxSocChargeManager:
             self._BMS_CUTOFF_MEASUREMENT_PENDING,
             self._BMS_CUTOFF_MEASUREMENT_DONE,
         }:
+            return False
+
+        retry_state = self.prepare_bms_cutoff_retry(coordinator)
+        if retry_state == self._BMS_CUTOFF_RETRY_PENDING:
+            return False
+        if retry_state == self._BMS_CUTOFF_RETRY_ACTIVE:
+            return True
+
+        if self._bms_cutoff_confirmed(coordinator):
             return False
 
         active = getattr(
@@ -378,6 +534,7 @@ class MaxSocChargeManager:
                 getattr(c, "_normal_balance_bms_cutoff_active", {}).pop(
                     coordinator, None
                 )
+                self._clear_bms_cutoff_retry_state(coordinator)
                 getattr(c, "_normal_balance_bms_cutoff_measurement", {}).pop(
                     coordinator, None
                 )
@@ -389,6 +546,7 @@ class MaxSocChargeManager:
                 getattr(c, "_normal_balance_bms_cutoff_active", {}).pop(
                     coordinator, None
                 )
+                self._clear_bms_cutoff_retry_state(coordinator)
                 getattr(c, "_normal_balance_bms_cutoff_measurement", {}).pop(
                     coordinator, None
                 )
@@ -436,6 +594,18 @@ class MaxSocChargeManager:
                 if measurement_state is None:
                     measurement_state = {}
                     c._normal_balance_bms_cutoff_measurement = measurement_state
+                retry_state = self.prepare_bms_cutoff_retry(coordinator)
+                if retry_state == self._BMS_CUTOFF_RETRY_PENDING:
+                    bms_cutoff_state.pop(coordinator, None)
+                    measurement_state.pop(coordinator, None)
+                    continue
+                if measurement_state.get(coordinator) in {
+                    self._BMS_CUTOFF_MEASUREMENT_PENDING,
+                    self._BMS_CUTOFF_MEASUREMENT_DONE,
+                }:
+                    bms_cutoff_state.pop(coordinator, None)
+                    self._clear_bms_cutoff_retry_state(coordinator)
+                    continue
                 bms_cutoff_confirmed = self._bms_cutoff_confirmed(coordinator)
                 if bms_cutoff_confirmed:
                     bms_cutoff_state.pop(coordinator, None)
@@ -453,6 +623,8 @@ class MaxSocChargeManager:
                 if not in_zone or bms_cutoff_confirmed:
                     bms_cutoff_state.pop(coordinator, None)
                 elif (
+                    retry_state == self._BMS_CUTOFF_RETRY_ACTIVE
+                    or
                     bms_cutoff_state.get(coordinator, False)
                     or (vmax_f is not None and vmax_f >= NORMAL_BALANCE_PAUSE_CELL_VOLTAGE)
                 ):
@@ -539,6 +711,12 @@ class MaxSocChargeManager:
                 "bms_cutoff_measurement": getattr(
                     c, "_normal_balance_bms_cutoff_measurement", {}
                 ).get(coordinator),
+                "bms_cutoff_retry_pending": getattr(
+                    c, "_normal_balance_bms_cutoff_retry_pending", {}
+                ).get(coordinator, False),
+                "bms_cutoff_retry_active": getattr(
+                    c, "_normal_balance_bms_cutoff_retry_active", {}
+                ).get(coordinator, False),
                 "normal_balance_phase": c._normal_balance_phases.get(coordinator),
                 "soc_recal_active": c._normal_balance_recal_override.get(coordinator, False),
                 "soc_recal_bms_cutoff": c._normal_balance_recal_latched.get(coordinator, False),

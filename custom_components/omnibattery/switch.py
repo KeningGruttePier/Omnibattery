@@ -461,6 +461,13 @@ class BatteryFullChargeVoltageTaperSwitch(SwitchEntity):
         bms_cutoff_state = getattr(self.controller, "_normal_balance_bms_cutoff_active", None)
         if bms_cutoff_state is not None:
             bms_cutoff_state.pop(self.coordinator, None)
+        for attr in (
+            "_normal_balance_bms_cutoff_retry_pending",
+            "_normal_balance_bms_cutoff_retry_active",
+        ):
+            retry_state = getattr(self.controller, attr, None)
+            if retry_state is not None:
+                retry_state.pop(self.coordinator, None)
         bms_cutoff_measurement = getattr(
             self.controller, "_normal_balance_bms_cutoff_measurement", None
         )
