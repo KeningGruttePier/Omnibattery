@@ -531,6 +531,36 @@ async def test_write_control_propagates_write_failure():
     assert await drv.write_control("force_mode", 1) is False
 
 
+@pytest.mark.parametrize("version", ["v2", "v3"])
+@pytest.mark.parametrize("key", ["max_charge_power", "max_discharge_power"])
+@pytest.mark.parametrize(
+    ("requested", "expected"),
+    [(500, 800), (800, 800), (1200, 2500), (2500, 2500)],
+)
+async def test_write_control_normalizes_venus_e_power_caps(
+    version, key, requested, expected
+):
+    client = _fake_client()
+    drv = _driver(version, client=client)
+
+    assert await drv.write_control(key, requested) is True
+    client.async_write_register.assert_awaited_once_with(
+        REGISTER_MAP[version][key], expected
+    )
+
+
+@pytest.mark.parametrize("version", ["vA", "vD"])
+@pytest.mark.parametrize("key", ["max_charge_power", "max_discharge_power"])
+async def test_write_control_keeps_venus_a_d_power_caps(version, key):
+    client = _fake_client()
+    drv = _driver(version, client=client)
+
+    assert await drv.write_control(key, 1200) is True
+    client.async_write_register.assert_awaited_once_with(
+        REGISTER_MAP[version][key], 1200
+    )
+
+
 # ----------------------------------------------------------------------
 # set_rs485_control
 # ----------------------------------------------------------------------
@@ -620,7 +650,7 @@ async def test_get_rs485_control_none_when_register_missing():
 # ----------------------------------------------------------------------
 # apply_config
 # ----------------------------------------------------------------------
-async def test_apply_config_v2_writes_cutoffs_and_power_caps():
+async def test_apply_config_v2_writes_cutoffs_and_app_power_caps():
     client = _fake_client()
     drv = _driver("v2", client=client)
 
@@ -636,8 +666,24 @@ async def test_apply_config_v2_writes_cutoffs_and_power_caps():
     client.async_write_register.assert_any_await(regs["charging_cutoff_capacity"], int(100 / 0.1))
     client.async_write_register.assert_any_await(regs["discharging_cutoff_capacity"], int(10 / 0.1))
     client.async_write_register.assert_any_await(regs["max_charge_power"], 800)
-    client.async_write_register.assert_any_await(regs["max_discharge_power"], 1200)
+    client.async_write_register.assert_any_await(regs["max_discharge_power"], 2500)
     assert client.async_write_register.await_count == 4
+
+
+@pytest.mark.parametrize("version", ["vA", "vD"])
+async def test_apply_config_keeps_venus_a_d_power_caps(version):
+    client = _fake_client()
+    drv = _driver(version, client=client)
+
+    await drv.apply_config(
+        max_soc_pct=90, min_soc_pct=20,
+        max_charge_power_w=800, max_discharge_power_w=1200,
+    )
+
+    regs = REGISTER_MAP[version]
+    assert client.async_write_register.await_count == 2
+    client.async_write_register.assert_any_await(regs["max_charge_power"], 800)
+    client.async_write_register.assert_any_await(regs["max_discharge_power"], 1200)
 
 
 async def test_apply_config_v3_skips_absent_cutoffs():

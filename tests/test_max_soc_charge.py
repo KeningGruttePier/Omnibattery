@@ -23,7 +23,9 @@ from homeassistant.util import dt as dt_util
 from custom_components.omnibattery.const import (
     CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED,
     NORMAL_BALANCE_CHARGE_POWER_W,
+    NORMAL_BALANCE_PAUSE_CELL_VOLTAGE,
     NORMAL_BALANCE_RECAL_CUTOFF_CYCLES,
+    NORMAL_BALANCE_RECAL_RETRY_CELL_VOLTAGE,
 )
 from custom_components.omnibattery.control.max_soc_charge import (
     MaxSocChargeManager,
@@ -43,17 +45,17 @@ class _Coord:
         name="bat",
         *,
         data=None,
+        battery_version="v2",
         max_soc=100,
         taper_enabled=True,
-        active_balance_mode_enabled=False,
         max_charge_power=800,
         commanded_charge_power=0,
     ):
         self.name = name
         self.data = {} if data is None else data
+        self.battery_version = battery_version
         self.max_soc = max_soc
         self.max_charge_power = max_charge_power
-        self.active_balance_mode_enabled = active_balance_mode_enabled
         self.commanded_charge_power = commanded_charge_power
         setattr(self, CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED, taper_enabled)
 
@@ -66,18 +68,23 @@ tracks the manager's runtime state."""
         coordinators=list(coords),
         _normal_balance_date=dt_util.now().date(),
         _normal_balance_voltage_tapered={},
-        _normal_active_balance_phases={},
+        _normal_balance_bms_cutoff_active={},
+        _normal_balance_bms_cutoff_retry_pending={},
+        _normal_balance_bms_cutoff_retry_active={},
+        _normal_balance_bms_cutoff_measurement={},
+        _normal_balance_phases={},
         _normal_balance_measure_started={},
         _normal_balance_last_delta_v={},
         _normal_balance_recal_override={},
         _normal_balance_recal_cutoff_count={},
         _normal_balance_recal_latched={},
-        _is_active_balance_mode_running=lambda coordinator: False,
+        _normal_balance_recal_retry_pending={},
+        _normal_balance_recal_retry_active={},
+        _normal_balance_recal_first_cutoff_voltage={},
         _weekly_charge_mgr=object(),
         _weekly_full_charge_unlocked=lambda: False,
         _battery_power_limit=lambda coordinator, is_charging: coordinator.max_charge_power,
         _balance_monitor=None,
-        _reset_active_balance_charge_resume_target=lambda coordinator: None,
     )
     base.update(overrides)
     ctrl = SimpleNamespace(**base)
@@ -109,17 +116,6 @@ def test_taper_applies_true_at_max_soc_100():
 
 def test_taper_applies_false_when_taper_disabled():
     c = _Coord(max_soc=100, taper_enabled=False)
-    assert _mgr(_controller([c]))._taper_applies(c) is False
-
-
-def test_taper_applies_false_when_active_balance_running():
-    c = _Coord(max_soc=100)
-    ctrl = _controller([c], _is_active_balance_mode_running=lambda coordinator: True)
-    assert _mgr(ctrl)._taper_applies(c) is False
-
-
-def test_taper_applies_false_when_coordinator_active_balance_enabled():
-    c = _Coord(max_soc=100, active_balance_mode_enabled=True)
     assert _mgr(_controller([c]))._taper_applies(c) is False
 
 
@@ -190,6 +186,15 @@ def test_apply_charge_taper_stays_latched_in_hysteresis_band():
     assert ctrl._normal_balance_voltage_tapered.get(c) is True
 
 
+def test_venus_ad_keeps_the_200_w_taper_at_the_top_voltage():
+    for version in ("vA", "vD"):
+        c = _Coord(
+            battery_version=version,
+            data={"max_cell_voltage": NORMAL_BALANCE_PAUSE_CELL_VOLTAGE},
+        )
+        assert _mgr(_controller([c])).apply_charge_taper(c, 800) == NORMAL_BALANCE_CHARGE_POWER_W
+
+
 # ----------------------------------------------------------------------
 # reset_if_new_day
 # ----------------------------------------------------------------------
@@ -212,6 +217,17 @@ def test_reset_if_new_day_clears_taper_state_on_rollover():
 
     assert ctrl._normal_balance_date == dt_util.now().date()
     assert ctrl._normal_balance_voltage_tapered == {}
+
+
+def test_reset_if_new_day_preserves_unfinished_venus_ad_bms_charge():
+    c = _Coord(battery_version="vA")
+    ctrl = _controller([c])
+    ctrl._normal_balance_date = dt_util.now().date() - timedelta(days=1)
+    ctrl._normal_balance_bms_cutoff_active[c] = True
+
+    _mgr(ctrl).reset_if_new_day()
+
+    assert ctrl._normal_balance_bms_cutoff_active[c] is True
 
 
 # ----------------------------------------------------------------------
@@ -254,6 +270,137 @@ def test_refresh_blocks_starts_recalibration_at_top_voltage_on_low_soc():
     assert ctrl._normal_balance_recal_override[c] is True
 
 
+def test_venus_ad_latches_bms_owned_charge_past_voltage_relaxation():
+    c = _Coord(
+        battery_version="vA",
+        data={"max_cell_voltage": NORMAL_BALANCE_PAUSE_CELL_VOLTAGE, "battery_soc": 100},
+    )
+    ctrl = _controller(
+        [c],
+        _weekly_charge_mgr=SimpleNamespace(
+            is_bms_cutoff_confirmed=lambda _coordinator: False,
+        ),
+    )
+    manager = _mgr(ctrl)
+
+    manager.refresh_blocks()
+    assert ctrl._normal_balance_bms_cutoff_active[c] is True
+    assert manager.should_charge_to_bms_cutoff(c, 100) is True
+
+    # The cell can relax below 3.60 V while the other coupled packs continue
+    # filling; the BMS-owned latch must survive that relaxation.
+    c.data["max_cell_voltage"] = 3.57
+    manager.refresh_blocks()
+    assert ctrl._normal_balance_bms_cutoff_active[c] is True
+    assert manager.should_charge_to_bms_cutoff(c, 100) is True
+
+
+def test_venus_ad_bms_confirmation_releases_top_charge_latch():
+    c = _Coord(
+        battery_version="vD",
+        data={"max_cell_voltage": NORMAL_BALANCE_PAUSE_CELL_VOLTAGE, "battery_soc": 98},
+    )
+    cutoff_confirmed = {"value": False}
+    ctrl = _controller(
+        [c],
+        _weekly_charge_mgr=SimpleNamespace(
+            is_bms_cutoff_confirmed=lambda _coordinator: cutoff_confirmed["value"],
+            reset_bms_cutoff_confirmation=lambda _coordinator: cutoff_confirmed.__setitem__(
+                "value", False
+            ),
+        ),
+    )
+    manager = _mgr(ctrl)
+
+    manager.refresh_blocks()
+    assert ctrl._normal_balance_bms_cutoff_active[c] is True
+
+    cutoff_confirmed["value"] = True
+    manager.refresh_blocks()
+    assert ctrl._normal_balance_bms_cutoff_retry_pending[c] is True
+    assert c not in ctrl._normal_balance_bms_cutoff_measurement
+
+    c.data["max_cell_voltage"] = NORMAL_BALANCE_RECAL_RETRY_CELL_VOLTAGE
+    manager.refresh_blocks()
+    assert c not in ctrl._normal_balance_bms_cutoff_retry_pending
+    assert ctrl._normal_balance_bms_cutoff_retry_active[c] is True
+    assert manager.should_charge_to_bms_cutoff(c, 100) is True
+
+    cutoff_confirmed["value"] = True
+    manager.refresh_blocks()
+    assert c not in ctrl._normal_balance_bms_cutoff_retry_active
+    assert (
+        ctrl._normal_balance_bms_cutoff_measurement[c]
+        == manager._BMS_CUTOFF_MEASUREMENT_PENDING
+    )
+    assert manager.should_charge_to_bms_cutoff(c, 100) is False
+
+
+def test_venus_ad_first_cutoff_waits_for_relaxation_then_opens_one_retry():
+    c = _Coord(
+        battery_version="vA",
+        data={
+            "max_cell_voltage": NORMAL_BALANCE_PAUSE_CELL_VOLTAGE,
+            "battery_soc": 94,
+            "battery_power": 0,
+        },
+        commanded_charge_power=200,
+    )
+    confirmed = {"value": True}
+    reset_calls = []
+    ctrl = _controller(
+        [c],
+        _weekly_charge_mgr=SimpleNamespace(
+            is_bms_cutoff_confirmed=lambda _coordinator: confirmed["value"],
+            reset_bms_cutoff_confirmation=lambda coordinator: (
+                reset_calls.append(coordinator), confirmed.__setitem__("value", False)
+            ),
+        ),
+    )
+    manager = _mgr(ctrl)
+
+    assert manager.prepare_bms_cutoff_retry(c) == manager._BMS_CUTOFF_RETRY_PENDING
+    assert ctrl._normal_balance_bms_cutoff_retry_pending[c] is True
+    assert manager.should_charge_to_bms_cutoff(c, 100) is False
+
+    c.data["max_cell_voltage"] = NORMAL_BALANCE_RECAL_RETRY_CELL_VOLTAGE
+    assert manager.prepare_bms_cutoff_retry(c) == manager._BMS_CUTOFF_RETRY_ACTIVE
+    assert c not in ctrl._normal_balance_bms_cutoff_retry_pending
+    assert ctrl._normal_balance_bms_cutoff_retry_active[c] is True
+    assert reset_calls == [c]
+    assert manager.should_charge_to_bms_cutoff(c, 100) is True
+
+
+def test_venus_ad_retry_requires_a_second_confirmed_cutoff():
+    c = _Coord(
+        battery_version="vD",
+        data={
+            "max_cell_voltage": NORMAL_BALANCE_RECAL_RETRY_CELL_VOLTAGE,
+            "battery_soc": 94,
+            "battery_power": 200,
+        },
+        commanded_charge_power=200,
+    )
+    confirmed = {"value": False}
+    ctrl = _controller(
+        [c],
+        _weekly_charge_mgr=SimpleNamespace(
+            is_bms_cutoff_confirmed=lambda _coordinator: confirmed["value"],
+            reset_bms_cutoff_confirmation=lambda _coordinator: None,
+        ),
+    )
+    ctrl._normal_balance_bms_cutoff_retry_active[c] = True
+    manager = _mgr(ctrl)
+
+    assert manager.prepare_bms_cutoff_retry(c) == manager._BMS_CUTOFF_RETRY_ACTIVE
+
+    confirmed["value"] = True
+    c.data["battery_power"] = 0
+    assert manager.prepare_bms_cutoff_retry(c) is None
+    assert c not in ctrl._normal_balance_bms_cutoff_retry_active
+    assert manager.should_charge_to_bms_cutoff(c, 100) is False
+
+
 # ----------------------------------------------------------------------
 # _compute_recal_override
 # ----------------------------------------------------------------------
@@ -290,6 +437,56 @@ def test_recal_override_latches_after_cutoff_cycles():
     assert ctrl._normal_balance_recal_latched.get(c) is True
     # Stays latched on subsequent calls.
     assert m._compute_recal_override(c, 3.55, 95) is False
+
+
+def test_high_voltage_cutoff_arms_one_retry_after_relaxation():
+    c = _recal_coord(power=5, inv=1, commanded=200)
+    ctrl = _controller([c])
+    m = _mgr(ctrl)
+
+    for cycle in range(NORMAL_BALANCE_RECAL_CUTOFF_CYCLES):
+        result = m._compute_recal_override(c, 3.64, 95)
+        if cycle < NORMAL_BALANCE_RECAL_CUTOFF_CYCLES - 1:
+            assert result is True
+        else:
+            assert result is False
+
+    assert ctrl._normal_balance_recal_latched[c] is True
+    assert ctrl._normal_balance_recal_retry_pending[c] is True
+    assert ctrl._normal_balance_recal_retry_active.get(c, False) is False
+
+    # The battery is idle while the top cell relaxes; the retry must not start early.
+    c.commanded_charge_power = 0
+    assert m._compute_recal_override(c, 3.59, 95) is False
+    assert ctrl._normal_balance_recal_retry_pending[c] is True
+
+    # At 3.57 V the one-shot 200 W retry becomes active.
+    assert m._compute_recal_override(c, NORMAL_BALANCE_RECAL_RETRY_CELL_VOLTAGE, 95) is True
+    assert ctrl._normal_balance_recal_retry_pending.get(c, False) is False
+    assert ctrl._normal_balance_recal_retry_active[c] is True
+
+
+def test_recal_retry_stops_after_its_second_bms_cutoff():
+    c = _recal_coord(power=5, inv=1, commanded=200)
+    ctrl = _controller([c])
+    m = _mgr(ctrl)
+
+    for _ in range(NORMAL_BALANCE_RECAL_CUTOFF_CYCLES):
+        m._compute_recal_override(c, 3.64, 95)
+
+    c.commanded_charge_power = 0  # waiting for relaxation
+    assert m._compute_recal_override(c, NORMAL_BALANCE_RECAL_RETRY_CELL_VOLTAGE, 95) is True
+    c.commanded_charge_power = 200  # the retry is now being commanded
+
+    for _ in range(NORMAL_BALANCE_RECAL_CUTOFF_CYCLES - 1):
+        assert m._compute_recal_override(c, NORMAL_BALANCE_RECAL_RETRY_CELL_VOLTAGE, 95) is True
+    assert m._compute_recal_override(c, NORMAL_BALANCE_RECAL_RETRY_CELL_VOLTAGE, 95) is False
+
+    assert ctrl._normal_balance_recal_retry_pending.get(c, False) is False
+    assert ctrl._normal_balance_recal_retry_active.get(c, False) is False
+    assert ctrl._normal_balance_recal_latched[c] is True
+    # The latched first cutoff prevents a third attempt in the same top session.
+    assert m._compute_recal_override(c, NORMAL_BALANCE_RECAL_RETRY_CELL_VOLTAGE, 95) is False
 
 
 def test_recal_override_cutoff_counter_resets_when_charge_resumes():
@@ -368,7 +565,7 @@ async def test_handle_measurement_enters_hold_and_takes_over():
     took_over = await _mgr(ctrl).handle_measurement()
 
     assert took_over is True
-    assert ctrl._normal_active_balance_phases[c] == "WAIT_MEASURE"
+    assert ctrl._normal_balance_phases[c] == "WAIT_MEASURE"
     assert len(calls) == 1
     name, charge, discharge, kw = calls[0]
     assert (charge, discharge) == (0, 0)
@@ -394,13 +591,13 @@ async def test_handle_measurement_records_delta_after_wait():
         _balance_monitor=monitor,
     )
     # Pre-seed an in-flight measurement whose wait window has already elapsed.
-    ctrl._normal_active_balance_phases[c] = "WAIT_MEASURE"
+    ctrl._normal_balance_phases[c] = "WAIT_MEASURE"
     ctrl._normal_balance_measure_started[c] = dt_util.utcnow() - timedelta(seconds=61)
 
     await _mgr(ctrl).handle_measurement()
 
     assert ctrl._normal_balance_last_delta_v[c] == 0.05
-    assert ctrl._normal_active_balance_phases[c] == "MEASURED"
+    assert ctrl._normal_balance_phases[c] == "MEASURED"
     assert len(monitor.calls) == 1
     assert monitor.calls[0][4] == "top_charge_3_55v"
 
@@ -420,7 +617,7 @@ async def test_handle_measurement_skips_during_soc_recalibration():
 
     assert took_over is False
     assert calls == []
-    assert c not in ctrl._normal_active_balance_phases
+    assert c not in ctrl._normal_balance_phases
 
 
 async def test_handle_measurement_skips_during_weekly_full_charge():
@@ -440,7 +637,80 @@ async def test_handle_measurement_skips_during_weekly_full_charge():
 
     assert took_over is False
     assert calls == []
-    assert c not in ctrl._normal_active_balance_phases
+    assert c not in ctrl._normal_balance_phases
+
+
+async def test_handle_measurement_skips_top_voltage_hold_for_venus_ad():
+    c = _Coord(
+        battery_version="vA",
+        data={"max_cell_voltage": NORMAL_BALANCE_PAUSE_CELL_VOLTAGE, "min_cell_voltage": 3.55,
+              "battery_soc": 100},
+    )
+    calls = []
+
+    async def _set(coordinator, charge, discharge, **kw):
+        calls.append((coordinator.name, charge, discharge))
+
+    ctrl = _controller([c], _set_battery_power=_set)
+
+    took_over = await _mgr(ctrl).handle_measurement()
+
+    assert took_over is False
+    assert calls == []
+    assert c not in ctrl._normal_balance_phases
+
+
+async def test_handle_measurement_waits_after_venus_ad_bms_cutoff():
+    c = _Coord(
+        battery_version="vA",
+        data={"max_cell_voltage": 3.57, "min_cell_voltage": 3.54, "battery_soc": 100},
+    )
+    calls = []
+
+    async def _set(coordinator, charge, discharge, **kw):
+        calls.append((coordinator.name, charge, discharge))
+
+    ctrl = _controller([c], _set_battery_power=_set)
+    ctrl._normal_balance_bms_cutoff_measurement[c] = "pending"
+
+    took_over = await _mgr(ctrl).handle_measurement()
+
+    assert took_over is True
+    assert ctrl._normal_balance_phases[c] == "WAIT_MEASURE"
+    assert calls == [("bat", 0, 0)]
+
+
+async def test_handle_measurement_records_venus_ad_post_cutoff_delta():
+    c = _Coord(
+        battery_version="vD",
+        data={"max_cell_voltage": 3.57, "min_cell_voltage": 3.54, "battery_soc": 100},
+    )
+
+    class _Monitor:
+        def __init__(self):
+            self.calls = []
+
+        async def async_record_top_balance_measurement(
+            self, coordinator, vmax, vmin, soc, phase
+        ):
+            self.calls.append((coordinator.name, vmax, vmin, soc, phase))
+
+    monitor = _Monitor()
+    ctrl = _controller(
+        [c],
+        _set_battery_power=lambda *a, **k: _noop(),
+        _balance_monitor=monitor,
+    )
+    ctrl._normal_balance_bms_cutoff_measurement[c] = "pending"
+    ctrl._normal_balance_phases[c] = "WAIT_MEASURE"
+    ctrl._normal_balance_measure_started[c] = dt_util.utcnow() - timedelta(seconds=61)
+
+    await _mgr(ctrl).handle_measurement()
+
+    assert ctrl._normal_balance_bms_cutoff_measurement[c] == "done"
+    assert ctrl._normal_balance_last_delta_v[c] == 0.03
+    assert monitor.calls[0][4] == "top_charge_bms_cutoff"
+    assert _mgr(ctrl).should_charge_to_bms_cutoff(c, 100) is False
 
 
 async def _noop():

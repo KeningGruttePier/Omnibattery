@@ -53,6 +53,7 @@ Solo presentes cuando el [monitor de equilibrio de celdas](../features/cell-bala
 | `binary_sensor.*_wifi_status` | Estado WiFi |
 | `binary_sensor.*_cloud_status` | Estado Cloud |
 | `binary_sensor.marstek_venus_system_predictive_charging_active` | Carga predictiva activa (sistema) |
+| `binary_sensor.omnibattery_curtailment_status` | Estado de predescarga inteligente / anti-vertido (solo Precio Dinámico) |
 
 ## Números (sliders)
 
@@ -64,6 +65,10 @@ Solo presentes cuando el [monitor de equilibrio de celdas](../features/cell-bala
 | `number.*_max_discharge_power` | Potencia máx. de descarga | W |
 | `number.marstek_venus_system_system_max_charge_power` | Límite opcional de carga combinada para todo el sistema (`0 W` = desactivado). Solo se crea cuando los límites del sistema están activados. | 0–15000 W |
 | `number.marstek_venus_system_system_max_discharge_power` | Límite opcional de descarga combinada para todo el sistema (`0 W` = desactivado). Solo se crea cuando los límites del sistema están activados. | 0–15000 W |
+| `number.omnibattery_predictive_safety_margin_kwh` | Margen de previsión solar usado por la carga predictiva y el anti-vertido en Precio Dinámico | 0–20 kWh |
+| `number.omnibattery_negative_injection_threshold` | Umbral inclusivo de precio para franjas de riesgo de inyección negativa | -2–2 moneda/kWh |
+| `number.omnibattery_predischarge_reserve_soc` | Suelo de SOC adicional para la predescarga inteligente | 0–100 % |
+| `number.omnibattery_predischarge_max_export_power_w` | Exportación máxima durante la predescarga (`0 W` = solo autoconsumo) | 0–10000 W |
 
 ## Selectores
 
@@ -79,14 +84,18 @@ Solo presentes cuando el [monitor de equilibrio de celdas](../features/cell-bala
 | `switch.*_rs485_control` | Modo control RS485 |
 | `switch.*_allow_charge` | Control de software que permite que esta batería participe en la carga automática |
 | `switch.*_allow_discharge` | Control de software que permite que esta batería participe en la descarga automática |
+| `switch.*_battery_manual_mode` | Excluye esta batería del control automático de potencia, manteniendo su telemetría y potencia física en los agregados del sistema |
 | `switch.*_backup_function` | Función de reserva — cuando está activo **y** la potencia AC offgrid ≠ 0 W, la batería queda excluida del control PD (no se envían comandos de escritura) |
 | `switch.marstek_venus_system_override_predictive_charging` | Cancelar carga predictiva |
+| `switch.omnibattery_smart_predischarge` | Activar predescarga inteligente / anti-vertido (solo Precio Dinámico) |
+| `switch.omnibattery_negative_price_charging` | Activar carga oportunista con precios negativos de importación (solo Precio Dinámico) |
 
 ## Botones
 
 | Entidad | Descripción |
 |---|---|
 | `button.*_reset` | Reset del dispositivo |
+| `button.omnibattery_reevaluate_dynamic_pricing` | Reconstruye ahora el plan de Precio Dinámico; solo se crea en modo Precio Dinámico |
 
 ## Sensores del sistema
 
@@ -146,21 +155,3 @@ Disponibles bajo el prefijo `sensor.marstek_venus_system_*`, suman los valores d
 - `system_alarm_status` — Estado de alarma agregado de todas las baterías (`OK` / `Warning` / `Fault`); los atributos listan las condiciones activas por batería
 - `system_home_consumption` — Consumo instantáneo del hogar (W). Lee el sensor del hogar si está configurado, en caso contrario lo deriva de `red + AC de baterías + solar`.
 - `system_daily_home_energy` — Consumo del hogar de hoy (kWh), integrado del valor de Consumo de la Casa anterior. Se reinicia a medianoche (hora local).
-
-### Resumen de Configuración
-
-`sensor.marstek_venus_system_configuration_summary` es un sensor diagnóstico oculto pensado para informes de soporte. Expone atributos de configuración sin direcciones IP ni puertos de las baterías.
-
-Los atributos relevantes para límites de potencia son:
-
-| Atributo | Descripción |
-|---|---|
-| `total_max_charge_power_W` | Suma de los límites de carga configurados por batería |
-| `total_max_discharge_power_W` | Suma de los límites de descarga configurados por batería |
-| `system_power_limits_enabled` | Indica si los límites globales de potencia están activados |
-| `system_max_charge_power_W` | Límite global de carga configurado (`0` = desactivado) |
-| `system_max_discharge_power_W` | Límite global de descarga configurado (`0` = desactivado) |
-| `effective_total_max_charge_power_W` | Capacidad total de carga tras aplicar el límite global |
-| `effective_total_max_discharge_power_W` | Capacidad total de descarga tras aplicar el límite global |
-
-![Lista de entidades en Home Assistant](../assets/screenshots/reference/entities-list.png){ width="700"  style="display: block; margin: 0 auto;"}

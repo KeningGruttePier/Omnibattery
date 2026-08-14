@@ -19,7 +19,10 @@ from .base import BatteryDriver, DriverCapabilities, ReadGroup, SetpointResult, 
 _LOGGER = logging.getLogger(__name__)
 _HTTP_TIMEOUT = aiohttp.ClientTimeout(total=10)
 _PROBE_TIMEOUT = aiohttp.ClientTimeout(total=5)
+_HTTP_ATTEMPTS = 2
+_HTTP_RETRY_DELAY_S = 0.05
 _API_STRATEGY = "POWER_STRATEGY_API"
+_API_AUTH_CHECK = "/api/v1/power/active_strategy"
 _MAX_CHARGE_POWER_W = 2200
 _MAX_DISCHARGE_POWER_W = 1700
 
@@ -70,13 +73,20 @@ class SessyLocalDriver(BatteryDriver):
         self._owns_session = False
         self._connected = False
         self._shutting_down = False
+        self._auth_failure_logged = False
         max_charge_power_w = max(0, min(int(max_charge_power_w), _MAX_CHARGE_POWER_W))
         max_discharge_power_w = max(0, min(int(max_discharge_power_w), _MAX_DISCHARGE_POWER_W))
         self._capabilities = DriverCapabilities(False, False, False, max_charge_power_w,
             max_discharge_power_w, False, False, False, has_daily_energy_counters=False,
             has_nominal_capacity=False,
             cycles_from_discharge_only=True,
-            actuator_latency_s=1.5)
+            # Sessy can take up to a minute to leave standby after receiving its
+            # first non-zero setpoint. Keep the physical direction-change timing
+            # independent from that startup/safety transition, but do not let the
+            # controller judge the still-zero output as a failed battery.
+            actuator_latency_s=1.5,
+            readback_latency_s=65.0,
+            engage_grace_s=65.0)
         self._read_groups = [
             ReadGroup("high", tuple(key for key in _POWER_KEYS)),
             ReadGroup("low", tuple(key for key in _ENERGY_KEYS)),
@@ -108,6 +118,17 @@ class SessyLocalDriver(BatteryDriver):
 
     async def connect(self) -> bool:
         self._ensure_session()
+        # ``power/status`` is readable on some firmware without credentials.
+        # It is therefore not sufficient to validate a driver that must also
+        # write the strategy and setpoint.  Check the authenticated strategy
+        # endpoint first, then verify that telemetry is available.
+        if self._headers is None:
+            self._log_auth_failure("credentials are not configured")
+            self._connected = False
+            return False
+        if await self._get_json(_API_AUTH_CHECK) is None:
+            self._connected = False
+            return False
         self._connected = await self._get_status() is not None
         return self._connected
 
@@ -118,6 +139,17 @@ class SessyLocalDriver(BatteryDriver):
             self._session = None
 
     def set_shutting_down(self, value: bool) -> None: self._shutting_down = value
+
+    def _log_auth_failure(self, detail: str) -> None:
+        """Log one actionable authentication warning per driver instance."""
+        if self._shutting_down or self._auth_failure_logged:
+            return
+        self._auth_failure_logged = True
+        _LOGGER.warning(
+            "Sessy local API authentication failed (%s). Reconfigure the "
+            "battery with the username and password printed on its dongle.",
+            detail,
+        )
 
     async def read_telemetry(self, keys: Optional[list[str]] = None) -> TelemetrySnapshot:
         requested = set(keys) if keys is not None else set(
@@ -199,27 +231,87 @@ class SessyLocalDriver(BatteryDriver):
 
     def _ensure_session(self) -> aiohttp.ClientSession:
         if self._session is None or self._session.closed:
-            self._session = aiohttp.ClientSession(headers=self._headers)
+            # Sessy's embedded HTTP server can close a keep-alive socket without
+            # advertising it first.  Reusing that half-closed socket makes the
+            # next POST fail with ServerDisconnectedError, even though the API
+            # itself is reachable.  A fresh connection per request is acceptable
+            # for this local API and avoids the stale-socket failure mode.
+            connector = aiohttp.TCPConnector(force_close=True, limit=1)
+            self._session = aiohttp.ClientSession(
+                headers=self._headers,
+                connector=connector,
+            )
             self._owns_session = True
         return self._session
 
+    async def _reset_owned_session(self) -> None:
+        """Discard a broken client session before retrying a request."""
+        if not self._owns_session:
+            return
+        session = self._session
+        self._session = None
+        if session is not None and not session.closed:
+            await session.close()
+
     async def _get_json(self, path: str) -> Optional[dict]:
-        try:
-            async with self._ensure_session().get(self._base_url + path, timeout=_HTTP_TIMEOUT) as response:
-                return await response.json(content_type=None) if response.status == 200 else None
-        except (asyncio.TimeoutError, aiohttp.ClientError, ValueError) as exc:
-            if not self._shutting_down: _LOGGER.warning("Sessy GET %s failed: %s", path, exc)
-            return None
+        for attempt in range(_HTTP_ATTEMPTS):
+            try:
+                async with self._ensure_session().get(
+                    self._base_url + path, timeout=_HTTP_TIMEOUT
+                ) as response:
+                    if response.status != 200:
+                        if response.status == 401:
+                            self._log_auth_failure(f"GET {path} returned HTTP 401")
+                            return None
+                        if not self._shutting_down:
+                            _LOGGER.warning(
+                                "Sessy GET %s returned HTTP %s",
+                                path,
+                                response.status,
+                            )
+                        return None
+                    return await response.json(content_type=None)
+            except (asyncio.TimeoutError, aiohttp.ClientError, ValueError) as exc:
+                if attempt + 1 < _HTTP_ATTEMPTS:
+                    await self._reset_owned_session()
+                    await asyncio.sleep(_HTTP_RETRY_DELAY_S)
+                    continue
+                if not self._shutting_down:
+                    _LOGGER.warning("Sessy GET %s failed: %s", path, exc)
+                return None
 
     async def _get_status(self) -> Optional[dict]: return await self._get_json("/api/v1/power/status")
 
     async def _post_json(self, path: str, body: dict) -> bool:
-        try:
-            async with self._ensure_session().post(self._base_url + path, json=body, timeout=_HTTP_TIMEOUT) as response:
-                return response.status == 200
-        except (asyncio.TimeoutError, aiohttp.ClientError) as exc:
-            if not self._shutting_down: _LOGGER.warning("Sessy POST %s failed: %s", path, exc)
-            return False
+        for attempt in range(_HTTP_ATTEMPTS):
+            try:
+                async with self._ensure_session().post(
+                    self._base_url + path, json=body, timeout=_HTTP_TIMEOUT
+                ) as response:
+                    # Consume the response before releasing the connection. Some
+                    # Sessy firmware returns a JSON acknowledgement; reading it
+                    # also prevents an unread response from poisoning the pool.
+                    await response.read()
+                    if response.status != 200:
+                        if response.status == 401:
+                            self._log_auth_failure(f"POST {path} returned HTTP 401")
+                            return False
+                        if not self._shutting_down:
+                            _LOGGER.warning(
+                                "Sessy POST %s returned HTTP %s",
+                                path,
+                                response.status,
+                            )
+                        return False
+                    return True
+            except (asyncio.TimeoutError, aiohttp.ClientError) as exc:
+                if attempt + 1 < _HTTP_ATTEMPTS:
+                    await self._reset_owned_session()
+                    await asyncio.sleep(_HTTP_RETRY_DELAY_S)
+                    continue
+                if not self._shutting_down:
+                    _LOGGER.warning("Sessy POST %s failed: %s", path, exc)
+                return False
 
     @classmethod
     async def probe(

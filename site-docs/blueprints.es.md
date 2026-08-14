@@ -4,6 +4,18 @@ Los blueprints son automatizaciones opcionales de Home Assistant que complementa
 
 Para la instalación manual, copia el archivo YAML en `/config/blueprints/automation/omnibattery/` y recarga los blueprints. Consulta los pasos generales en [Instalación](installation.es.md#instalación-de-blueprints).
 
+## Balanceo activo de una batería Marstek
+
+[Importar blueprint](https://raw.githubusercontent.com/ffunes/Omnibattery/main/blueprints/marstek_active_balance_blueprint.yaml)
+
+Ejecuta el perfil de balanceo activo para exactamente una batería Marstek. Crea un `input_boolean` persistente y una automatización por batería; después selecciona el dispositivo de esa batería creado por Omnibattery. El blueprint descubre automáticamente en ese dispositivo la telemetría y los controles estándar, incluido el número `charging_cutoff_capacity` que representa el límite máximo de SOC. Hay sobrescrituras avanzadas opcionales por ID de entidad para instalaciones que hayan renombrado alguna entidad. La automatización usa el interruptor por batería **Battery Manual Mode** como límite de propiedad: mientras dure el ciclo, el controlador automático de Omnibattery y otras automatizaciones manuales no pueden escribir setpoints en competencia.
+
+El blueprint solo utiliza entidades de Home Assistant; no accede directamente a Modbus. Valida la telemetría, las opciones del modo forzado, el orden de tensiones y los límites de los números antes de tomar el control. Sus valores predeterminados son 3,49 V → 3,60 V, carga superior a 95 W, descarga a 200 W, reposo de 60 s, objetivo de 30 mV y suelo de reintento adaptativo de 3,40 V. Las opciones de `force_mode` se llaman **None**, **Charge** y **Discharge**; las entidades ESPHome antiguas en minúsculas siguen siendo compatibles durante la migración.
+
+Activa el helper de solicitud para iniciar o reanudar tras un reinicio y desactívalo para cancelar. El único helper que debes crear es este `input_boolean`; el blueprint no necesita crear otro switch ni sensor. La línea base de la notificación procede del valor persistente `Cell Delta` de la integración, que representa la última lectura formal al 100%/OCV y no la telemetría instantánea de las celdas. En cada salida intenta escribir 0 W en ambas direcciones, restaurar el SOC máximo normal y liberar Battery Manual Mode. Si falla alguna confirmación de seguridad, el interruptor se deja deliberadamente activado para inspeccionar la batería antes de permitir otro control automático.
+
+Después de cada medición estable tras 60 segundos de reposo, el blueprint emite el evento público `omnibattery_balance_measurement_ready` con el dispositivo seleccionado y un identificador de medida. Omnibattery resuelve el dispositivo, lee las tensiones desde su propio coordinador y guarda el resultado en el histórico existente de `Cell Delta` con `source: blueprint`. El evento es de solo lectura y no devuelve a la integración la propiedad de la batería.
+
 ## Reporte de estado a webhook central
 
 [Importar blueprint](https://raw.githubusercontent.com/ffunes/Omnibattery/main/blueprints/central_status_webhook_reporter_blueprint.yaml)

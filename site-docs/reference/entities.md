@@ -58,6 +58,7 @@ Only present when the [cell balance monitor](../features/cell-balance-monitor.md
 | `binary_sensor.*_wifi_status` | WiFi status |
 | `binary_sensor.*_cloud_status` | Cloud status |
 | `binary_sensor.marstek_venus_system_predictive_charging_active` | Predictive charging active (system) |
+| `binary_sensor.omnibattery_curtailment_status` | Smart pre-discharge / anti-curtailment status (Dynamic Pricing only) |
 | `binary_sensor.*_wifi_status` | WiFi status |
 | `binary_sensor.*_cloud_status` | Cloud status |
 | `binary_sensor.marstek_venus_system_predictive_charging_active` | Predictive charging active (system) |
@@ -72,6 +73,10 @@ Only present when the [cell balance monitor](../features/cell-balance-monitor.md
 | `number.*_max_discharge_power` | Max discharge power | W |
 | `number.marstek_venus_system_system_max_charge_power` | Optional combined charge cap for the whole system (`0 W` = disabled). Only created when system power limits are enabled. | 0–15000 W |
 | `number.marstek_venus_system_system_max_discharge_power` | Optional combined discharge cap for the whole system (`0 W` = disabled). Only created when system power limits are enabled. | 0–15000 W |
+| `number.omnibattery_predictive_safety_margin_kwh` | Solar forecast buffer used by predictive charging and Dynamic Pricing anti-curtailment | 0–20 kWh |
+| `number.omnibattery_negative_injection_threshold` | Inclusive price threshold for forecast negative-injection risk slots | -2–2 currency/kWh |
+| `number.omnibattery_predischarge_reserve_soc` | Additional SOC floor for smart pre-discharge | 0–100 % |
+| `number.omnibattery_predischarge_max_export_power_w` | Maximum grid export during smart pre-discharge (`0 W` = self-consumption only) | 0–10000 W |
 | `number.*_max_soc` | Maximum SOC | 0–100 % |
 | `number.*_min_soc` | Minimum SOC | 0–100 % |
 | `number.*_max_charge_power` | Max charge power | W |
@@ -91,14 +96,18 @@ Only present when the [cell balance monitor](../features/cell-balance-monitor.md
 | `switch.*_rs485_control` | RS485 control mode |
 | `switch.*_allow_charge` | Software control that allows this battery to participate in automatic charging |
 | `switch.*_allow_discharge` | Software control that allows this battery to participate in automatic discharging |
+| `switch.*_battery_manual_mode` | Excludes this battery from automatic power control while keeping its telemetry and physical power in system aggregates |
 | `switch.*_backup_function` | Backup function — when enabled **and** AC offgrid power ≠ 0 W, the battery is excluded from PD control (no write commands sent) |
 | `switch.marstek_venus_system_override_predictive_charging` | Override predictive charging |
+| `switch.omnibattery_smart_predischarge` | Opt-in smart pre-discharge / anti-curtailment (Dynamic Pricing only) |
+| `switch.omnibattery_negative_price_charging` | Opt-in opportunistic charging at negative import prices (Dynamic Pricing only) |
 
 ## Buttons
 
 | Entity | Description |
 |---|---|
 | `button.*_reset` | Device reset |
+| `button.omnibattery_reevaluate_dynamic_pricing` | Rebuild the Dynamic Pricing schedule now; only created in Dynamic Pricing mode |
 
 ## System sensors
 
@@ -166,21 +175,3 @@ Available under the `sensor.marstek_venus_system_*` prefix, summing values acros
 - `system_alarm_status` — Aggregated alarm state across all batteries (`OK` / `Warning` / `Fault`); attributes list active conditions per battery
 - `system_home_consumption` — Instantaneous home consumption (W). Reads the household sensor when configured, otherwise derives it from `grid + battery AC + solar`.
 - `system_daily_home_energy` — Today's home consumption (kWh), integrated from the Home Consumption value above. Resets at midnight (local time).
-
-### Configuration Summary
-
-`sensor.marstek_venus_system_configuration_summary` is a hidden diagnostic sensor intended for support reports. It exposes configuration attributes without battery IP addresses or ports.
-
-Relevant power-limit attributes include:
-
-| Attribute | Description |
-|---|---|
-| `total_max_charge_power_W` | Sum of configured per-battery charge limits |
-| `total_max_discharge_power_W` | Sum of configured per-battery discharge limits |
-| `system_power_limits_enabled` | Whether system-wide power caps are enabled |
-| `system_max_charge_power_W` | Configured system-wide charge cap (`0` = disabled) |
-| `system_max_discharge_power_W` | Configured system-wide discharge cap (`0` = disabled) |
-| `effective_total_max_charge_power_W` | Total charge capacity after applying the system cap |
-| `effective_total_max_discharge_power_W` | Total discharge capacity after applying the system cap |
-
-![Entity list in Home Assistant](../assets/screenshots/reference/entities-list.png){ width="700"  style="display: block; margin: 0 auto;"}

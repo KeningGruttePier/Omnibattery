@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 
 from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.config_entries import ConfigEntry
@@ -11,7 +12,11 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from .const import DOMAIN, CONF_CAPACITY_PROTECTION_ENABLED
+from .const import (
+    DOMAIN,
+    CONF_CAPACITY_PROTECTION_ENABLED,
+    PREDICTIVE_MODE_DYNAMIC_PRICING,
+)
 from .infra.coordinator import MarstekVenusDataUpdateCoordinator
 from .infra.entity_naming import english_entity_id, system_entity_id, SYSTEM_UNIQUE_ID_PREFIX
 
@@ -40,6 +45,8 @@ async def async_setup_entry(
     # Add predictive charging status sensor (system-level)
     if controller and controller.predictive_charging_enabled:
         entities.append(PredictiveChargingStatusSensor(hass, entry, controller))
+        if controller.predictive_charging_mode == PREDICTIVE_MODE_DYNAMIC_PRICING:
+            entities.append(CurtailmentStatusSensor(hass, entry, controller))
 
     # Add capacity protection status sensor (system-level, when configured, regardless of enabled state)
     if controller and CONF_CAPACITY_PROTECTION_ENABLED in entry.data:
@@ -226,6 +233,151 @@ class CapacityProtectionStatusSensor(BinarySensorEntity):
         }
 
 
+class CurtailmentStatusSensor(BinarySensorEntity):
+    """Diagnostic state for the dynamic-pricing smart pre-discharge planner."""
+
+    _unrecorded_attributes = frozenset({
+        "risk_slots",
+        "selected_discharge_slots",
+        "target_soc_by_battery",
+        "charge_limit_reasons",
+    })
+
+    def __init__(self, hass: HomeAssistant, entry: ConfigEntry, controller) -> None:
+        self.hass = hass
+        self.entry = entry
+        self.controller = controller
+        self._attr_has_entity_name = True
+        self._attr_translation_key = "curtailment_status"
+        self._attr_unique_id = f"{SYSTEM_UNIQUE_ID_PREFIX}curtailment_status"
+        self.entity_id = system_entity_id("binary_sensor", "curtailment_status")
+        self._attr_device_class = "running"
+        self._attr_icon = "mdi:solar-power-variant"
+        self._attr_should_poll = True
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    @property
+    def is_on(self) -> bool:
+        return getattr(self.controller, "_curtailment_runtime_status", "disabled") in {
+            "predischarging",
+            "protected_window",
+        }
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        plan = getattr(self.controller, "_curtailment_plan", None)
+        runtime_status = getattr(
+            self.controller, "_curtailment_runtime_status", "disabled"
+        )
+        attrs = {
+            "enabled": bool(getattr(self.controller, "smart_predischarge_enabled", False)),
+            "status": runtime_status,
+            "reason": getattr(self.controller, "_curtailment_runtime_reason", "disabled"),
+            "protected_window_active": runtime_status == "protected_window",
+            "active_export_target_w": getattr(
+                self.controller, "_curtailment_active_export_target_w", 0.0
+            ),
+            "solar_reserve_remaining_kwh": getattr(
+                self.controller, "_curtailment_solar_reserve_remaining_kwh", 0.0
+            ),
+            "opportunistic_space_available_kwh": getattr(
+                self.controller, "_curtailment_opportunistic_space_kwh", 0.0
+            ),
+            "opportunistic_charge_limit_w": getattr(
+                self.controller, "_curtailment_opportunistic_charge_limit_w", 0.0
+            ),
+            "charge_limit_reason": getattr(
+                self.controller, "_curtailment_opportunistic_charge_reason", "not_calculated"
+            ),
+            "export_mode": getattr(
+                self.controller, "predischarge_export_mode", None
+            ),
+            "export_limit_w": getattr(
+                self.controller, "predischarge_export_limit_w", 0.0
+            ),
+            "negative_injection_threshold": getattr(
+                self.controller, "negative_injection_threshold", 0.0
+            ),
+            # ``None`` means that no safe external inverter decision is
+            # available.  This is intentional: an automation must not treat a
+            # missing plan or fail-safe state as permission to restore PV power.
+            "inverter_curtailment_required": None,
+        }
+        if plan is None:
+            return attrs
+        now = datetime.now()
+        next_window = next(
+            (slot.start.isoformat() for slot in plan.risk_slots if slot.end > now),
+            None,
+        )
+        required_headroom = max(0.0, float(plan.required_headroom_kwh))
+        current_headroom = max(0.0, float(plan.current_headroom_kwh))
+        headroom_deficit = max(0.0, required_headroom - current_headroom)
+        plan_is_fail_safe = getattr(plan, "status", "") == "fail_safe"
+        attrs.update({
+            "next_window": next_window,
+            "risk_slots": [
+                {"start": slot.start.isoformat(), "end": slot.end.isoformat(), "price": slot.price}
+                for slot in plan.risk_slots
+            ],
+            "required_headroom_kwh": round(plan.required_headroom_kwh, 3),
+            "current_headroom_kwh": round(plan.current_headroom_kwh, 3),
+            "solar_reserve_remaining_kwh": round(
+                getattr(
+                    plan,
+                    "solar_reserve_remaining_kwh",
+                    getattr(plan, "required_headroom_kwh", 0.0),
+                ),
+                3,
+            ),
+            "opportunistic_space_available_kwh": round(
+                getattr(plan, "opportunistic_space_kwh", 0.0), 3
+            ),
+            "opportunistic_charge_limit_w": round(
+                getattr(plan, "opportunistic_charge_limit_w", 0.0)
+            ),
+            "charge_limit_reason": getattr(
+                plan, "opportunistic_charge_reason", "not_calculated"
+            ),
+            "headroom_deficit_kwh": round(headroom_deficit, 3),
+            "planned_discharge_kwh": round(plan.planned_discharge_kwh, 3),
+            "shortfall_kwh": round(plan.shortfall_kwh, 3),
+            "target_soc_by_battery": {
+                name: round(value, 1)
+                for name, value in plan.target_soc_by_battery.items()
+            },
+            "selected_discharge_slots": [
+                {
+                    "start": slot.start.isoformat(),
+                    "end": slot.end.isoformat(),
+                    "price": slot.price,
+                    "planned_energy_kwh": round(slot.planned_energy_kwh, 3),
+                    "power_w": round(slot.power_w),
+                }
+                for slot in plan.selected_discharge_slots
+            ],
+            "plan_status": plan.status,
+            "plan_reason": plan.reason,
+            "evaluation_time": (
+                plan.evaluation_time.isoformat() if plan.evaluation_time else None
+            ),
+        })
+        if not plan_is_fail_safe and runtime_status != "fail_safe":
+            attrs["inverter_curtailment_required"] = (
+                runtime_status == "protected_window" and headroom_deficit > 1e-6
+            )
+        return attrs
+
+    @property
+    def device_info(self):
+        return {
+            "identifiers": {(DOMAIN, "marstek_venus_system")},
+            "name": "Omnibattery System",
+            "manufacturer": "Omnibattery",
+            "model": "Multi-Battery System",
+        }
+
+
 class PredictiveChargingStatusSensor(BinarySensorEntity):
     """Binary sensor indicating if predictive grid charging is currently active."""
 
@@ -246,6 +398,9 @@ class PredictiveChargingStatusSensor(BinarySensorEntity):
         "cutoff_energy_kwh", "effective_min_soc", "avg_consumption_kwh",
         "total_available_kwh", "energy_deficit_kwh", "solar_forecast_kwh",
         "solar_surplus_kwh", "grid_charge_kwh", "planned_grid_charge_kwh",
+        "consumption_scope", "daily_avg_consumption_kwh", "consumed_today_kwh",
+        "remaining_consumption_kwh", "remaining_solar_kwh",
+        "consumption_rate_kwh_h", "consumption_accumulator_ready",
         "decision_reason",
     })
 
@@ -343,6 +498,13 @@ class PredictiveChargingStatusSensor(BinarySensorEntity):
                 "cutoff_energy_kwh": decision.get("cutoff_energy_kwh"),
                 "effective_min_soc": decision.get("effective_min_soc"),
                 "avg_consumption_kwh": decision.get("avg_consumption_kwh"),
+                "consumption_scope": decision.get("consumption_scope"),
+                "daily_avg_consumption_kwh": decision.get("daily_avg_consumption_kwh"),
+                "consumed_today_kwh": decision.get("consumed_today_kwh"),
+                "remaining_consumption_kwh": decision.get("remaining_consumption_kwh"),
+                "remaining_solar_kwh": decision.get("remaining_solar_kwh"),
+                "consumption_rate_kwh_h": decision.get("consumption_rate_kwh_h"),
+                "consumption_accumulator_ready": decision.get("consumption_accumulator_ready"),
                 "total_available_kwh": decision.get("total_available_kwh"),
                 "energy_deficit_kwh": decision.get("energy_deficit_kwh"),
                 "planned_grid_charge_kwh": decision.get("planned_grid_charge_kwh"),
@@ -386,13 +548,41 @@ class PredictiveChargingStatusSensor(BinarySensorEntity):
         if self.controller.predictive_charging_mode == "dynamic_pricing":
             attrs["price_data_status"] = getattr(self.controller, "_price_data_status", "not_evaluated")
             attrs["max_price_threshold"] = self.controller.max_price_threshold
+            attrs["negative_price_charging_enabled"] = getattr(
+                self.controller, "negative_price_charging_enabled", False
+            )
+            attrs["active_slot_purpose"] = getattr(
+                self.controller, "_active_dynamic_slot_purpose", None
+            )
 
         if self.controller._dynamic_pricing_schedule:
             schedule = self.controller._dynamic_pricing_schedule
             attrs["charging_needed"] = schedule.charging_needed
+            attrs["schedule_type"] = getattr(schedule, "schedule_type", "deficit")
+            attrs["deficit_charging_needed"] = getattr(
+                schedule, "deficit_charging_needed", schedule.charging_needed
+            )
+            attrs["negative_price_charging_needed"] = getattr(
+                schedule, "negative_price_charging_needed", False
+            )
+            attrs["negative_price_energy_kwh"] = getattr(
+                schedule, "negative_price_energy_kwh", 0.0
+            )
+            attrs["negative_price_hours_needed"] = getattr(
+                schedule, "negative_price_hours_needed", 0.0
+            )
             attrs["hours_needed"] = schedule.hours_needed
             attrs["selected_hours"] = [
-                {"start": s.start.isoformat(), "end": s.end.isoformat(), "price": s.price}
+                {
+                    "start": s.start.isoformat(),
+                    "end": s.end.isoformat(),
+                    "price": s.price,
+                    "purpose": (
+                        schedule.purpose_for(s)
+                        if hasattr(schedule, "purpose_for")
+                        else "deficit"
+                    ),
+                }
                 for s in schedule.selected_slots
             ]
             attrs["average_price"] = schedule.average_price

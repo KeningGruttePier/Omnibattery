@@ -34,3 +34,10 @@ backup offgrid. El SOC mínimo predeterminado es `5 %` y el máximo `100 %`.
 Sessy no ofrece la reducción de carga por tensión de celdas de Marstek. Consulta
 la [configuración de baterías](index.md) para los controles comunes en tiempo de
 ejecución y los límites de potencia del sistema.
+
+### Control manual
+
+La API de Sessy expone una consigna de potencia neta, no registros de modo
+forzado como Marstek. Usa `Modo forzado` y los controles de potencia de software
+con **Control Manual de Batería** activado; Omnibattery reaplica las consignas
+distintas de reposo mediante la API local mientras esa propiedad esté activa.

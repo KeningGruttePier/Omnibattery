@@ -26,68 +26,6 @@ from .const import (
     BATTERY_CELL_POWER_SENSOR_DEFINITIONS,
     CONF_ENABLE_CHARGE_DELAY,
     CONF_ENABLE_WEEKLY_FULL_CHARGE_DELAY,
-    CONF_ENABLE_PREDICTIVE_CHARGING,
-    CONF_CHARGING_TIME_SLOT,
-    CONF_SOLAR_FORECAST_SENSOR,
-    CONF_SOLAR_PRODUCTION_SENSOR,
-    CONF_MAX_CONTRACTED_POWER,
-    CONF_ENABLE_WEEKLY_FULL_CHARGE,
-    CONF_WEEKLY_FULL_CHARGE_DAY,
-    CONF_DELAY_SAFETY_MARGIN_MIN,
-    CONF_DELAY_SOC_SETPOINT_ENABLED,
-    CONF_DELAY_SOC_SETPOINT,
-    CONF_CAPACITY_PROTECTION_ENABLED,
-    CONF_CAPACITY_PROTECTION_EXCLUDED_DEVICES,
-    CONF_CAPACITY_PROTECTION_SOC_THRESHOLD,
-    CONF_CAPACITY_PROTECTION_LIMIT,
-    CONF_PD_KP,
-    CONF_PD_KD,
-    CONF_PD_DEADBAND,
-    CONF_PD_MAX_POWER_CHANGE,
-    CONF_PD_DIRECTION_HYSTERESIS,
-    CONF_PD_MIN_CHARGE_POWER,
-    CONF_PD_MIN_DISCHARGE_POWER,
-    CONF_TARGET_GRID_POWER,
-    CONF_ENABLE_SYSTEM_POWER_LIMITS,
-    CONF_SYSTEM_MAX_CHARGE_POWER,
-    CONF_SYSTEM_MAX_DISCHARGE_POWER,
-    DEFAULT_PD_KP,
-    DEFAULT_PD_KD,
-    DEFAULT_PD_DEADBAND,
-    DEFAULT_PD_MAX_POWER_CHANGE,
-    DEFAULT_PD_DIRECTION_HYSTERESIS,
-    DEFAULT_PD_MIN_CHARGE_POWER,
-    DEFAULT_PD_MIN_DISCHARGE_POWER,
-    DEFAULT_TARGET_GRID_POWER,
-    DEFAULT_SYSTEM_MAX_CHARGE_POWER,
-    DEFAULT_SYSTEM_MAX_DISCHARGE_POWER,
-    DEFAULT_DELAY_SAFETY_MARGIN_MIN,
-    DEFAULT_DELAY_SOC_SETPOINT_ENABLED,
-    DEFAULT_DELAY_SOC_SETPOINT,
-    DEFAULT_CAPACITY_PROTECTION_SOC,
-    DEFAULT_CAPACITY_PROTECTION_LIMIT,
-    CONF_PREDICTIVE_CHARGING_MODE,
-    CONF_PRICE_SENSOR,
-    CONF_PRICE_INTEGRATION_TYPE,
-    CONF_MAX_PRICE_THRESHOLD,
-    CONF_DISCHARGE_PRICE_THRESHOLD,
-    CONF_AVERAGE_PRICE_SENSOR,
-    CONF_DP_PRICE_DISCHARGE_CONTROL,
-    CONF_RT_PRICE_DISCHARGE_CONTROL,
-    CONF_METER_INVERTED,
-    CONF_MANUAL_MODE_ENABLED,
-    CONF_PREDICTIVE_CHARGING_OVERRIDDEN,
-    CONF_PREDICTIVE_SAFETY_MARGIN_KWH,
-    DEFAULT_PREDICTIVE_SAFETY_MARGIN_KWH,
-    CONF_ENABLE_HOURLY_BALANCE,
-    CONF_HOURLY_BALANCE_TARGET_NET_WH,
-    CONF_HOURLY_BALANCE_MAX_OFFSET_W,
-    CONF_HOURLY_BALANCE_DEADBAND_WH,
-    CONF_HOURLY_BALANCE_HYSTERESIS_W,
-    DEFAULT_HOURLY_BALANCE_TARGET_NET_WH,
-    DEFAULT_HOURLY_BALANCE_MAX_OFFSET_W,
-    DEFAULT_HOURLY_BALANCE_DEADBAND_WH,
-    DEFAULT_HOURLY_BALANCE_HYSTERESIS_W,
     SLOT_BATTERY_SCOPE_ALL,
     DEFAULT_SLOT_MODE,
     DEFAULT_SLOT_ALLOW_CHARGE,
@@ -185,6 +123,10 @@ async def async_setup_entry(
     if controller:
         entities.append(ActiveBatteriesSensor(hass, entry, controller, coordinators))
 
+    # Add the three-phase protection status and per-phase diagnostic sensor.
+    if controller:
+        entities.append(ThreePhaseProtectionSensor(hass, entry, controller))
+
     # Add weekly full charge status sensor (when weekly charge is enabled)
     if controller and controller.weekly_full_charge_enabled:
         entities.append(WeeklyFullChargeSensor(hass, entry, controller))
@@ -242,9 +184,6 @@ async def async_setup_entry(
         entities.append(DailyGridExportEnergySensor(controller))
 
 
-
-    # Add configuration summary diagnostic sensor (hidden, for support purposes)
-    entities.append(ConfigurationSummarySensor(hass, entry))
 
     async_add_entities(entities)
 
@@ -496,9 +435,19 @@ class ActiveBatteriesSensor(SensorEntity):
         discharge = self.controller._active_discharge_batteries
         charge = self.controller._active_charge_batteries
         total = len(self._coordinators)
+        manual = [
+            c.name for c in self._coordinators
+            if getattr(c, "battery_manual_mode_enabled", False)
+        ]
+        automatic = [
+            c.name for c in self._coordinators
+            if not getattr(c, "battery_manual_mode_enabled", False)
+        ]
 
         attrs = {
             "total_batteries": total,
+            "manual_batteries": manual,
+            "automatic_batteries": automatic,
             "discharge_active": len(discharge),
             "discharge_batteries": [c.name for c in discharge],
             "charge_active": len(charge),
@@ -516,6 +465,62 @@ class ActiveBatteriesSensor(SensorEntity):
                 attrs[f"{c.name}_total_charged"] = f"{charge_kwh} kWh"
 
         return attrs
+
+    @property
+    def device_info(self):
+        """Return device information for the system."""
+        return {
+            "identifiers": {(DOMAIN, "marstek_venus_system")},
+            "name": "Omnibattery System",
+            "manufacturer": "Omnibattery",
+            "model": "Multi-Battery System",
+        }
+
+
+class ThreePhaseProtectionSensor(SensorEntity):
+    """Diagnostic sensor showing the live three-phase protection envelope."""
+
+    def __init__(self, hass: HomeAssistant, entry: ConfigEntry, controller) -> None:
+        """Initialize the three-phase protection status sensor."""
+        self.hass = hass
+        self.entry = entry
+        self._controller = controller
+
+        self._attr_has_entity_name = True
+        self._attr_translation_key = "three_phase_protection_status"
+        self._attr_unique_id = f"{SYSTEM_UNIQUE_ID_PREFIX}three_phase_protection_status"
+        self.entity_id = system_entity_id("sensor", "three_phase_protection_status")
+        self._attr_icon = "mdi:shield-check-outline"
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_should_poll = True
+
+    def _diagnostics(self) -> dict:
+        """Return a fresh snapshot so HA attributes reflect the latest readings."""
+        limiter = getattr(self._controller, "_phase_power_limiter", None)
+        if limiter is None:
+            return {
+                "state": "disabled",
+                "enabled": False,
+                "protection_enabled": False,
+                "limited_batteries": [],
+                "limited_battery_details": [],
+                "unassigned_batteries": [],
+                "degraded_phases": [],
+                "phases": {},
+            }
+        return limiter.diagnostics()
+
+    @property
+    def native_value(self) -> str:
+        """Return the translated protection status key."""
+        return str(self._diagnostics().get("state", "disabled"))
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        """Return configuration, phase budgets and limited-battery details."""
+        details = self._diagnostics()
+        details.pop("state", None)
+        return details
 
     @property
     def device_info(self):
@@ -685,291 +690,6 @@ class ChargeDelaySensor(RestoreEntity, SensorEntity):
         }
 
 
-class ConfigurationSummarySensor(SensorEntity):
-    """Hidden diagnostic sensor exposing support-relevant configuration attributes.
-
-    Intended for support purposes: share this sensor's state card to give a
-    concise picture of how the system is configured, without network details.
-    """
-
-    def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
-        """Initialize the configuration summary sensor."""
-        self.hass = hass
-        self.entry = entry
-
-        self._attr_has_entity_name = True
-        self._attr_translation_key = "configuration_summary"
-        self._attr_unique_id = f"{SYSTEM_UNIQUE_ID_PREFIX}configuration_summary"
-        self.entity_id = system_entity_id("sensor", "configuration_summary")
-        self._attr_icon = "mdi:cog-outline"
-        self._attr_entity_category = EntityCategory.DIAGNOSTIC
-        self._attr_entity_registry_enabled_default = False
-        self._attr_should_poll = False
-
-    @property
-    def native_value(self) -> int:
-        """Return number of configured batteries as a quick-glance value."""
-        return len(self.entry.data.get("batteries", []))
-
-    @staticmethod
-    def _entity_or_not_configured(value) -> str:
-        """Return an entity ID or a stable placeholder for optional sensors."""
-        return value if value else "not_configured"
-
-    @staticmethod
-    def _format_days(days: list[str]) -> str:
-        """Return a compact day list for issue reports."""
-        return ", ".join(day.capitalize() for day in days) if days else "None"
-
-    @staticmethod
-    def _battery_versions_summary(batteries: list[dict]) -> str:
-        """Return compact counts by battery version."""
-        counts: dict[str, int] = {}
-        for battery in batteries:
-            version = battery.get("battery_version", "unknown")
-            counts[version] = counts.get(version, 0) + 1
-        return ", ".join(f"{version}: {count}" for version, count in sorted(counts.items())) or "none"
-
-    @property
-    def extra_state_attributes(self) -> dict:
-        """Return support-relevant integration configuration as attributes."""
-        data = self.entry.data
-        attrs = {}
-
-        # --- General ---
-        attrs["support_summary_version"] = 3
-        attrs["grid_sensor"] = data.get("consumption_sensor")
-        attrs["meter_inverted"] = data.get(CONF_METER_INVERTED, False)
-        attrs["solar_forecast_sensor"] = self._entity_or_not_configured(
-            data.get(CONF_SOLAR_FORECAST_SENSOR)
-        )
-        attrs["solar_production_sensor"] = self._entity_or_not_configured(
-            data.get(CONF_SOLAR_PRODUCTION_SENSOR)
-        )
-        attrs["manual_mode_enabled"] = data.get(CONF_MANUAL_MODE_ENABLED, False)
-
-        # --- Batteries ---
-        batteries = data.get("batteries", [])
-        attrs["num_batteries"] = len(batteries)
-        attrs["battery_versions"] = self._battery_versions_summary(batteries)
-        total_max_charge_power = sum(
-            bat.get("max_charge_power", 0) or 0 for bat in batteries
-        )
-        total_max_discharge_power = sum(
-            bat.get("max_discharge_power", 0) or 0 for bat in batteries
-        )
-        attrs["total_max_charge_power_W"] = total_max_charge_power
-        attrs["total_max_discharge_power_W"] = total_max_discharge_power
-        for i, bat in enumerate(batteries):
-            n = i + 1
-            attrs[f"battery_{n}_name"] = bat.get("name")
-            attrs[f"battery_{n}_version"] = bat.get("battery_version")
-            attrs[f"battery_{n}_max_charge_power_W"] = bat.get("max_charge_power")
-            attrs[f"battery_{n}_max_discharge_power_W"] = bat.get("max_discharge_power")
-            attrs[f"battery_{n}_max_soc"] = bat.get("max_soc")
-            attrs[f"battery_{n}_min_soc"] = bat.get("min_soc")
-            attrs[f"battery_{n}_charge_hysteresis_enabled"] = bat.get(
-                "enable_charge_hysteresis", False
-            )
-            if bat.get("enable_charge_hysteresis"):
-                attrs[f"battery_{n}_charge_hysteresis_percent"] = bat.get(
-                    "charge_hysteresis_percent"
-                )
-            attrs[f"battery_{n}_backup_offgrid_threshold_W"] = bat.get(
-                "backup_offgrid_threshold"
-            )
-            attrs[f"battery_{n}_full_charge_voltage_taper_enabled"] = bat.get(
-                "full_charge_voltage_taper_enabled", True
-            )
-
-        # --- Time slots ---
-        slots = data.get("no_discharge_time_slots", [])
-        attrs["num_time_slots"] = len(slots)
-        attrs["enabled_time_slots"] = sum(1 for slot in slots if slot.get("enabled", True))
-        for i, slot in enumerate(slots):
-            n = i + 1
-            attrs[f"slot_{n}_schedule"] = f"{slot.get('start_time')}-{slot.get('end_time')}"
-            attrs[f"slot_{n}_days"] = self._format_days(slot.get("days", []))
-            attrs[f"slot_{n}_enabled"] = slot.get("enabled", True)
-            attrs[f"slot_{n}_mode"] = slot.get("mode", DEFAULT_SLOT_MODE)
-            attrs[f"slot_{n}_battery_scope"] = slot.get("battery_scope", SLOT_BATTERY_SCOPE_ALL)
-            attrs[f"slot_{n}_allow_charge"] = slot.get("allow_charge", DEFAULT_SLOT_ALLOW_CHARGE)
-            attrs[f"slot_{n}_allow_discharge"] = slot.get("allow_discharge", DEFAULT_SLOT_ALLOW_DISCHARGE)
-            attrs[f"slot_{n}_soc_override_enabled"] = slot.get("soc_override_enabled", False)
-            attrs[f"slot_{n}_power_override_enabled"] = slot.get("power_override_enabled", False)
-            battery_limits = slot.get("battery_limits") or {}
-            if battery_limits:
-                attrs[f"slot_{n}_battery_limits"] = battery_limits
-
-        # --- Predictive charging ---
-        predictive_enabled = data.get(CONF_ENABLE_PREDICTIVE_CHARGING, False)
-        attrs["predictive_charging_enabled"] = predictive_enabled
-        attrs["predictive_charging_overridden"] = data.get(
-            CONF_PREDICTIVE_CHARGING_OVERRIDDEN, False
-        )
-        attrs["predictive_charging_effective_enabled"] = (
-            predictive_enabled
-            and not data.get(CONF_PREDICTIVE_CHARGING_OVERRIDDEN, False)
-        )
-        if predictive_enabled:
-            attrs["predictive_charging_mode"] = data.get(CONF_PREDICTIVE_CHARGING_MODE)
-            time_slot = data.get(CONF_CHARGING_TIME_SLOT)
-            if time_slot:
-                attrs["predictive_charging_time_slot"] = time_slot
-            max_power = data.get(CONF_MAX_CONTRACTED_POWER)
-            if max_power is not None:
-                attrs["predictive_max_contracted_power_W"] = max_power
-            price_sensor = data.get(CONF_PRICE_SENSOR)
-            if price_sensor:
-                attrs["price_sensor"] = price_sensor
-            price_type = data.get(CONF_PRICE_INTEGRATION_TYPE)
-            if price_type:
-                attrs["price_integration_type"] = price_type
-            max_price = data.get(CONF_MAX_PRICE_THRESHOLD)
-            if max_price is not None:
-                attrs["max_price_threshold"] = max_price
-            discharge_price = data.get(CONF_DISCHARGE_PRICE_THRESHOLD)
-            if discharge_price is not None:
-                attrs["discharge_price_threshold"] = discharge_price
-            avg_price_sensor = data.get(CONF_AVERAGE_PRICE_SENSOR)
-            if avg_price_sensor:
-                attrs["average_price_sensor"] = avg_price_sensor
-            dp_discharge = data.get(CONF_DP_PRICE_DISCHARGE_CONTROL)
-            if dp_discharge is not None:
-                attrs["dp_price_discharge_control"] = dp_discharge
-            rt_discharge = data.get(CONF_RT_PRICE_DISCHARGE_CONTROL)
-            if rt_discharge is not None:
-                attrs["rt_price_discharge_control"] = rt_discharge
-            attrs["predictive_safety_margin_kWh"] = data.get(
-                CONF_PREDICTIVE_SAFETY_MARGIN_KWH, DEFAULT_PREDICTIVE_SAFETY_MARGIN_KWH
-            )
-
-        # --- Weekly full charge ---
-        weekly_enabled = data.get(CONF_ENABLE_WEEKLY_FULL_CHARGE, False)
-        attrs["weekly_full_charge_enabled"] = weekly_enabled
-        if weekly_enabled:
-            attrs["weekly_full_charge_day"] = data.get(CONF_WEEKLY_FULL_CHARGE_DAY)
-            attrs["balance_monitor_enabled"] = True
-
-        # --- Charge delay ---
-        charge_delay = data.get(CONF_ENABLE_CHARGE_DELAY, False)
-        weekly_delay = data.get(CONF_ENABLE_WEEKLY_FULL_CHARGE_DELAY, False)
-        attrs["charge_delay_enabled"] = charge_delay or weekly_delay
-        if charge_delay or weekly_delay:
-            attrs["charge_delay_for_weekly_charge"] = weekly_delay
-            attrs["charge_delay_safety_margin_min"] = data.get(
-                CONF_DELAY_SAFETY_MARGIN_MIN, DEFAULT_DELAY_SAFETY_MARGIN_MIN
-            )
-            attrs["charge_delay_soc_setpoint_enabled"] = data.get(
-                CONF_DELAY_SOC_SETPOINT_ENABLED, DEFAULT_DELAY_SOC_SETPOINT_ENABLED
-            )
-            if data.get(CONF_DELAY_SOC_SETPOINT_ENABLED, DEFAULT_DELAY_SOC_SETPOINT_ENABLED):
-                attrs["charge_delay_soc_setpoint"] = data.get(
-                    CONF_DELAY_SOC_SETPOINT, DEFAULT_DELAY_SOC_SETPOINT
-                )
-
-        # --- Capacity protection ---
-        cap_enabled = data.get(CONF_CAPACITY_PROTECTION_ENABLED, False)
-        attrs["capacity_protection_enabled"] = cap_enabled
-        if cap_enabled:
-            attrs["capacity_protection_excluded_devices"] = data.get(
-                CONF_CAPACITY_PROTECTION_EXCLUDED_DEVICES, False
-            )
-            attrs["capacity_protection_soc_threshold"] = data.get(
-                CONF_CAPACITY_PROTECTION_SOC_THRESHOLD, DEFAULT_CAPACITY_PROTECTION_SOC
-            )
-            attrs["capacity_protection_limit_W"] = data.get(
-                CONF_CAPACITY_PROTECTION_LIMIT, DEFAULT_CAPACITY_PROTECTION_LIMIT
-            )
-
-        # --- Hourly net balance ---
-        hourly_balance_configured = CONF_ENABLE_HOURLY_BALANCE in data
-        attrs["hourly_balance_configured"] = hourly_balance_configured
-        attrs["hourly_balance_enabled"] = data.get(CONF_ENABLE_HOURLY_BALANCE, False)
-        if hourly_balance_configured:
-            attrs["hourly_balance_target_net_kWh"] = data.get(
-                CONF_HOURLY_BALANCE_TARGET_NET_WH,
-                DEFAULT_HOURLY_BALANCE_TARGET_NET_WH,
-            )
-            attrs["hourly_balance_max_offset_W"] = data.get(
-                CONF_HOURLY_BALANCE_MAX_OFFSET_W,
-                DEFAULT_HOURLY_BALANCE_MAX_OFFSET_W,
-            )
-            attrs["hourly_balance_deadband_kWh"] = data.get(
-                CONF_HOURLY_BALANCE_DEADBAND_WH,
-                DEFAULT_HOURLY_BALANCE_DEADBAND_WH,
-            )
-            attrs["hourly_balance_hysteresis_W"] = data.get(
-                CONF_HOURLY_BALANCE_HYSTERESIS_W,
-                DEFAULT_HOURLY_BALANCE_HYSTERESIS_W,
-            )
-
-        # --- PD controller ---
-        attrs["pd_target_grid_power_W"] = data.get(
-            CONF_TARGET_GRID_POWER, DEFAULT_TARGET_GRID_POWER
-        )
-        attrs["pd_kp"] = data.get(CONF_PD_KP, DEFAULT_PD_KP)
-        attrs["pd_kd"] = data.get(CONF_PD_KD, DEFAULT_PD_KD)
-        attrs["pd_deadband_W"] = data.get(CONF_PD_DEADBAND, DEFAULT_PD_DEADBAND)
-        attrs["pd_max_power_change_W"] = data.get(CONF_PD_MAX_POWER_CHANGE, DEFAULT_PD_MAX_POWER_CHANGE)
-        attrs["pd_direction_hysteresis_W"] = data.get(CONF_PD_DIRECTION_HYSTERESIS, DEFAULT_PD_DIRECTION_HYSTERESIS)
-        attrs["pd_min_charge_power_W"] = data.get(CONF_PD_MIN_CHARGE_POWER, DEFAULT_PD_MIN_CHARGE_POWER)
-        attrs["pd_min_discharge_power_W"] = data.get(CONF_PD_MIN_DISCHARGE_POWER, DEFAULT_PD_MIN_DISCHARGE_POWER)
-        system_max_charge_power = data.get(
-            CONF_SYSTEM_MAX_CHARGE_POWER,
-            DEFAULT_SYSTEM_MAX_CHARGE_POWER,
-        )
-        system_max_discharge_power = data.get(
-            CONF_SYSTEM_MAX_DISCHARGE_POWER,
-            DEFAULT_SYSTEM_MAX_DISCHARGE_POWER,
-        )
-        enable_system_power_limits = data.get(
-            CONF_ENABLE_SYSTEM_POWER_LIMITS,
-            (system_max_charge_power or 0) > 0 or (system_max_discharge_power or 0) > 0,
-        )
-        attrs["system_power_limits_enabled"] = enable_system_power_limits
-        attrs["system_max_charge_power_W"] = system_max_charge_power
-        attrs["system_max_discharge_power_W"] = system_max_discharge_power
-        attrs["effective_total_max_charge_power_W"] = (
-            min(total_max_charge_power, system_max_charge_power)
-            if enable_system_power_limits and system_max_charge_power else total_max_charge_power
-        )
-        attrs["effective_total_max_discharge_power_W"] = (
-            min(total_max_discharge_power, system_max_discharge_power)
-            if enable_system_power_limits and system_max_discharge_power else total_max_discharge_power
-        )
-
-        # --- Excluded devices ---
-        excluded = data.get("excluded_devices", [])
-        attrs["num_excluded_devices"] = len(excluded)
-        for i, dev in enumerate(excluded):
-            n = i + 1
-            attrs[f"excluded_device_{n}_sensor"] = dev.get("power_sensor")
-            attrs[f"excluded_device_{n}_activity_sensor"] = dev.get("activity_sensor")
-            attrs[f"excluded_device_{n}_enabled"] = dev.get("enabled", True)
-            attrs[f"excluded_device_{n}_included_in_consumption"] = dev.get("included_in_consumption", True)
-            attrs[f"excluded_device_{n}_allow_solar_surplus"] = dev.get("allow_solar_surplus", False)
-            attrs[f"excluded_device_{n}_dynamic_power_control"] = dev.get(
-                "dynamic_power_control", False
-            )
-            attrs[f"excluded_device_{n}_exclusion_pct"] = dev.get("exclusion_pct", 100)
-            attrs[f"excluded_device_{n}_ev_charger_no_telemetry"] = dev.get(
-                "ev_charger_no_telemetry", False
-            )
-
-        return attrs
-
-    @property
-    def device_info(self):
-        """Return device information for the system."""
-        return {
-            "identifiers": {(DOMAIN, "marstek_venus_system")},
-            "name": "Omnibattery System",
-            "manufacturer": "Omnibattery",
-            "model": "Multi-Battery System",
-        }
-
-
 class IntegrationStatusSensor(SensorEntity):
     """Primary status sensor showing what the integration is currently doing.
 
@@ -1007,6 +727,7 @@ class IntegrationStatusSensor(SensorEntity):
             coordinator
             for coordinator in c.coordinators
             if getattr(coordinator, "is_available", True)
+            and not getattr(coordinator, "battery_manual_mode_enabled", False)
         ]
         if not coordinators:
             return False
@@ -1057,6 +778,7 @@ class IntegrationStatusSensor(SensorEntity):
             coordinator.name
             for coordinator in self._controller.coordinators
             if getattr(coordinator, "balance_hold", False)
+            and not getattr(coordinator, "battery_manual_mode_enabled", False)
         ]
 
     def _backup_cooldown_batteries(self) -> list[str]:
@@ -1067,6 +789,7 @@ class IntegrationStatusSensor(SensorEntity):
         return [
             coordinator.name
             for coordinator, cooldown_until in self._controller._backup_cooldown_until.items()
+            if not getattr(coordinator, "battery_manual_mode_enabled", False)
             if cooldown_until and now < cooldown_until
         ]
 
@@ -1087,12 +810,6 @@ class IntegrationStatusSensor(SensorEntity):
         if c.weekly_full_charge_enabled:
             if c._weekly_charge_status.get("state") in ("Charging to 100%", "Active balancing"):
                 return "weekly_full_charge"
-
-        if any(
-            status.get("state") == "active"
-            for status in c.get_active_balance_mode_status().values()
-        ):
-            return "active_balance_mode"
 
         # Priority 4: Charge delay states
         if c.charge_delay_enabled:
@@ -1164,6 +881,14 @@ class IntegrationStatusSensor(SensorEntity):
             "previous_power_w": c.previous_power,
             "first_execution": c.first_execution,
             "manual_mode_enabled": c.manual_mode_enabled,
+            "manual_batteries": [
+                coordinator.name for coordinator in c.coordinators
+                if getattr(coordinator, "battery_manual_mode_enabled", False)
+            ],
+            "automatic_batteries": [
+                coordinator.name for coordinator in c.coordinators
+                if not getattr(coordinator, "battery_manual_mode_enabled", False)
+            ],
             "grid_charging_active": c.grid_charging_active,
             "price_based_discharge_blocked": c._price_based_discharge_blocked,
             "charge_blocked": c.is_charge_effectively_blocked(),
@@ -1238,10 +963,6 @@ class IntegrationStatusSensor(SensorEntity):
         normal_balance = c.get_max_soc_charge_status()
         if normal_balance:
             attrs["normal_balance_protection"] = normal_balance
-
-        active_balance_mode = c.get_active_balance_mode_status()
-        if active_balance_mode:
-            attrs["active_balance_mode"] = active_balance_mode
 
         non_responsive = c.non_responsive_battery_names
         if non_responsive:

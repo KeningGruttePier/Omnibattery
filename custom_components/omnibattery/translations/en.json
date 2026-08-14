@@ -11,6 +11,10 @@
     "solar_forecast_unusable": {
       "title": "Solar forecast unusable",
       "description": "The configured solar forecast sensor {sensor} has been unavailable or unreadable for over {minutes} minutes. Omnibattery keeps running, but every feature that depends on the forecast is now blind: the charge delay unlocks for the rest of the day, grid-charge decisions assume no sun at all and may book grid slots you do not need, and remaining-solar estimates read as 0 kWh. Check the sensor or the integration that provides it."
+    },
+    "three_phase_manual_mode": {
+      "title": "Three-phase protection can be bypassed by manual commands",
+      "description": "Three-phase protection is enabled, but manual register or manual time-slot commands can write directly to a battery without the automatic phase envelope. Keep those commands within the configured phase limits."
     }
   },
   "config": {
@@ -27,14 +31,43 @@
           "solar_forecast_sensor": "Solar forecast sensor (optional)",
           "solar_production_sensor": "Solar production sensor (optional)",
           "meter_inverted": "Inverted meter sign",
-          "max_contracted_power": "Maximum contracted power (W)"
+          "max_contracted_power": "Maximum contracted power (W)",
+          "three_phase_enabled": "Enable three-phase current protection"
         },
         "data_description": {
           "consumption_sensor": "Real-time sensor for imported (+) or exported (-) grid power. Updates every 1-2 seconds are recommended. Slower sensors are accepted, but delayed readings reduce regulation quality; the latest reading is followed for up to 65 seconds.",
           "solar_forecast_sensor": "Sensor providing solar production forecast in kWh (e.g., Solcast). If configured here, it will be used automatically for predictive charging and solar charge delay.",
           "solar_production_sensor": "Real-time PV production power sensor (W/kW) from an external inverter not wired through the battery MPPT inputs. Used to show the Solar node in the dashboard energy-flow diagram. Leave empty if your panels feed the battery MPPT directly.",
           "meter_inverted": "Enable this option if your meter uses the opposite convention: positive = export, negative = import. The unit (W/kW) is detected automatically.",
-          "max_contracted_power": "Total contracted power in watts. System won't exceed this limit when charging to avoid tripping the breaker"
+          "max_contracted_power": "Total contracted power in watts. System won't exceed this limit when charging to avoid tripping the breaker",
+          "three_phase_enabled": "Optional safety envelope for three-phase installations. Configure one signed RMS current sensor in A, one fuse-size limit in A and the physical battery phase for each circuit in the next step."
+        }
+      },
+      "three_phase": {
+        "title": "Three-phase current protection",
+        "description": "Configure one signed RMS current sensor and one fuse-size limit in amperes for each phase you want to protect. Leave both fields empty for unused phases. Sensors must be distinct Home Assistant sensor entities with A or mA units; positive means grid import and negative means grid export.",
+        "data": {
+          "phase_1_current_sensor": "L1 grid current sensor",
+          "phase_2_current_sensor": "L2 grid current sensor",
+          "phase_3_current_sensor": "L3 grid current sensor",
+          "phase_1_fuse_size": "L1 fuse size (A)",
+          "phase_2_fuse_size": "L2 fuse size (A)",
+          "phase_3_fuse_size": "L3 fuse size (A)"
+        },
+        "data_description": {
+          "phase_1_current_sensor": "Real-time signed RMS current on physical phase L1. Positive import, negative export; A and mA are accepted.",
+          "phase_2_current_sensor": "Real-time signed RMS current on physical phase L2. Positive import, negative export; A and mA are accepted.",
+          "phase_3_current_sensor": "Real-time signed RMS current on physical phase L3. Positive import, negative export; A and mA are accepted.",
+          "phase_1_fuse_size": "Fuse rating/current limit for L1 in amperes. Enter a value below the nameplate rating to leave margin for latency and transient peaks.",
+          "phase_2_fuse_size": "Fuse rating/current limit for L2 in amperes. Enter a value below the nameplate rating to leave margin for latency and transient peaks.",
+          "phase_3_fuse_size": "Fuse rating/current limit for L3 in amperes. Enter a value below the nameplate rating to leave margin for latency and transient peaks."
+        }
+      },
+      "phase_assignments": {
+        "title": "Battery {battery_num} phase assignment",
+        "description": "Select the physical AC phase where {battery_name} is connected, or choose Unassigned if it is not connected to a protected phase. Omnibattery cannot discover this wiring automatically.",
+        "data": {
+          "battery_phase": "Physical battery phase"
         }
       },
       "batteries": {
@@ -91,8 +124,8 @@
       "battery_connection_hoymiles": {
         "title": "Configure battery {battery_num} — Connection (Hoymiles)",
         "description": "Enable MQTT Service in S-Miles Home and point it to Home Assistant's configured MQTT broker before continuing.",
-        "data": {"name": "Name", "device_id": "MQTT device ID"},
-        "data_description": {"device_id": "MS-A2 MQTT device id, for example MSA-280024341346. Broker credentials are managed by Home Assistant."}
+        "data": {"name": "Name", "device_id": "MQTT device ID", "hoymiles_model": "Battery model"},
+        "data_description": {"device_id": "Hoymiles MQTT device ID, for example MSA-280024341346.", "hoymiles_model": "Use automatic discovery unless the device publishes an incorrect or generic model."}
       },
       "battery_connection_esphome": {
         "title": "Configure battery {battery_num} — Connection (LilyGo/ESPHome)",
@@ -117,7 +150,10 @@
           "charge_hysteresis_percent": "Charge hysteresis (%)",
           "backup_offgrid_threshold": "Backup offgrid load threshold (W)",
           "full_charge_voltage_taper_enabled": "Enable 100% charge voltage taper",
-          "battery_capacity_kwh": "Battery nominal capacity (kWh)"
+          "battery_capacity_kwh": "Battery nominal capacity (kWh)",
+          "battery_phase": "Physical battery phase",
+          "track_mac": "Re-find this battery by its MAC address if its IP address changes",
+          "mac": "MAC Address"
         },
         "data_description": {
           "max_charge_power": "Maximum power allowed to charge the battery",
@@ -126,8 +162,11 @@
           "min_soc": "Minimum state of charge - battery won't discharge below this value",
           "charge_hysteresis_percent": "Always on (minimum 2%). After reaching the top, the battery won't charge again until SOC drops to (Max SOC − hysteresis). Ex: Max SOC 100% with 2% = no charge until 98%.",
           "backup_offgrid_threshold": "Offgrid load above this value is treated as an active backup event, excluding the battery from PD control. Set higher if you have permanent loads (router, cameras) on the offgrid port.",
-          "full_charge_voltage_taper_enabled": "When the target is 100%, limit charge to 200 W from 3.48 V max cell voltage and stop at 3.60 V to measure imbalance after 60 seconds.",
-          "battery_capacity_kwh": "Nominal usable capacity of the battery pack. Used to calculate stored energy and efficiency from SOC. Sessy requires its actual capacity; for other batteries, leave at 0 if unknown."
+          "full_charge_voltage_taper_enabled": "When the target is 100%, limit charge to 200 W from 3.48 V max cell voltage. Venus E models stop at 3.60 V to measure imbalance after 60 seconds; Venus A/D with coupled packs keep charging at 200 W until the BMS cuts off.",
+          "battery_capacity_kwh": "Nominal usable capacity of the battery pack. Used to calculate stored energy and efficiency from SOC. Sessy requires its actual capacity; for other batteries, leave at 0 if unknown.",
+          "battery_phase": "Physical AC phase (L1/L2/L3) where this battery is wired, or Unassigned when it is outside the protected phase layout. An unassigned battery is outside the three-phase envelope and continues normal automatic operation.",
+          "track_mac": "The MAC address is the battery's permanent hardware address: unlike the IP address above, it never changes. Home Assistant uses it to find the battery again and update the IP address by itself.",
+          "mac": "Permanent hardware address of the interface the battery uses on your network. Take it from your router's device list: a battery can report a different MAC than the one its wired interface actually uses. Filled in automatically when Home Assistant's DHCP cache is available."
         }
       },
       "time_slots": {
@@ -275,7 +314,7 @@
           "end_time": "End time of charging window (e.g., 06:00)",
           "days": "Days when grid charging is allowed",
           "solar_forecast_sensor": "Sensor providing the solar production forecast in kWh (e.g., Solcast). If you have solar panels, configure this sensor — the system will only charge from the grid when solar forecast is insufficient. If you have no solar panels, leave this empty — the system will charge whenever battery energy is not enough for the day. Not required if you already configured this sensor in the initial setup step — it will be used automatically.",
-          "predictive_safety_margin_kwh": "Extra energy buffer added to the consumption forecast before deciding whether to charge. Useful when your solar forecast tends to be optimistic. Set to 0 to disable (default). Capped at total battery capacity.",
+          "predictive_safety_margin_kwh": "Extra energy buffer added to the consumption forecast before deciding whether to charge. The same kWh buffer is also reserved as additional anti-curtailment headroom in Dynamic Pricing. Set to 0 to disable (default). Capped at total battery capacity.",
           "predictive_grid_charge_margin_pct": "Extra % charged from the grid on top of the solar-deficit, to hedge against optimistic solar forecasts. E.g. a 2 kWh grid need at 50% charges 3 kWh. 0 to disable (default). Capped at the gap to max SOC."
         }
       },
@@ -288,6 +327,11 @@
           "max_price_threshold": "Maximum price threshold (optional)",
           "discharge_price_threshold": "Discharge price floor (optional)",
           "dp_price_discharge_control": "Only discharge when price is above threshold",
+          "negative_price_charging_enabled": "Enable negative-price opportunistic charging",
+          "smart_predischarge_enabled": "Enable Smart Pre-discharge / Anti-curtailment",
+          "negative_injection_threshold": "Negative injection threshold (currency/kWh)",
+          "predischarge_reserve_soc": "Pre-discharge reserve SOC (%)",
+          "predischarge_export_mode": "Deliberate grid export mode",
           "solar_forecast_sensor": "Solar forecast sensor (kWh)",
           "predictive_safety_margin_kwh": "Solar forecast safety margin (kWh)",
           "predictive_grid_charge_margin_pct": "Predictive grid charge margin (%)"
@@ -298,9 +342,24 @@
           "max_price_threshold": "Slots above this price will not be selected. When price-gated discharge is enabled, this value is also used as the discharge threshold unless a separate discharge floor is set below. Use major currency/kWh: €/kWh for Nordpool/PVPC, CHF/kWh for CKW. HACS Nordpool prices configured in cents are converted automatically. Leave empty to use all slots and use the daily average as the discharge threshold.",
           "discharge_price_threshold": "Optional separate floor for price-gated discharge. Discharge is blocked while the price is at or below this value, opening an idle band between the charge ceiling above and this floor: in that band the battery neither grid-charges nor discharges (solar-surplus charging still works). Leave empty to reuse the maximum price threshold for both (current single-threshold behavior).",
           "dp_price_discharge_control": "When enabled, the battery only discharges when the current electricity price exceeds the configured maximum price threshold. If no threshold is configured, it uses today's average price computed automatically from the price sensor. If time slots restrict discharge, both conditions must be met.",
+          "negative_price_charging_enabled": "Opt-in dynamic-pricing feature that charges during the most negative import-price slots even when the normal energy forecast does not require grid charging. A solar forecast sensor is not required.",
+          "smart_predischarge_enabled": "Opt-in dynamic-pricing anti-curtailment. It creates headroom before forecast PV reaches a negative-price window while preserving all SOC, user and battery safety limits.",
+          "negative_injection_threshold": "Protect slots whose normalized price is at or below this inclusive threshold when forecast PV exceeds estimated household consumption.",
+          "predischarge_reserve_soc": "Additional SOC floor for pre-discharge. 0 uses the configured and guaranteed minimum SOC floors.",
+          "predischarge_export_mode": "Choose how deliberate grid export creates headroom: Self-consumption only (0 W), Automatic (only the power needed), or Custom limit (configured in the next step). The value is a deliberate-export limit, not total battery discharge power.",
           "solar_forecast_sensor": "Sensor providing the solar production forecast in kWh (e.g., Solcast). If you have solar panels, configure this sensor — the system will only charge from the grid when solar forecast is insufficient. If you have no solar panels, leave this empty — the system will charge whenever battery energy is not enough for the day. Not required if you already configured this sensor in the initial setup step — it will be used automatically.",
-          "predictive_safety_margin_kwh": "Extra energy buffer added to the consumption forecast before deciding whether to charge. Useful when your solar forecast tends to be optimistic. Set to 0 to disable (default). Capped at total battery capacity.",
+          "predictive_safety_margin_kwh": "Extra energy buffer added to the consumption forecast before deciding whether to charge. The same kWh buffer is also reserved as additional anti-curtailment headroom in Dynamic Pricing. Set to 0 to disable (default). Capped at total battery capacity.",
           "predictive_grid_charge_margin_pct": "Extra % charged from the grid on top of the solar-deficit, to hedge against optimistic solar forecasts. E.g. a 2 kWh grid need at 50% charges 3 kWh. 0 to disable (default). Capped at the gap to max SOC."
+        }
+      },
+      "predischarge_export_limit": {
+        "title": "Anti-curtailment — Custom export limit",
+        "description": "Set the maximum deliberate export to the grid while creating headroom. This is an export limit, not the battery's total discharge power.",
+        "data": {
+          "predischarge_max_export_power_w": "Deliberate grid export limit (W)"
+        },
+        "data_description": {
+          "predischarge_max_export_power_w": "Maximum power that may be deliberately exported to the grid before a solar-risk window. Battery SOC, reserve, hardware power and existing locks remain authoritative."
         }
       },
       "realtime_price_config": {
@@ -321,7 +380,7 @@
           "average_price_sensor": "If provided, this sensor's state is used as the threshold instead of the fixed value above — useful when your price integration already exposes a daily average. Leave empty to use the fixed threshold.",
           "rt_price_discharge_control": "When enabled, the battery only discharges when the current electricity price exceeds the threshold (fixed or daily average). If time slots restrict discharge, both conditions must be met.",
           "solar_forecast_sensor": "Sensor providing the solar production forecast in kWh (e.g., Solcast). If you have solar panels, configure this sensor — the system will only charge from the grid when solar forecast is insufficient. Not required if you already configured this sensor in the initial setup step — it will be used automatically.",
-          "predictive_safety_margin_kwh": "Extra energy buffer added to the consumption forecast before deciding whether to charge. Useful when your solar forecast tends to be optimistic. Set to 0 to disable (default). Capped at total battery capacity.",
+          "predictive_safety_margin_kwh": "Extra energy buffer added to the consumption forecast before deciding whether to charge. The same kWh buffer is also reserved as additional anti-curtailment headroom in Dynamic Pricing. Set to 0 to disable (default). Capped at total battery capacity.",
           "predictive_grid_charge_margin_pct": "Extra % charged from the grid on top of the solar-deficit, to hedge against optimistic solar forecasts. E.g. a 2 kWh grid need at 50% charges 3 kWh. 0 to disable (default). Capped at the gap to max SOC."
         }
       },
@@ -445,7 +504,7 @@
           "pd_direction_hysteresis": "Power threshold required to switch between charging and discharging. Prevents rapid direction changes. Range: 0-200W, default: 60W",
           "pd_min_charge_power": "Minimum power for charging. Below this threshold, the controller stays idle instead of charging at low power. 0 = disabled.",
           "pd_min_discharge_power": "Minimum power for discharging. Below this threshold, the controller stays idle instead of discharging at low power. 0 = disabled.",
-          "pd_target_grid_power": "Grid power setpoint the controller regulates to. Negative = export to grid, positive = import from grid, 0 = net zero. Range: -500 to +500 W, default: 0 W.",
+          "pd_target_grid_power": "Grid power setpoint the controller regulates to. Positive = import from grid (battery charges), negative = export to grid (battery discharges), 0 = net zero. The range follows your total configured battery power, narrowed by the system power limits when enabled. Default: 0 W.",
           "enable_system_power_limits": "When enabled, the two sliders below cap the combined charge/discharge power of all active batteries.",
           "system_max_charge_power": "Optional cap for combined charge power across all active batteries. 0 = disabled; per-battery limits still apply.",
           "system_max_discharge_power": "Optional cap for combined discharge power across all active batteries. 0 = disabled; per-battery limits still apply."
@@ -525,8 +584,9 @@
       },
       "reconfigure_battery_hoymiles": {
         "title": "Reconfigure battery {battery_num} — Hoymiles MQTT",
-        "description": "Enter the MS-A2 MQTT device ID; Home Assistant manages the broker connection.",
-        "data": {"name": "Name", "device_id": "MQTT device ID"}
+        "description": "Enter the Hoymiles MQTT device ID; Home Assistant manages the broker and Omnibattery detects the model.",
+        "data": {"name": "Name", "device_id": "MQTT device ID", "hoymiles_model": "Battery model"},
+        "data_description": {"hoymiles_model": "Use automatic discovery unless the device publishes an incorrect or generic model."}
       },
       "reconfigure_battery_esphome": {
         "title": "Reconfigure battery {battery_num} — Connection (LilyGo/ESPHome)",
@@ -571,10 +631,20 @@
       }
     },
     "error": {
+      "invalid_mac": "That does not look like a MAC address. Six pairs of hexadecimal digits are expected, for example dc:04:5a:14:6b:33.",
       "cannot_connect": "Cannot connect to the battery. Check the IP address and that the battery is accessible on the network.",
       "esphome_entities_missing": "The selected ESPHome device is missing required entities: {missing}. Make sure it runs the marstek-lilygo-rs485 firmware with the stock entity names.",
       "sensor_not_found": "Solar forecast sensor does not exist. Verify the sensor is available.",
       "invalid_unit": "Solar forecast sensor must have 'kWh' or 'Wh' as unit.",
+      "solar_production_sensor_not_found": "Solar production sensor does not exist. Verify the sensor is available.",
+      "solar_production_invalid_unit": "Solar production sensor must have 'W' or 'kW' as unit.",
+      "phase_sensors_must_differ": "Each phase must use a different current sensor.",
+      "phase_sensor_not_found": "The phase current sensor does not exist or is unavailable.",
+      "phase_sensor_invalid_domain": "The phase current source must be a sensor entity.",
+      "phase_sensor_invalid_unit": "The phase current sensor must have 'A' or 'mA' as unit.",
+      "phase_limit_must_be_positive": "The phase fuse size must be a positive finite value in amperes.",
+      "phase_sensor_and_limit_required": "Set both the phase current sensor and its fuse size, or leave both fields empty.",
+      "battery_phase_required": "Select the physical phase for this battery.",
       "incomplete_window": "Each extra charging window needs both a start and an end time. Fill both, or leave both empty to skip it.",
       "overlapping_slots": "This time slot overlaps with an existing one for the same battery. Adjust the times, days, or battery scope.",
       "midnight_crossing": "Start time must be before end time. For overnight periods, create two separate slots (e.g., 22:00-23:59 and 00:00-06:00).",
@@ -588,6 +658,8 @@
       "missing_activity_sensor": "Select an Activity / EV charging sensor for Dynamic Power Control or an EV charger without power telemetry."
     },
     "abort": {
+      "ip_updated": "The battery's IP address changed; the connection was updated automatically.",
+      "no_tracked_battery": "No configured battery is tracked by this device's MAC address.",
       "already_configured": "This integration is already configured.",
       "reconfigure_successful": "Battery connection settings updated successfully.",
       "no_legacy_entries": "No legacy Marstek Venus configuration was found to migrate.",
@@ -622,14 +694,43 @@
           "solar_forecast_sensor": "Solar forecast sensor (optional)",
           "solar_production_sensor": "Solar production sensor (optional)",
           "meter_inverted": "Inverted meter sign",
-          "max_contracted_power": "Maximum contracted power (W)"
+          "max_contracted_power": "Maximum contracted power (W)",
+          "three_phase_enabled": "Enable three-phase current protection"
         },
         "data_description": {
           "consumption_sensor": "Real-time sensor for imported (+) or exported (-) grid power. Updates every 1-2 seconds are recommended. Slower sensors are accepted, but delayed readings reduce regulation quality; the latest reading is followed for up to 65 seconds.",
           "solar_forecast_sensor": "Sensor providing solar production forecast in kWh (e.g., Solcast). If configured here, it will be used automatically for predictive charging and solar charge delay.",
           "solar_production_sensor": "Real-time PV production power sensor (W/kW) from an external inverter not wired through the battery MPPT inputs. Used to show the Solar node in the dashboard energy-flow diagram. Leave empty if your panels feed the battery MPPT directly.",
           "meter_inverted": "Enable this option if your meter uses the opposite convention: positive = export, negative = import. The unit (W/kW) is detected automatically.",
-          "max_contracted_power": "Total contracted power in watts. System won't exceed this limit when charging to avoid tripping the breaker"
+          "max_contracted_power": "Total contracted power in watts. System won't exceed this limit when charging to avoid tripping the breaker",
+          "three_phase_enabled": "Optional safety envelope for three-phase installations. Configure one signed RMS current sensor in A, one fuse-size limit in A and the physical battery phase for each circuit in the next step."
+        }
+      },
+      "three_phase": {
+        "title": "Three-phase current protection",
+        "description": "Configure one signed RMS current sensor and one fuse-size limit in amperes for each phase you want to protect. Leave both fields empty for unused phases. Sensors must be distinct Home Assistant sensor entities with A or mA units; positive means grid import and negative means grid export.",
+        "data": {
+          "phase_1_current_sensor": "L1 grid current sensor",
+          "phase_2_current_sensor": "L2 grid current sensor",
+          "phase_3_current_sensor": "L3 grid current sensor",
+          "phase_1_fuse_size": "L1 fuse size (A)",
+          "phase_2_fuse_size": "L2 fuse size (A)",
+          "phase_3_fuse_size": "L3 fuse size (A)"
+        },
+        "data_description": {
+          "phase_1_current_sensor": "Real-time signed RMS current on physical phase L1. Positive import, negative export; A and mA are accepted.",
+          "phase_2_current_sensor": "Real-time signed RMS current on physical phase L2. Positive import, negative export; A and mA are accepted.",
+          "phase_3_current_sensor": "Real-time signed RMS current on physical phase L3. Positive import, negative export; A and mA are accepted.",
+          "phase_1_fuse_size": "Fuse rating/current limit for L1 in amperes. Enter a value below the nameplate rating to leave margin for latency and transient peaks.",
+          "phase_2_fuse_size": "Fuse rating/current limit for L2 in amperes. Enter a value below the nameplate rating to leave margin for latency and transient peaks.",
+          "phase_3_fuse_size": "Fuse rating/current limit for L3 in amperes. Enter a value below the nameplate rating to leave margin for latency and transient peaks."
+        }
+      },
+      "phase_assignments": {
+        "title": "Battery {battery_num} phase assignment",
+        "description": "Select the physical AC phase where {battery_name} is connected, or choose Unassigned if it is not connected to a protected phase. Omnibattery cannot discover this wiring automatically.",
+        "data": {
+          "battery_phase": "Physical battery phase"
         }
       },
       "batteries": {
@@ -706,7 +807,10 @@
           "charge_hysteresis_percent": "Charge hysteresis (%)",
           "backup_offgrid_threshold": "Backup offgrid load threshold (W)",
           "full_charge_voltage_taper_enabled": "Enable 100% charge voltage taper",
-          "battery_capacity_kwh": "Battery nominal capacity (kWh)"
+          "battery_capacity_kwh": "Battery nominal capacity (kWh)",
+          "battery_phase": "Physical battery phase",
+          "track_mac": "Re-find this battery by its MAC address if its IP address changes",
+          "mac": "MAC Address"
         },
         "data_description": {
           "max_charge_power": "Maximum power allowed to charge the battery",
@@ -715,8 +819,11 @@
           "min_soc": "Minimum state of charge",
           "charge_hysteresis_percent": "Always on (minimum 2%). After reaching the top, the battery won't charge again until SOC drops to (Max SOC − hysteresis). Ex: Max SOC 100% with 2% = no charge until 98%.",
           "backup_offgrid_threshold": "Offgrid load above this value is treated as an active backup event, excluding the battery from PD control. Set higher if you have permanent loads (router, cameras) on the offgrid port.",
-          "full_charge_voltage_taper_enabled": "When the target is 100%, limit charge to 200 W from 3.48 V max cell voltage and stop at 3.60 V to measure imbalance after 60 seconds.",
-          "battery_capacity_kwh": "Nominal usable capacity of the battery pack. Used to calculate stored energy and efficiency from SOC. Sessy requires its actual capacity; for other batteries, leave at 0 if unknown."
+          "full_charge_voltage_taper_enabled": "When the target is 100%, limit charge to 200 W from 3.48 V max cell voltage. Venus E models stop at 3.60 V to measure imbalance after 60 seconds; Venus A/D with coupled packs keep charging at 200 W until the BMS cuts off.",
+          "battery_capacity_kwh": "Nominal usable capacity of the battery pack. Used to calculate stored energy and efficiency from SOC. Sessy requires its actual capacity; for other batteries, leave at 0 if unknown.",
+          "battery_phase": "Physical AC phase (L1/L2/L3) where this battery is wired, or Unassigned when it is outside the protected phase layout. An unassigned battery is outside the three-phase envelope and continues normal automatic operation.",
+          "track_mac": "The MAC address is the battery's permanent hardware address: unlike the IP address above, it never changes. Home Assistant uses it to find the battery again and update the IP address by itself.",
+          "mac": "Permanent hardware address of the interface the battery uses on your network. Take it from your router's device list: a battery can report a different MAC than the one its wired interface actually uses. Filled in automatically when Home Assistant's DHCP cache is available."
         }
       },
       "time_slots": {
@@ -864,7 +971,7 @@
           "end_time": "End time of charging window (e.g., 06:00)",
           "days": "Days when grid charging is allowed",
           "solar_forecast_sensor": "Sensor providing the solar production forecast in kWh (e.g., Solcast). If you have solar panels, configure this sensor — the system will only charge from the grid when solar forecast is insufficient. If you have no solar panels, leave this empty — the system will charge whenever battery energy is not enough for the day. Not required if you already configured this sensor in the initial setup step — it will be used automatically.",
-          "predictive_safety_margin_kwh": "Extra energy buffer added to the consumption forecast before deciding whether to charge. Useful when your solar forecast tends to be optimistic. Set to 0 to disable (default). Capped at total battery capacity.",
+          "predictive_safety_margin_kwh": "Extra energy buffer added to the consumption forecast before deciding whether to charge. The same kWh buffer is also reserved as additional anti-curtailment headroom in Dynamic Pricing. Set to 0 to disable (default). Capped at total battery capacity.",
           "predictive_grid_charge_margin_pct": "Extra % charged from the grid on top of the solar-deficit, to hedge against optimistic solar forecasts. E.g. a 2 kWh grid need at 50% charges 3 kWh. 0 to disable (default). Capped at the gap to max SOC."
         }
       },
@@ -877,6 +984,11 @@
           "max_price_threshold": "Maximum price threshold (optional)",
           "discharge_price_threshold": "Discharge price floor (optional)",
           "dp_price_discharge_control": "Only discharge when price is above threshold",
+          "negative_price_charging_enabled": "Enable negative-price opportunistic charging",
+          "smart_predischarge_enabled": "Enable Smart Pre-discharge / Anti-curtailment",
+          "negative_injection_threshold": "Negative injection threshold (currency/kWh)",
+          "predischarge_reserve_soc": "Pre-discharge reserve SOC (%)",
+          "predischarge_export_mode": "Deliberate grid export mode",
           "solar_forecast_sensor": "Solar forecast sensor (kWh)",
           "predictive_safety_margin_kwh": "Solar forecast safety margin (kWh)",
           "predictive_grid_charge_margin_pct": "Predictive grid charge margin (%)"
@@ -887,9 +999,24 @@
           "max_price_threshold": "Slots above this price will not be selected. When price-gated discharge is enabled, this value is also used as the discharge threshold unless a separate discharge floor is set below. Use major currency/kWh: €/kWh for Nordpool/PVPC, CHF/kWh for CKW. HACS Nordpool prices configured in cents are converted automatically. Leave empty to use all slots and use the daily average as the discharge threshold.",
           "discharge_price_threshold": "Optional separate floor for price-gated discharge. Discharge is blocked while the price is at or below this value, opening an idle band between the charge ceiling above and this floor: in that band the battery neither grid-charges nor discharges (solar-surplus charging still works). Leave empty to reuse the maximum price threshold for both (current single-threshold behavior).",
           "dp_price_discharge_control": "When enabled, the battery only discharges when the current electricity price exceeds the configured maximum price threshold. If no threshold is configured, it uses today's average price computed automatically from the price sensor. If time slots restrict discharge, both conditions must be met.",
+          "negative_price_charging_enabled": "Opt-in dynamic-pricing feature that charges during the most negative import-price slots even when the normal energy forecast does not require grid charging. A solar forecast sensor is not required.",
+          "smart_predischarge_enabled": "Opt-in dynamic-pricing anti-curtailment. It creates headroom before forecast PV reaches a negative-price window while preserving all SOC, user and battery safety limits.",
+          "negative_injection_threshold": "Protect slots whose normalized price is at or below this inclusive threshold when forecast PV exceeds estimated household consumption.",
+          "predischarge_reserve_soc": "Additional SOC floor for pre-discharge. 0 uses the configured and guaranteed minimum SOC floors.",
+          "predischarge_export_mode": "Choose how deliberate grid export creates headroom: Self-consumption only (0 W), Automatic (only the power needed), or Custom limit (configured in the next step). The value is a deliberate-export limit, not total battery discharge power.",
           "solar_forecast_sensor": "Sensor providing the solar production forecast in kWh (e.g., Solcast). If you have solar panels, configure this sensor — the system will only charge from the grid when solar forecast is insufficient. If you have no solar panels, leave this empty — the system will charge whenever battery energy is not enough for the day. Not required if you already configured this sensor in the initial setup step — it will be used automatically.",
-          "predictive_safety_margin_kwh": "Extra energy buffer added to the consumption forecast before deciding whether to charge. Useful when your solar forecast tends to be optimistic. Set to 0 to disable (default). Capped at total battery capacity.",
+          "predictive_safety_margin_kwh": "Extra energy buffer added to the consumption forecast before deciding whether to charge. The same kWh buffer is also reserved as additional anti-curtailment headroom in Dynamic Pricing. Set to 0 to disable (default). Capped at total battery capacity.",
           "predictive_grid_charge_margin_pct": "Extra % charged from the grid on top of the solar-deficit, to hedge against optimistic solar forecasts. E.g. a 2 kWh grid need at 50% charges 3 kWh. 0 to disable (default). Capped at the gap to max SOC."
+        }
+      },
+      "predischarge_export_limit": {
+        "title": "Anti-curtailment — Custom export limit",
+        "description": "Set the maximum deliberate export to the grid while creating headroom. This is an export limit, not the battery's total discharge power.",
+        "data": {
+          "predischarge_max_export_power_w": "Deliberate grid export limit (W)"
+        },
+        "data_description": {
+          "predischarge_max_export_power_w": "Maximum power that may be deliberately exported to the grid before a solar-risk window. Battery SOC, reserve, hardware power and existing locks remain authoritative."
         }
       },
       "realtime_price_config": {
@@ -910,7 +1037,7 @@
           "average_price_sensor": "If provided, this sensor's state is used as the threshold instead of the fixed value above — useful when your price integration already exposes a daily average. Leave empty to use the fixed threshold.",
           "rt_price_discharge_control": "When enabled, the battery only discharges when the current electricity price exceeds the threshold (fixed or daily average). If time slots restrict discharge, both conditions must be met.",
           "solar_forecast_sensor": "Sensor providing the solar production forecast in kWh (e.g., Solcast). If you have solar panels, configure this sensor — the system will only charge from the grid when solar forecast is insufficient. Not required if you already configured this sensor in the initial setup step — it will be used automatically.",
-          "predictive_safety_margin_kwh": "Extra energy buffer added to the consumption forecast before deciding whether to charge. Useful when your solar forecast tends to be optimistic. Set to 0 to disable (default). Capped at total battery capacity.",
+          "predictive_safety_margin_kwh": "Extra energy buffer added to the consumption forecast before deciding whether to charge. The same kWh buffer is also reserved as additional anti-curtailment headroom in Dynamic Pricing. Set to 0 to disable (default). Capped at total battery capacity.",
           "predictive_grid_charge_margin_pct": "Extra % charged from the grid on top of the solar-deficit, to hedge against optimistic solar forecasts. E.g. a 2 kWh grid need at 50% charges 3 kWh. 0 to disable (default). Capped at the gap to max SOC."
         }
       },
@@ -1027,7 +1154,7 @@
           "pd_direction_hysteresis": "Power threshold required to switch between charging and discharging. Prevents rapid direction changes. Range: 0-200W, default: 60W",
           "pd_min_charge_power": "Minimum power for charging. Below this threshold, the controller stays idle instead of charging at low power. 0 = disabled.",
           "pd_min_discharge_power": "Minimum power for discharging. Below this threshold, the controller stays idle instead of discharging at low power. 0 = disabled.",
-          "pd_target_grid_power": "Grid power setpoint the controller regulates to. Negative = export to grid, positive = import from grid, 0 = net zero. Range: -500 to +500 W, default: 0 W.",
+          "pd_target_grid_power": "Grid power setpoint the controller regulates to. Positive = import from grid (battery charges), negative = export to grid (battery discharges), 0 = net zero. The range follows your total configured battery power, narrowed by the system power limits when enabled. Default: 0 W.",
           "enable_system_power_limits": "When enabled, the two sliders below cap the combined charge/discharge power of all active batteries.",
           "system_max_charge_power": "Optional cap for combined charge power across all active batteries. 0 = disabled; per-battery limits still apply.",
           "system_max_discharge_power": "Optional cap for combined discharge power across all active batteries. 0 = disabled; per-battery limits still apply."
@@ -1080,10 +1207,20 @@
       }
     },
     "error": {
+      "invalid_mac": "That does not look like a MAC address. Six pairs of hexadecimal digits are expected, for example dc:04:5a:14:6b:33.",
       "cannot_connect": "Cannot connect to the battery. Check the IP address and that the battery is accessible on the network.",
       "esphome_entities_missing": "The selected ESPHome device is missing required entities: {missing}. Make sure it runs the marstek-lilygo-rs485 firmware with the stock entity names.",
       "sensor_not_found": "Solar forecast sensor does not exist. Verify the sensor is available.",
       "invalid_unit": "Solar forecast sensor must have 'kWh' or 'Wh' as unit.",
+      "solar_production_sensor_not_found": "Solar production sensor does not exist. Verify the sensor is available.",
+      "solar_production_invalid_unit": "Solar production sensor must have 'W' or 'kW' as unit.",
+      "phase_sensors_must_differ": "Each phase must use a different current sensor.",
+      "phase_sensor_not_found": "The phase current sensor does not exist or is unavailable.",
+      "phase_sensor_invalid_domain": "The phase current source must be a sensor entity.",
+      "phase_sensor_invalid_unit": "The phase current sensor must have 'A' or 'mA' as unit.",
+      "phase_limit_must_be_positive": "The phase fuse size must be a positive finite value in amperes.",
+      "phase_sensor_and_limit_required": "Set both the phase current sensor and its fuse size, or leave both fields empty.",
+      "battery_phase_required": "Select the physical phase for this battery.",
       "incomplete_window": "Each extra charging window needs both a start and an end time. Fill both, or leave both empty to skip it.",
       "overlapping_slots": "This time slot overlaps with an existing one for the same battery. Adjust the times, days, or battery scope.",
       "midnight_crossing": "Start time must be before end time. For overnight periods, create two separate slots (e.g., 22:00-23:59 and 00:00-06:00).",
@@ -1098,6 +1235,15 @@
     }
   },
   "selector": {
+    "hoymiles_model": {
+      "options": {
+        "auto": "Auto-detect (recommended)",
+        "ms_a2": "MS-A2",
+        "hibattery_1920_ac": "HiBattery 1920 AC",
+        "hibattery_4020_x": "HiBattery 4020 X",
+        "hibattery_4020_ac": "HiBattery 4020 AC"
+      }
+    },
     "weekday": {
       "options": {
         "mon": "Monday",
@@ -1120,6 +1266,14 @@
         "all": "All batteries"
       }
     },
+    "battery_phase": {
+      "options": {
+        "unassigned": "Unassigned",
+        "l1": "L1",
+        "l2": "L2",
+        "l3": "L3"
+      }
+    },
     "predictive_charging_mode": {
       "options": {
         "time_slot": "Time Slot (fixed nightly window)",
@@ -1136,6 +1290,13 @@
         "entsoe": "ENTSO-e (Transparency Platform)",
         "tibber": "Tibber (service-based)"
       }
+    },
+    "predischarge_export_mode": {
+      "options": {
+        "self_consumption": "Self-consumption only",
+        "automatic": "Automatic",
+        "custom": "Custom limit"
+      }
     }
   },
   "entity": {
@@ -1149,11 +1310,20 @@
       "dp_price_discharge_control": {
         "name": "Price-Based Discharge"
       },
+      "smart_predischarge": {
+        "name": "Smart Pre-discharge / Anti-curtailment"
+      },
+      "negative_price_charging": {
+        "name": "Negative-price opportunistic charging"
+      },
       "rt_price_discharge_control": {
         "name": "Price-Based Discharge"
       },
       "manual_mode": {
         "name": "Manual Mode"
+      },
+      "three_phase_protection": {
+        "name": "Three-Phase Current Protection"
       },
       "no_pd_mode": {
         "name": "No-PD Direct Tracking"
@@ -1200,11 +1370,11 @@
       "battery_allow_discharge": {
         "name": "Allow Discharge"
       },
+      "battery_manual_mode": {
+        "name": "Manual Battery Control"
+      },
       "full_charge_voltage_taper": {
         "name": "100% Charge Voltage Taper"
-      },
-      "active_balance_mode": {
-        "name": "Active Balance Mode"
       },
       "automation_charging_active": {
         "name": "External Price Charging"
@@ -1245,6 +1415,15 @@
       "active_batteries": {
         "name": "Active Batteries"
       },
+      "three_phase_protection_status": {
+        "name": "Three-Phase Protection Status",
+        "state": {
+          "disabled": "Disabled",
+          "active": "Active",
+          "limiting": "Limiting Batteries",
+          "degraded": "Degraded / Failsafe"
+        }
+      },
       "system_battery_cell_power": {
         "name": "System Battery Cell Power"
       },
@@ -1280,9 +1459,6 @@
       "non_responsive_batteries": {
         "name": "Non-Responsive Batteries"
       },
-      "configuration_summary": {
-        "name": "Configuration Summary"
-      },
       "integration_status": {
         "name": "Integration Status",
         "state": {
@@ -1290,7 +1466,6 @@
           "manual": "Manual Mode",
           "grid_charging": "Charging from Grid",
           "weekly_full_charge": "Weekly Full Charge",
-          "active_balance_mode": "Active Balance Mode",
           "charge_delayed": "Charge Delayed",
           "waiting_for_solar": "Waiting for Solar",
           "charging_to_setpoint": "Charging to Setpoint",
@@ -1354,6 +1529,18 @@
       "internal_temperature": {
         "name": "Internal Temperature"
       },
+      "internal_mos1_temperature": {
+        "name": "Internal MOS1 Temperature"
+      },
+      "internal_mos2_temperature": {
+        "name": "Internal MOS2 Temperature"
+      },
+      "max_cell_temperature": {
+        "name": "Max Cell Temperature"
+      },
+      "min_cell_temperature": {
+        "name": "Min Cell Temperature"
+      },
       "ac_power": {
         "name": "AC Power"
       },
@@ -1386,6 +1573,9 @@
       },
       "min_cell_voltage": {
         "name": "Min Cell Voltage"
+      },
+      "cell_voltage_delta": {
+        "name": "Cell Voltage Delta"
       },
       "fault_status": {
         "name": "Fault Status"
@@ -1456,6 +1646,9 @@
       "software_version": {
         "name": "Software Version"
       },
+      "battery_runtime_estimate": {
+        "name": "Battery Runtime Estimate"
+      },
       "bms_version": {
         "name": "BMS Version"
       },
@@ -1468,11 +1661,29 @@
       "comm_module_firmware": {
         "name": "Comm Module Firmware"
       },
+      "esp_ip": {
+        "name": "ESPHome IP"
+      },
+      "esp_ssid": {
+        "name": "ESPHome SSID"
+      },
+      "esp_version": {
+        "name": "ESP Version"
+      },
       "mac_address": {
         "name": "MAC Address"
       },
       "wifi_signal_strength": {
         "name": "WiFi Signal Strength"
+      },
+      "esp_wifi_signal_strength": {
+        "name": "ESP WiFi Signal Strength"
+      },
+      "bt_status": {
+        "name": "BT Status"
+      },
+      "power_restriction": {
+        "name": "Power Restriction"
       },
       "battery_cycle_count": {
         "name": "Battery Cycle Count"
@@ -1548,11 +1759,89 @@
       "predictive_charging_active": {
         "name": "Predictive Charging Active"
       },
+      "curtailment_status": {
+        "name": "Smart Pre-discharge Status"
+      },
       "wifi_status": {
         "name": "WiFi Status"
       },
       "cloud_status": {
         "name": "Cloud Status"
+      },
+      "esp_wifi_status": {
+        "name": "ESP WiFi Status"
+      },
+      "pll_abnormal_restart": {
+        "name": "PLL Abnormal Restart"
+      },
+      "overtemperature_limit": {
+        "name": "Overtemperature Limit"
+      },
+      "low_temperature_limit": {
+        "name": "Low Temperature Limit"
+      },
+      "fan_abnormal_warning": {
+        "name": "Fan Abnormal Warning"
+      },
+      "low_battery_soc_warning": {
+        "name": "Low Battery SOC Warning"
+      },
+      "output_overcurrent_warning": {
+        "name": "Output Overcurrent Warning"
+      },
+      "abnormal_line_sequence_detection": {
+        "name": "Abnormal Line Sequence Detection"
+      },
+      "wifi_abnormal": {
+        "name": "WiFi Abnormal"
+      },
+      "ble_abnormal": {
+        "name": "BLE Abnormal"
+      },
+      "network_abnormal": {
+        "name": "Network Abnormal"
+      },
+      "ct_connection_abnormal": {
+        "name": "CT Connection Abnormal"
+      },
+      "grid_overvoltage": {
+        "name": "Grid Overvoltage"
+      },
+      "grid_undervoltage": {
+        "name": "Grid Undervoltage"
+      },
+      "grid_overfrequency": {
+        "name": "Grid Overfrequency"
+      },
+      "grid_underfrequency": {
+        "name": "Grid Underfrequency"
+      },
+      "grid_peak_voltage_abnormal": {
+        "name": "Grid Peak Voltage Abnormal"
+      },
+      "current_dcover": {
+        "name": "Current Dcover"
+      },
+      "voltage_dcover": {
+        "name": "Voltage Dcover"
+      },
+      "bat_overvoltage": {
+        "name": "BAT Overvoltage"
+      },
+      "bat_undervoltage": {
+        "name": "BAT Undervoltage"
+      },
+      "bat_overcurrent": {
+        "name": "BAT Overcurrent"
+      },
+      "bat_low_soc": {
+        "name": "BAT Low SOC"
+      },
+      "bat_communication_failure": {
+        "name": "BAT Communication Failure"
+      },
+      "bms_protect": {
+        "name": "BMS Protect"
       },
       "balancing_mode": {
         "name": "Balancing Mode"
@@ -1564,6 +1853,15 @@
     "select": {
       "force_mode": {
         "name": "Force Mode"
+      },
+      "battery_phase": {
+        "name": "Battery Phase",
+        "state": {
+          "unassigned": "Unassigned",
+          "l1": "L1",
+          "l2": "L2",
+          "l3": "L3"
+        }
       },
       "grid_off_mode": {
         "name": "Off-Grid Mode",
@@ -1746,6 +2044,15 @@
       },
       "round_trip_efficiency": {
         "name": "Round-Trip Efficiency"
+      },
+      "negative_injection_threshold": {
+        "name": "Negative Injection Threshold"
+      },
+      "predischarge_reserve_soc": {
+        "name": "Pre-discharge Reserve SOC"
+      },
+      "predischarge_max_export_power_w": {
+        "name": "Deliberate Grid Export Limit"
       }
     },
     "button": {

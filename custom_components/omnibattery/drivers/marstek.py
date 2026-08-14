@@ -42,6 +42,11 @@ _FORCE_NONE = 0
 _FORCE_CHARGE = 1
 _FORCE_DISCHARGE = 2
 
+# Venus E v2/v3 expose the max-power register in the Marstek app as a two-value
+# hardware selector. The integration may still keep a lower user software cap.
+_VENUS_E_POWER_CAP_LOW_W = 800
+_VENUS_E_POWER_CAP_HIGH_W = 2500
+
 # RS485 control-mode toggle. The rs485_control register is a write-command
 # register, not a plain bool: 0x55AA enables external (Modbus) control, 0x55BB
 # disables it. v3 firmware rejects a plain 0/1 with Modbus exception 3.
@@ -534,7 +539,26 @@ class MarstekModbusDriver(BatteryDriver):
         if reg is None:
             return False
         self._client.unit_id = self._slave_id
+        value = self._normalize_power_cap(key, value)
         return bool(await self._client.async_write_register(reg, value))
+
+    def _normalize_power_cap(self, key: str, value: int) -> int:
+        """Map a requested Venus E max-power cap to the app's register values.
+
+        Venus E v2/v3 accept only 800 W or 2500 W in these hardware registers.
+        The requested value remains the integration's software limit; this
+        conversion only changes what is sent to the battery.
+        """
+        value = int(value)
+        if self._version not in ("v2", "v3"):
+            return value
+        if key not in ("max_charge_power", "max_discharge_power"):
+            return value
+        return (
+            _VENUS_E_POWER_CAP_LOW_W
+            if value <= _VENUS_E_POWER_CAP_LOW_W
+            else _VENUS_E_POWER_CAP_HIGH_W
+        )
 
     def net_power_from_data(self, data: dict):
         force = data.get("force_mode")
@@ -590,10 +614,16 @@ class MarstekModbusDriver(BatteryDriver):
             ok &= await self._client.async_write_register(cutoff_discharge_reg, int(min_soc_pct / 0.1))
         max_charge_reg = self.get_register("max_charge_power")
         if max_charge_reg is not None:
-            ok &= await self._client.async_write_register(max_charge_reg, max_charge_power_w)
+            ok &= await self._client.async_write_register(
+                max_charge_reg,
+                self._normalize_power_cap("max_charge_power", max_charge_power_w),
+            )
         max_discharge_reg = self.get_register("max_discharge_power")
         if max_discharge_reg is not None:
-            ok &= await self._client.async_write_register(max_discharge_reg, max_discharge_power_w)
+            ok &= await self._client.async_write_register(
+                max_discharge_reg,
+                self._normalize_power_cap("max_discharge_power", max_discharge_power_w),
+            )
         return bool(ok)
 
     async def set_charge_cutoff(self, soc_pct: float) -> bool:

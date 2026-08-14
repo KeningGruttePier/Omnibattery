@@ -208,9 +208,9 @@ The v3 is a behavioural reference, not a required protocol shape:
 |---|---|
 | SOC | `battery_soc`, register `37005`, `uint16`, `%` |
 | Measured power | `battery_power`, register `30001`, `int16`; positive charge, negative discharge |
-| Charge | Discharge setpoint 0, charge setpoint W, force mode charge |
-| Discharge | Discharge setpoint W, charge setpoint 0, force mode discharge |
-| Idle | Both setpoints 0 and force mode stop |
+| Charge | Discharge setpoint 0, charge setpoint W, force mode `Charge` |
+| Discharge | Discharge setpoint W, charge setpoint 0, force mode `Discharge` |
+| Idle | Both setpoints 0 and force mode `None` |
 | Power envelope | Setpoints 0–2500 W, documented 50 W step; installation caps are separate |
 | Declared minimum | 800 W in v3 power-limit definitions |
 | External control | RS485 control gate with device-specific commands |

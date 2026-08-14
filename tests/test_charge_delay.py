@@ -16,9 +16,6 @@ from types import SimpleNamespace
 import pytest
 
 from custom_components.omnibattery import ChargeDischargeController
-from custom_components.omnibattery.control.active_balance_mode import (
-    ActiveBalanceModeManager,
-)
 from custom_components.omnibattery.control.charge_delay import (
     ChargeDelayManager,
     _TRANSIENT_UNLOCK_REASONS,
@@ -304,9 +301,9 @@ def test_balance_needs_charge_unlocks_low_forecast():
 
 def test_balanced_day_holds_with_deadband():
     # #4 concrete day: usable ~0.4 + raw forecast 15.76 vs 15.40 consumption.
-    # Pre-fix the 0.85 haircut (15.76 -> 13.40) flipped this into a false deficit
-    # and a latched pre-dawn unlock. With the raw forecast + deadband the gate now
-    # reads it as solar-sufficient and keeps the delay armed.
+    # A hidden 0.85 haircut (15.76 -> 13.40) would flip this into a false deficit
+    # and a latched pre-dawn unlock. The configured safety margin is the only
+    # forecast conservatism; the sensor value must remain unchanged here.
     ctrl = _controller(
         coordinators=[_coord(soc=24, total_energy=10.0, min_soc=20)],
         _consumption_tracker=_tracker(get_avg_daily_consumption=lambda: 15.40),
@@ -314,6 +311,7 @@ def test_balanced_day_holds_with_deadband():
     mgr = _make_mgr(ctrl, states={"sensor.forecast": _state(15.76)})
     mgr._should_delay_charge(80)
     assert ctrl._charge_delay_balance_needs_charge is False
+    assert ctrl._charge_delay_forecast_cache == pytest.approx(15.76)
 
 
 def test_low_forecast_price_release_holds_for_cheaper_hour():
@@ -476,17 +474,6 @@ def test_setpoint_blocks_only_battery_above_setpoint():
     assert ctrl.blocks.get("charge_delay_setpoint", set()) == {"Marstek"}
 
 
-def test_setpoint_block_only_bypassed_by_active_balance_battery():
-    active = _ncoord("Balancing", soc=87)
-    active.active_balance_mode_enabled = True
-    normal = _ncoord("Normal", soc=87)
-    ctrl = _setpoint_controller([active, normal])
-
-    _mgr_for(ctrl).refresh_setpoint_blocks()
-
-    assert ctrl.blocks.get("charge_delay_setpoint", set()) == {"Normal"}
-
-
 def test_setpoint_blocks_cleared_once_floor_reached():
     # _delay_setpoint_reached -> forecast phase governs all; no per-battery floor.
     leader = _ncoord("Marstek", soc=87)
@@ -510,41 +497,6 @@ def test_setpoint_blocks_noop_when_feature_disabled():
     ctrl = _setpoint_controller([leader], _delay_soc_setpoint_enabled=False)
     _mgr_for(ctrl).refresh_setpoint_blocks()
     assert ctrl.blocks.get("charge_delay_setpoint", set()) == set()
-
-
-def test_active_balance_keeps_global_charge_delay_block():
-    calls = {"set": [], "remove": []}
-    balancing = _ncoord("Balancing", soc=87)
-    balancing.active_balance_mode_enabled = True
-    ctrl = ChargeDischargeController.__new__(ChargeDischargeController)
-    ctrl.charge_delay_enabled = True
-    ctrl.coordinators = [balancing]
-    ctrl._charge_delay_status = {"state": "Delayed"}
-    ctrl._charge_delay_mgr = SimpleNamespace(
-        is_charge_delayed=lambda: True,
-        refresh_setpoint_blocks=lambda: None,
-    )
-    ctrl.set_charge_block = (
-        lambda source, reason, details=None: calls["set"].append(source)
-    )
-    ctrl.remove_charge_block = lambda source: calls["remove"].append(source)
-    ctrl._refresh_time_slot_blocks = lambda: None
-    ctrl._apply_price_discharge_block = lambda: None
-    ctrl._refresh_ev_blocks = lambda: None
-    ctrl._refresh_dynamic_power_control_block = lambda: None
-    ctrl._refresh_user_battery_blocks = lambda: None
-    ctrl._refresh_normal_balance_blocks = lambda: None
-    ctrl._refresh_battery_charge_limit_blocks = lambda: None
-    ctrl._refresh_battery_discharge_limit_blocks = lambda: None
-    ctrl._global_discharge_blockers = {}
-    active_balance_mgr = ActiveBalanceModeManager.__new__(ActiveBalanceModeManager)
-    active_balance_mgr._controller = ctrl
-    ctrl._active_balance_mgr = active_balance_mgr
-
-    ChargeDischargeController._refresh_operation_blockers(ctrl)
-
-    assert "charge_delay" in calls["set"]
-    assert "charge_delay" not in calls["remove"]
 
 
 # ----------------------------------------------------------------------
@@ -726,7 +678,7 @@ def test_cushion_shortfall_holds_for_cheaper_hour(monkeypatch):
     # net = 3.39: below the factored 3.9 edge but still above the bare 3.0 need
     # -> hold for the cheaper hour instead of unlocking into the morning peak.
     _at_hour(monkeypatch, 9)
-    mgr = _cushion_mgr(5.7)
+    mgr = _cushion_mgr(4.85)
     mgr._price_optimal_release_h = lambda now_h, edge_h, charge_h=None: 12.0
     assert mgr._should_delay_charge(80) is True
     assert mgr._controller._charge_delay_status["estimated_unlock_time"] == "12:00"
@@ -735,7 +687,7 @@ def test_cushion_shortfall_holds_for_cheaper_hour(monkeypatch):
 
 def test_cushion_shortfall_unlocks_when_now_is_cheapest(monkeypatch):
     _at_hour(monkeypatch, 9)
-    mgr = _cushion_mgr(5.7)
+    mgr = _cushion_mgr(4.85)
     mgr._price_optimal_release_h = lambda now_h, edge_h, charge_h=None: now_h
     assert mgr._should_delay_charge(80) is False
     assert mgr._controller._charge_delay_status["unlock_reason"] == "energy_balance"
@@ -744,7 +696,7 @@ def test_cushion_shortfall_unlocks_when_now_is_cheapest(monkeypatch):
 def test_cushion_shortfall_unlocks_without_price_data(monkeypatch):
     # No price data -> legacy instant unlock preserved.
     _at_hour(monkeypatch, 9)
-    mgr = _cushion_mgr(5.7)
+    mgr = _cushion_mgr(4.85)
     mgr._price_optimal_release_h = lambda now_h, edge_h, charge_h=None: None
     assert mgr._should_delay_charge(80) is False
     assert mgr._controller._charge_delay_status["unlock_reason"] == "energy_balance"
@@ -766,7 +718,7 @@ def test_cushion_hold_window_never_passes_bare_balance_edge(monkeypatch):
     # The edge handed to the price scorer is the BARE (x1.0) balance crossing,
     # never the factored one, so the hold cannot eat into the target itself.
     _at_hour(monkeypatch, 9)
-    mgr = _cushion_mgr(5.7)
+    mgr = _cushion_mgr(4.85)
     edges = []
     mgr._price_optimal_release_h = lambda now_h, edge_h, charge_h=None: edges.append(edge_h) or now_h
     # Record what the gate actually asked the projection for, so the expected edge

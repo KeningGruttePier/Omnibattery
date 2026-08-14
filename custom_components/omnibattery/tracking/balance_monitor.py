@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any
@@ -131,8 +132,9 @@ class BalanceMonitor:
     async def async_process(self, coordinator: Any) -> None:
         """Clear legacy OCV state.
 
-        Imbalance readings are now recorded only by explicit 3.55 V top-charge
-        measurements and active-balance measurements.
+        Imbalance readings are recorded by explicit top-charge or settled
+        blueprint measurements. Historical active-balance records remain
+        readable but are no longer produced by the control loop.
         """
         host = coordinator.device_key
         if host not in self._states:
@@ -147,75 +149,6 @@ class BalanceMonitor:
             state.prev_vmax = None
             await self._persist_state(host, state)
 
-    # ------------------------------------------------------------------
-    # External entry point — called by the active-balance controller
-    # ------------------------------------------------------------------
-
-    async def async_record_active_balance_transition(
-        self,
-        coordinator: Any,
-        vmax: float,
-        vmin: float,
-        soc: float | None,
-        from_phase: str | None,
-        to_phase: str,
-    ) -> None:
-        """Record a delta reading when the active-balance mode switches phase.
-
-        The current use case is the CHARGE/HOLD -> DISCHARGE transition. It is
-        persisted as ``active_balance_transition`` for diagnostics, but does not
-        feed the Cell Delta entity, its average, trend or top-charge evaluator.
-        """
-        try:
-            vmax_f = float(vmax)
-            vmin_f = float(vmin)
-        except (TypeError, ValueError):
-            return
-        try:
-            soc_f = float(soc) if soc is not None else None
-        except (TypeError, ValueError):
-            soc_f = None
-        delta_mv = (vmax_f - vmin_f) * 1000
-        extra = {"from_phase": from_phase, "to_phase": to_phase}
-        await self._save_reading(
-            coordinator.device_key,
-            delta_mv,
-            vmax_f,
-            vmin_f,
-            soc_f,
-            "active_balance_transition",
-            extra=extra,
-        )
-
-    async def async_record_active_balance_measurement(
-        self,
-        coordinator: Any,
-        vmax: float,
-        vmin: float,
-        soc: float | None,
-        phase: str | None = None,
-    ) -> None:
-        """Record the explicit active-balance top delta measurement."""
-        try:
-            vmax_f = float(vmax)
-            vmin_f = float(vmin)
-        except (TypeError, ValueError):
-            return
-        try:
-            soc_f = float(soc) if soc is not None else None
-        except (TypeError, ValueError):
-            soc_f = None
-        delta_mv = (vmax_f - vmin_f) * 1000
-        await self._save_reading(
-            coordinator.device_key,
-            delta_mv,
-            vmax_f,
-            vmin_f,
-            soc_f,
-            "active_balance_measurement",
-            extra={"phase": phase},
-        )
-
     async def async_record_top_balance_measurement(
         self,
         coordinator: Any,
@@ -223,8 +156,10 @@ class BalanceMonitor:
         vmin: float,
         soc: float | None,
         phase: str | None = None,
+        source: str | None = None,
+        measurement_id: str | None = None,
     ) -> None:
-        """Record the explicit 3.60 V top-charge delta measurement."""
+        """Record an explicit settled top-voltage delta measurement."""
         try:
             vmax_f = float(vmax)
             vmin_f = float(vmin)
@@ -243,8 +178,93 @@ class BalanceMonitor:
             soc_f,
             "top_balance_measurement",
             coordinator,
-            extra={"phase": phase},
+            extra={
+                "phase": phase,
+                "source": source,
+                "measurement_id": measurement_id,
+            },
         )
+
+    async def async_record_blueprint_balance_measurement(
+        self,
+        coordinator: Any,
+        *,
+        phase: str | None = None,
+        measurement_id: str | None = None,
+    ) -> bool:
+        """Record a settled cell delta reported by the active-balance blueprint.
+
+        The blueprint owns the battery while this method is called, but the
+        voltage values always come from Omnibattery's coordinator. This keeps
+        the integration's history and sensor updates on the same telemetry
+        path as normal top-charge measurements.
+        """
+        phase_name = str(phase or "WAIT_MEASURE").strip()
+        if phase_name not in {"WAIT_MEASURE", "blueprint_wait_measure"}:
+            _LOGGER.warning(
+                "[%s] Ignoring blueprint balance measurement with invalid phase %s",
+                getattr(coordinator, "name", "unknown"),
+                phase_name,
+            )
+            return False
+
+        if not getattr(coordinator, "battery_manual_mode_enabled", False):
+            _LOGGER.warning(
+                "[%s] Ignoring blueprint balance measurement because Battery Manual Mode is off",
+                getattr(coordinator, "name", "unknown"),
+            )
+            return False
+
+        data = coordinator.data or {}
+        try:
+            vmax = float(data.get("max_cell_voltage"))
+            vmin = float(data.get("min_cell_voltage"))
+        except (TypeError, ValueError):
+            _LOGGER.warning(
+                "[%s] Ignoring blueprint balance measurement with invalid cell telemetry",
+                getattr(coordinator, "name", "unknown"),
+            )
+            return False
+        if not math.isfinite(vmax) or not math.isfinite(vmin) or vmax < vmin:
+            _LOGGER.warning(
+                "[%s] Ignoring blueprint balance measurement with invalid voltage ordering: %.4f/%.4f",
+                getattr(coordinator, "name", "unknown"),
+                vmax,
+                vmin,
+            )
+            return False
+
+        host = coordinator.device_key
+        measurement_key = str(measurement_id).strip() if measurement_id is not None else ""
+        if measurement_key:
+            readings = self._data.get(host, {}).get("readings", [])
+            if any(
+                reading.get("measurement_id") == measurement_key
+                for reading in readings
+            ):
+                _LOGGER.debug(
+                    "[%s] Ignoring duplicate blueprint balance measurement %s",
+                    getattr(coordinator, "name", "unknown"),
+                    measurement_key,
+                )
+                return False
+
+        await self.async_record_top_balance_measurement(
+            coordinator,
+            vmax,
+            vmin,
+            data.get("battery_soc"),
+            phase="blueprint_wait_measure",
+            source="blueprint",
+            measurement_id=measurement_key or None,
+        )
+        _LOGGER.debug(
+            "[%s] Recorded blueprint balance measurement: %.4f V - %.4f V",
+            getattr(coordinator, "name", "unknown"),
+            vmax,
+            vmin,
+        )
+        return True
 
     def get_recent_readings(self, host: str, limit: int = 10) -> list[dict]:
         """Return the most-recent comparable readings (newest last)."""
@@ -327,8 +347,8 @@ class BalanceMonitor:
             issues.append(
                 f"High cell imbalance ({delta_mv:.0f} mV) for "
                 f"{bat['consecutive_red']} consecutive full charges. Consider "
-                f"enabling the 'Active Balance Mode' switch for this battery to "
-                f"rebalance the cells."
+                f"running the Marstek active-balance blueprint for this battery "
+                f"to rebalance the cells."
             )
 
         return status, severe
@@ -448,6 +468,9 @@ class BalanceMonitor:
         if reading.get("delta_mV") is None:
             return False
         reading_type = reading.get("type")
+        # Keep filtering records written by pre-blueprint releases so an old
+        # history store remains interpretable after the integrated runner is
+        # removed. New code never writes either legacy reading type.
         if reading_type == "active_balance_transition":
             return False
         if reading_type == "active_balance_measurement":

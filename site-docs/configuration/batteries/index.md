@@ -13,7 +13,7 @@ loop, dashboard, predictive charging and most runtime controls are shared.
 | **Zendure** | Local HTTP API | [Zendure](zendure.md) |
 | **Anker SOLIX** | Modbus TCP | [Anker SOLIX](anker.md) |
 | **Sessy** | Local HTTP API through the Sessy dongle | [Sessy](sessy.md) |
-| **Hoymiles MS-A2** | MQTT through Home Assistant | [Hoymiles MS-A2](hoymiles.md) |
+| **Hoymiles MS-A2 / HiBattery** | MQTT through Home Assistant | [Hoymiles MQTT](hoymiles.md) |
 
 ![Battery brand selector](../../assets/screenshots/configuration/battery-brand-form.png){ width="650"  style="display: block; margin: 0 auto;"}
 
@@ -52,6 +52,12 @@ brand-specific fields differ; see the brand pages above for those details.
 Max/min SOC and max charge/discharge power can be adjusted at any time using
 the integration's sliders without reconfiguring. Changes are persisted and
 restored on every Home Assistant restart.
+
+The per-battery `Battery Manual Control` switch is also available at runtime.
+It hands the battery to the user after verifying `0 W`, keeps it out of the
+automatic pool, and persists that ownership across restarts. See the
+[multi-battery guide](../../features/multi-battery.md#manual-control-per-battery)
+for the handoff behavior and its effect on the other batteries.
 
 ![SOC and power sliders](../../assets/screenshots/configuration/battery-runtime-sliders.png){ width="650"  style="display: block; margin: 0 auto;"}
 

@@ -1,0 +1,1252 @@
+blueprint:
+  name: "Marstek Venus - Active Cell Balance"
+  description: >
+    Runs the Marstek active cell-balancing profile for one battery. The
+    automation uses only Home Assistant entities exposed by Omnibattery; it
+    does not access Modbus directly. Select the Omnibattery device and the
+    standard entities are discovered automatically from that device. Optional
+    entity-ID overrides are available below for installations that renamed an
+    entity. Create one automation per battery. The selected Battery Manual
+    Mode switch is the exclusive ownership boundary: do not run another manual
+    automation on the same battery at the same time.
+
+    The run request is a persistent input_boolean. ON starts or resumes the
+    run after a Home Assistant restart; OFF cancels it. Every exit attempts to
+    set both power setpoints to 0 W, restore the configured normal SOC limit,
+    and release Battery Manual Mode. If a safety write cannot be confirmed,
+    manual mode is deliberately left ON for manual inspection.
+  domain: automation
+  source_url: "https://github.com/ffunes/Omnibattery/blob/main/blueprints/marstek_active_balance_blueprint.yaml"
+
+  input:
+    run_request:
+      name: "Run request"
+      description: >
+        Persistent input_boolean used to start, cancel and resume the balance
+        run. Leave it ON while the run is in progress.
+      selector:
+        entity:
+          filter:
+            domain: input_boolean
+
+    battery_device:
+      name: "Marstek battery device"
+      description: >
+        Select the Marstek device created by Omnibattery. The blueprint finds
+        its standard Battery Manual Mode, telemetry, force-mode and power-limit
+        entities automatically.
+      selector:
+        device:
+          filter:
+            - integration: omnibattery
+              manufacturer: Marstek
+
+    battery_manual_mode_override:
+      name: "Advanced — Battery Manual Mode entity override"
+      description: "Optional entity ID. Leave blank to discover the standard *_battery_manual_mode entity from the selected device."
+      default: ""
+      selector:
+        text:
+
+    battery_soc_override:
+      name: "Advanced — Battery SOC entity override"
+      description: "Optional entity ID. Leave blank to discover the standard *_battery_soc sensor from the selected device."
+      default: ""
+      selector:
+        text:
+
+    battery_power_override:
+      name: "Advanced — Battery power entity override"
+      description: "Optional entity ID. Leave blank to discover the standard *_battery_power sensor from the selected device."
+      default: ""
+      selector:
+        text:
+
+    max_cell_voltage_override:
+      name: "Advanced — Maximum cell voltage entity override"
+      description: "Optional entity ID. Leave blank to discover the standard *_max_cell_voltage sensor from the selected device."
+      default: ""
+      selector:
+        text:
+
+    min_cell_voltage_override:
+      name: "Advanced — Minimum cell voltage entity override"
+      description: "Optional entity ID. Leave blank to discover the standard *_min_cell_voltage sensor from the selected device."
+      default: ""
+      selector:
+        text:
+
+    cell_delta_override:
+      name: "Advanced — Cell Delta entity override"
+      description: "Optional entity ID. Leave blank to discover the standard *_cell_delta sensor from the selected device."
+      default: ""
+      selector:
+        text:
+
+    force_mode_override:
+      name: "Advanced — Force mode entity override"
+      description: "Optional entity ID. Leave blank to discover the standard *_force_mode select from the selected device."
+      default: ""
+      selector:
+        text:
+
+    set_charge_power_override:
+      name: "Advanced — Manual charge power entity override"
+      description: "Optional entity ID. Leave blank to discover the standard *_set_charge_power number from the selected device."
+      default: ""
+      selector:
+        text:
+
+    set_discharge_power_override:
+      name: "Advanced — Manual discharge power entity override"
+      description: "Optional entity ID. Leave blank to discover the standard *_set_discharge_power number from the selected device."
+      default: ""
+      selector:
+        text:
+
+    max_charge_power_override:
+      name: "Advanced — Configured maximum charge power entity override"
+      description: "Optional entity ID. Leave blank to discover the standard *_max_charge_power number from the selected device."
+      default: ""
+      selector:
+        text:
+
+    max_soc_override:
+      name: "Advanced — Maximum SOC entity override"
+      description: "Optional entity ID. Leave blank to discover the standard *_charging_cutoff_capacity number from the selected device."
+      default: ""
+      selector:
+        text:
+
+    top_zone_voltage_v:
+      name: "Top-zone voltage"
+      description: "End of the initial climb and lower limit of intermediate discharge cycles."
+      default: 3.49
+      selector:
+        number:
+          min: 3.40
+          max: 3.60
+          step: 0.01
+          unit_of_measurement: V
+          mode: box
+
+    charge_stop_voltage_v:
+      name: "Charge-stop voltage"
+      description: "Upper voltage at which charging stops and the settled cell delta is measured."
+      default: 3.60
+      selector:
+        number:
+          min: 3.45
+          max: 3.65
+          step: 0.01
+          unit_of_measurement: V
+          mode: box
+
+    final_discharge_voltage_v:
+      name: "Final-discharge voltage"
+      description: "Maximum-cell voltage at which the final discharge ends."
+      default: 3.48
+      selector:
+        number:
+          min: 3.35
+          max: 3.60
+          step: 0.01
+          unit_of_measurement: V
+          mode: box
+
+    target_delta_v:
+      name: "Target cell delta"
+      description: "The run completes after a settled measurement is at or below this delta."
+      default: 0.03
+      selector:
+        number:
+          min: 0.005
+          max: 0.20
+          step: 0.005
+          unit_of_measurement: V
+          mode: box
+
+    adaptive_min_resume_voltage_v:
+      name: "Adaptive retry floor"
+      description: "Lowest intermediate discharge target after repeated BMS charge rejection."
+      default: 3.40
+      selector:
+        number:
+          min: 3.30
+          max: 3.55
+          step: 0.01
+          unit_of_measurement: V
+          mode: box
+
+    adaptive_resume_step_v:
+      name: "Adaptive retry step"
+      description: "Voltage reduction applied after a confirmed sequence of rejected charge samples."
+      default: 0.01
+      selector:
+        number:
+          min: 0.005
+          max: 0.05
+          step: 0.005
+          unit_of_measurement: V
+          mode: box
+
+    top_charge_power_w:
+      name: "Regulated top-charge power"
+      description: "Manual charge power used in the top balancing zone."
+      default: 95
+      selector:
+        number:
+          min: 25
+          max: 500
+          step: 5
+          unit_of_measurement: W
+          mode: box
+
+    discharge_power_w:
+      name: "Balancing discharge power"
+      description: "Manual discharge power used for intermediate and final discharges."
+      default: 200
+      selector:
+        number:
+          min: 25
+          max: 1000
+          step: 5
+          unit_of_measurement: W
+          mode: box
+
+    measurement_wait_s:
+      name: "Measurement rest time"
+      description: "Seconds to leave the battery idle before reading the cell delta."
+      default: 60
+      selector:
+        number:
+          min: 10
+          max: 300
+          step: 5
+          unit_of_measurement: s
+          mode: box
+
+    charge_engage_grace_s:
+      name: "Charge engage grace"
+      description: "Seconds allowed for a new charge command to engage before zero power can count as rejection."
+      default: 10
+      selector:
+        number:
+          min: 5
+          max: 60
+          step: 1
+          unit_of_measurement: s
+          mode: box
+
+    rejection_samples:
+      name: "Rejected-charge samples"
+      description: "Consecutive approximately-zero-power samples required to lower the retry voltage."
+      default: 3
+      selector:
+        number:
+          min: 1
+          max: 10
+          step: 1
+          mode: box
+
+    soc_maximo_normal:
+      name: "Normal SOC maximum to restore"
+      description: "The normal per-battery SOC limit restored on every exit, including after a restart."
+      default: 100
+      selector:
+        number:
+          min: 5
+          max: 100
+          step: 1
+          unit_of_measurement: "%"
+          mode: box
+
+variables:
+  run_request: !input run_request
+  battery_device: !input battery_device
+  battery_name: >-
+    {{ device_attr(battery_device, 'name_by_user')
+       or device_attr(battery_device, 'name')
+       or 'Marstek battery' }}
+  battery_manual_mode_override: !input battery_manual_mode_override
+  battery_soc_override: !input battery_soc_override
+  battery_power_override: !input battery_power_override
+  max_cell_voltage_override: !input max_cell_voltage_override
+  min_cell_voltage_override: !input min_cell_voltage_override
+  cell_delta_override: !input cell_delta_override
+  force_mode_override: !input force_mode_override
+  set_charge_power_override: !input set_charge_power_override
+  set_discharge_power_override: !input set_discharge_power_override
+  max_charge_power_override: !input max_charge_power_override
+  max_soc_override: !input max_soc_override
+  battery_manual_mode: >-
+    {%- set override = battery_manual_mode_override | trim -%}
+    {%- if override -%}
+      {{ override }}
+    {%- else -%}
+      {%- set candidates = device_entities(battery_device)
+          | select('match', '^switch\\..*_battery_manual_mode$') | list -%}
+      {{ candidates[0] if candidates else '' }}
+    {%- endif -%}
+  battery_soc: >-
+    {%- set override = battery_soc_override | trim -%}
+    {%- if override -%}
+      {{ override }}
+    {%- else -%}
+      {%- set candidates = device_entities(battery_device)
+          | select('match', '^sensor\\..*_battery_soc$') | list -%}
+      {{ candidates[0] if candidates else '' }}
+    {%- endif -%}
+  battery_power: >-
+    {%- set override = battery_power_override | trim -%}
+    {%- if override -%}
+      {{ override }}
+    {%- else -%}
+      {%- set candidates = device_entities(battery_device)
+          | select('match', '^sensor\\..*_battery_power$') | list -%}
+      {{ candidates[0] if candidates else '' }}
+    {%- endif -%}
+  max_cell_voltage: >-
+    {%- set override = max_cell_voltage_override | trim -%}
+    {%- if override -%}
+      {{ override }}
+    {%- else -%}
+      {%- set candidates = device_entities(battery_device)
+          | select('match', '^sensor\\..*_max_cell_voltage$') | list -%}
+      {{ candidates[0] if candidates else '' }}
+    {%- endif -%}
+  min_cell_voltage: >-
+    {%- set override = min_cell_voltage_override | trim -%}
+    {%- if override -%}
+      {{ override }}
+    {%- else -%}
+      {%- set candidates = device_entities(battery_device)
+          | select('match', '^sensor\\..*_min_cell_voltage$') | list -%}
+      {{ candidates[0] if candidates else '' }}
+    {%- endif -%}
+  cell_delta: >-
+    {%- set override = cell_delta_override | trim -%}
+    {%- if override -%}
+      {{ override }}
+    {%- else -%}
+      {%- set candidates = device_entities(battery_device)
+          | select('match', '^sensor\\..*_cell_delta$') | list -%}
+      {{ candidates[0] if candidates else '' }}
+    {%- endif -%}
+  force_mode: >-
+    {%- set override = force_mode_override | trim -%}
+    {%- if override -%}
+      {{ override }}
+    {%- else -%}
+      {%- set candidates = device_entities(battery_device)
+          | select('match', '^select\\..*_force_mode$') | list -%}
+      {{ candidates[0] if candidates else '' }}
+    {%- endif -%}
+  set_charge_power: >-
+    {%- set override = set_charge_power_override | trim -%}
+    {%- if override -%}
+      {{ override }}
+    {%- else -%}
+      {%- set candidates = device_entities(battery_device)
+          | select('match', '^number\\..*_set_charge_power$') | list -%}
+      {{ candidates[0] if candidates else '' }}
+    {%- endif -%}
+  set_discharge_power: >-
+    {%- set override = set_discharge_power_override | trim -%}
+    {%- if override -%}
+      {{ override }}
+    {%- else -%}
+      {%- set candidates = device_entities(battery_device)
+          | select('match', '^number\\..*_set_discharge_power$') | list -%}
+      {{ candidates[0] if candidates else '' }}
+    {%- endif -%}
+  max_charge_power: >-
+    {%- set override = max_charge_power_override | trim -%}
+    {%- if override -%}
+      {{ override }}
+    {%- else -%}
+      {%- set candidates = device_entities(battery_device)
+          | select('match', '^number\\..*_max_charge_power$') | list -%}
+      {{ candidates[0] if candidates else '' }}
+    {%- endif -%}
+  max_soc: >-
+    {%- set override = max_soc_override | trim -%}
+    {%- if override -%}
+      {{ override }}
+    {%- else -%}
+      {%- set candidates = device_entities(battery_device)
+          | select('match', '^number\\..*_charging_cutoff_capacity$') | list -%}
+      {{ candidates[0] if candidates else '' }}
+    {%- endif -%}
+  top_zone_voltage_v: !input top_zone_voltage_v
+  charge_stop_voltage_v: !input charge_stop_voltage_v
+  final_discharge_voltage_v: !input final_discharge_voltage_v
+  target_delta_v: !input target_delta_v
+  adaptive_min_resume_voltage_v: !input adaptive_min_resume_voltage_v
+  adaptive_resume_step_v: !input adaptive_resume_step_v
+  top_charge_power_w: !input top_charge_power_w
+  discharge_power_w: !input discharge_power_w
+  measurement_wait_s: !input measurement_wait_s
+  charge_engage_grace_s: !input charge_engage_grace_s
+  rejection_samples: !input rejection_samples
+  soc_maximo_normal: !input soc_maximo_normal
+  force_mode_idle: >-
+    {% set options = state_attr(force_mode, 'options') or [] %}
+    {{ 'None' if 'None' in options else 'stop' if 'stop' in options else 'none' if 'none' in options else 'standby' }}
+  # A pure template result of the canonical option "None" is parsed by Home
+  # Assistant as Python None. The service actions therefore use a static
+  # "None" value when that option is advertised and only template aliases.
+  force_mode_has_canonical_idle: >-
+    {{ 'None' in (state_attr(force_mode, 'options') or []) }}
+  force_mode_idle_alias: >-
+    {% set options = state_attr(force_mode, 'options') or [] %}
+    {{ 'stop' if 'stop' in options else 'none' if 'none' in options else 'standby' }}
+  force_mode_charge: >-
+    {% set options = state_attr(force_mode, 'options') or [] %}
+    {{ 'Charge' if 'Charge' in options else 'charge' if 'charge' in options else 'Charge' }}
+  force_mode_discharge: >-
+    {% set options = state_attr(force_mode, 'options') or [] %}
+    {{ 'Discharge' if 'Discharge' in options else 'discharge' if 'discharge' in options else 'Discharge' }}
+  request_off_requires_cleanup: >-
+    {% set mode = states(force_mode) %}
+    {{ is_state(battery_manual_mode, 'on') and (
+         mode not in [force_mode_idle, 'None', 'stop', 'none', 'standby']
+         or states(set_charge_power) | float(0) > 0
+         or states(set_discharge_power) | float(0) > 0
+         or (states(max_soc) | float(-1)) != (soc_maximo_normal | float(-2))
+       ) }}
+
+trigger:
+  - platform: state
+    entity_id: !input run_request
+    to: "on"
+    id: run_requested
+  - platform: state
+    entity_id: !input run_request
+    to: "off"
+    id: run_cancelled
+  - platform: homeassistant
+    event: start
+    id: homeassistant_start
+
+condition: []
+
+# Keep an active run alive until its own cleanup can render the initial delta,
+# final delta and duration when the user turns the request helper off.
+mode: queued
+
+action:
+  # A request-off trigger can be generated by the blueprint itself at normal
+  # completion. Only repeat cleanup when the selected battery still looks like
+  # it has an active command or a temporary SOC limit.
+  - choose:
+      - alias: "Ignore an already-clean request-off trigger"
+        conditions:
+          - condition: template
+            value_template: "{{ is_state(run_request, 'off') and not request_off_requires_cleanup }}"
+        sequence:
+          - stop: "The balance request is already off and the battery is idle."
+      - alias: "Clean up a request cancelled before the run body completed"
+        conditions:
+          - condition: template
+            value_template: "{{ is_state(run_request, 'off') and request_off_requires_cleanup }}"
+        sequence:
+          - service: number.set_value
+            target:
+              entity_id: "{{ set_charge_power }}"
+            data:
+              value: 0
+            continue_on_error: true
+          - service: number.set_value
+            target:
+              entity_id: "{{ set_discharge_power }}"
+            data:
+              value: 0
+            continue_on_error: true
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ force_mode_has_canonical_idle }}"
+                sequence:
+                  - service: select.select_option
+                    target:
+                      entity_id: "{{ force_mode }}"
+                    data:
+                      option: "None"
+                    continue_on_error: true
+            default:
+              - service: select.select_option
+                target:
+                  entity_id: "{{ force_mode }}"
+                data:
+                  option: "{{ force_mode_idle_alias }}"
+                continue_on_error: true
+          - wait_template: >-
+              {{ states(set_charge_power) | float(-1) <= 0
+                 and states(set_discharge_power) | float(-1) <= 0
+                 and states(force_mode) in [force_mode_idle, 'None', 'stop', 'none', 'standby'] }}
+            timeout: "00:00:15"
+            continue_on_timeout: true
+          - variables:
+              off_cleanup_idle_ok: >-
+                {{ states(set_charge_power) | float(-1) <= 0
+                   and states(set_discharge_power) | float(-1) <= 0
+                   and states(force_mode) in [force_mode_idle, 'None', 'stop', 'none', 'standby'] }}
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ off_cleanup_idle_ok }}"
+                sequence:
+                  - service: number.set_value
+                    target:
+                      entity_id: "{{ max_soc }}"
+                    data:
+                      value: "{{ soc_maximo_normal | float(100) }}"
+                    continue_on_error: true
+                  - wait_template: >-
+                      {{ states(max_soc) | float(-1) == soc_maximo_normal | float(100) }}
+                    timeout: "00:00:15"
+                    continue_on_timeout: true
+                  - variables:
+                      off_cleanup_soc_ok: >-
+                        {{ states(max_soc) | float(-1) == soc_maximo_normal | float(100) }}
+                  - choose:
+                      - conditions:
+                          - condition: template
+                            value_template: "{{ off_cleanup_soc_ok }}"
+                        sequence:
+                          - service: switch.turn_off
+                            target:
+                              entity_id: "{{ battery_manual_mode }}"
+                            continue_on_error: true
+                          - wait_template: "{{ is_state(battery_manual_mode, 'off') }}"
+                            timeout: "00:00:15"
+                            continue_on_timeout: true
+          # The active run publishes the result notification. This recovery
+          # branch only handles a request-off trigger that arrives after the
+          # run has already exited, so it must not publish a second notice.
+          - stop: "The balance request was cancelled."
+
+  # Validate before taking ownership or writing a power command.
+  - variables:
+      validation_error: >-
+        {% set ns = namespace(errors=[]) %}
+        {% set device_entity_ids = device_entities(battery_device) %}
+        {% set required_entities = [
+          ('Battery Manual Mode', battery_manual_mode),
+          ('Battery SOC', battery_soc),
+          ('Battery power', battery_power),
+          ('Maximum cell voltage', max_cell_voltage),
+          ('Minimum cell voltage', min_cell_voltage),
+          ('Force mode', force_mode),
+          ('Manual charge power', set_charge_power),
+          ('Manual discharge power', set_discharge_power),
+          ('Configured maximum charge power', max_charge_power),
+          ('Maximum SOC', max_soc)
+        ] %}
+        {% for label, entity_id in required_entities %}
+          {% if entity_id | trim == '' %}
+            {% set ns.errors = ns.errors + [label ~ ' could not be discovered on the selected device; set its override'] %}
+          {% elif entity_id not in device_entity_ids %}
+            {% set ns.errors = ns.errors + [label ~ ' (' ~ entity_id ~ ') does not belong to the selected device'] %}
+          {% elif states(entity_id) in ['unknown', 'unavailable', 'none', ''] %}
+            {% set ns.errors = ns.errors + [label ~ ' (' ~ entity_id ~ ') is unavailable'] %}
+          {% endif %}
+        {% endfor %}
+        {% if cell_delta | trim != '' and cell_delta not in device_entity_ids %}
+          {% set ns.errors = ns.errors + ['Cell Delta (' ~ cell_delta ~ ') does not belong to the selected device'] %}
+        {% endif %}
+        {% for label, entity_id in [
+          ('Battery SOC', battery_soc),
+          ('Battery power', battery_power),
+          ('Maximum cell voltage', max_cell_voltage),
+          ('Minimum cell voltage', min_cell_voltage),
+          ('Configured maximum charge power', max_charge_power),
+          ('Maximum SOC', max_soc)
+        ] %}
+          {% if entity_id | trim != '' and not is_number(states(entity_id)) %}
+            {% set ns.errors = ns.errors + [label ~ ' (' ~ entity_id ~ ') is not numeric'] %}
+          {% endif %}
+        {% endfor %}
+        {% set options = state_attr(force_mode, 'options') or [] %}
+        {% if not ('None' in options or 'stop' in options or 'none' in options or 'standby' in options) %}
+          {% set ns.errors = ns.errors + ['force mode has no idle option'] %}
+        {% endif %}
+        {% if not ('Charge' in options or 'charge' in options) %}
+          {% set ns.errors = ns.errors + ['force mode has no charge option'] %}
+        {% endif %}
+        {% if not ('Discharge' in options or 'discharge' in options) %}
+          {% set ns.errors = ns.errors + ['force mode has no discharge option'] %}
+        {% endif %}
+        {% set top = top_zone_voltage_v | float(0) %}
+        {% set stop = charge_stop_voltage_v | float(0) %}
+        {% set final = final_discharge_voltage_v | float(0) %}
+        {% set vmax = states(max_cell_voltage) | float(0) %}
+        {% set vmin = states(min_cell_voltage) | float(0) %}
+        {% if vmin > vmax %}
+          {% set ns.errors = ns.errors + ['minimum cell voltage exceeds maximum cell voltage'] %}
+        {% endif %}
+        {% if final > top or top >= stop %}
+          {% set ns.errors = ns.errors + ['voltages must satisfy final <= top < charge stop'] %}
+        {% endif %}
+        {% if adaptive_min_resume_voltage_v | float(0) > top %}
+          {% set ns.errors = ns.errors + ['adaptive retry floor must not exceed top-zone voltage'] %}
+        {% endif %}
+        {% set charge_min = state_attr(set_charge_power, 'min') | float(0) %}
+        {% set charge_max = state_attr(set_charge_power, 'max') | float(100000) %}
+        {% set discharge_min = state_attr(set_discharge_power, 'min') | float(0) %}
+        {% set discharge_max = state_attr(set_discharge_power, 'max') | float(100000) %}
+        {% if top_charge_power_w | float(0) < charge_min or top_charge_power_w | float(0) > charge_max %}
+          {% set ns.errors = ns.errors + ['top charge power is outside the charge number range'] %}
+        {% endif %}
+        {% if (top_charge_power_w | float(0)) > (states(max_charge_power) | float(0)) %}
+          {% set ns.errors = ns.errors + ['top charge power exceeds the configured maximum charge power'] %}
+        {% endif %}
+        {% if discharge_power_w | float(0) < discharge_min or discharge_power_w | float(0) > discharge_max %}
+          {% set ns.errors = ns.errors + ['discharge power is outside the discharge number range'] %}
+        {% endif %}
+        {% set soc_min = state_attr(max_soc, 'min') | float(0) %}
+        {% set soc_max = state_attr(max_soc, 'max') | float(100) %}
+        {% if 100 < soc_min or 100 > soc_max or soc_maximo_normal | float(0) < soc_min or soc_maximo_normal | float(0) > soc_max %}
+          {% set ns.errors = ns.errors + ['the selected SOC number cannot represent 100% and the normal limit'] %}
+        {% endif %}
+        {% if ns.errors | length > 0 %}{{ ns.errors | join('; ') }}{% endif %}
+
+  - choose:
+      - alias: "Notify invalid configuration"
+        conditions:
+          - condition: template
+            value_template: "{{ validation_error | trim != '' }}"
+        sequence:
+          - service: persistent_notification.create
+            data:
+              title: "Marstek active balancing not started"
+              message: >-
+                The blueprint did not take control because its inputs or
+                telemetry failed validation: {{ validation_error }}
+              notification_id: "omnibattery_marstek_active_balance_invalid_{{ run_request | replace('.', '_') }}"
+          - service: input_boolean.turn_off
+            target:
+              entity_id: !input run_request
+          - stop: "The active-balance inputs are invalid."
+
+  # Acquire the per-battery ownership switch before any manual setpoint write.
+  - service: switch.turn_on
+    target:
+      entity_id: "{{ battery_manual_mode }}"
+    continue_on_error: true
+  - wait_template: "{{ is_state(battery_manual_mode, 'on') }}"
+    timeout: "00:00:15"
+    continue_on_timeout: true
+  - choose:
+      - alias: "Abort if manual ownership was not acquired"
+        conditions:
+          - condition: template
+            value_template: "{{ not is_state(battery_manual_mode, 'on') }}"
+        sequence:
+          - service: persistent_notification.create
+            data:
+              title: "Marstek active balancing not started"
+              message: >-
+                Battery Manual Mode could not be activated and held ON. No
+                power command was sent. Check RS485 control and the selected
+                entity before trying again.
+              notification_id: "omnibattery_marstek_active_balance_ownership_{{ run_request | replace('.', '_') }}"
+          - service: input_boolean.turn_off
+            target:
+              entity_id: !input run_request
+          - stop: "Battery Manual Mode could not be acquired."
+
+  - variables:
+      phase: "PRE_TOP_CHARGE"
+      run_error: ""
+      retry_voltage: "{{ top_zone_voltage_v | float(3.49) }}"
+      started_at: "{{ as_timestamp(now()) }}"
+      measurement_index: 0
+      initial_delta_v: >-
+        {%- if cell_delta | trim != '' and is_number(states(cell_delta)) -%}
+        {{ (states(cell_delta) | float(0) / 1000) | round(4) }}
+        {%- else -%}
+        unknown
+        {%- endif -%}
+      last_delta_v: >-
+        {%- if cell_delta | trim != '' and is_number(states(cell_delta)) -%}
+        {{ (states(cell_delta) | float(0) / 1000) | round(4) }}
+        {%- else -%}
+        unknown
+        {%- endif -%}
+
+  - variables:
+      initial_delta_text: >-
+        {%- if is_number(initial_delta_v) -%}
+        {{ (initial_delta_v | float(0) * 1000) | round(0) | int }} mV
+        {%- else -%}
+        n/a
+        {%- endif -%}
+
+  # Ensure a known idle state, then temporarily allow the battery to reach 100%.
+  - service: number.set_value
+    target:
+      entity_id: "{{ set_charge_power }}"
+    data:
+      value: 0
+    continue_on_error: true
+  - service: number.set_value
+    target:
+      entity_id: "{{ set_discharge_power }}"
+    data:
+      value: 0
+    continue_on_error: true
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ force_mode_has_canonical_idle }}"
+        sequence:
+          - service: select.select_option
+            target:
+              entity_id: "{{ force_mode }}"
+            data:
+              option: "None"
+            continue_on_error: true
+    default:
+      - service: select.select_option
+        target:
+          entity_id: "{{ force_mode }}"
+        data:
+          option: "{{ force_mode_idle_alias }}"
+        continue_on_error: true
+  - delay:
+      seconds: 2
+  - service: number.set_value
+    target:
+      entity_id: "{{ max_soc }}"
+    data:
+      value: 100
+    continue_on_error: true
+  - wait_template: "{{ is_number(states(max_soc)) and states(max_soc) | float(-1) >= 99.5 }}"
+    timeout: "00:00:15"
+    continue_on_timeout: true
+  - variables:
+      max_soc_ready: "{{ is_number(states(max_soc)) and states(max_soc) | float(-1) >= 99.5 }}"
+  - choose:
+      - alias: "Stop after a failed temporary SOC-limit write"
+        conditions:
+          - condition: template
+            value_template: "{{ not max_soc_ready }}"
+        sequence:
+          - variables:
+              run_error: "The temporary 100% SOC limit could not be confirmed."
+      - alias: "Start the state machine"
+        conditions:
+          - condition: template
+            value_template: "{{ max_soc_ready }}"
+        sequence:
+          - service: persistent_notification.create
+            data:
+              title: "🔋 Active balancing started - {{ battery_name }}"
+              message: |-
+                📊 Initial delta: {{ initial_delta_text }}
+                🎯 Runs until delta ≤ {{ (target_delta_v | float(0.03) * 1000) | round(0) | int }} mV or you stop it.
+                🚫 Battery paused from normal control while balancing.
+              notification_id: "omnibattery_marstek_active_balance_started_{{ run_request | replace('.', '_') }}"
+
+          - repeat:
+              while:
+                - condition: template
+                  value_template: >-
+                    {{ run_error | trim == ''
+                       and phase not in ['DONE', 'ERROR']
+                       and is_state(run_request, 'on')
+                       and is_state(battery_manual_mode, 'on') }}
+              sequence:
+                - choose:
+                    - alias: "PRE_TOP_CHARGE"
+                      conditions:
+                        - condition: template
+                          value_template: "{{ phase == 'PRE_TOP_CHARGE' }}"
+                      sequence:
+                        - service: number.set_value
+                          target:
+                            entity_id: "{{ set_discharge_power }}"
+                          data:
+                            value: 0
+                          continue_on_error: true
+                        - service: number.set_value
+                          target:
+                            entity_id: "{{ set_charge_power }}"
+                          data:
+                            value: "{{ states(max_charge_power) | float(0) }}"
+                          continue_on_error: true
+                        - service: select.select_option
+                          target:
+                            entity_id: "{{ force_mode }}"
+                          data:
+                            option: "{{ force_mode_charge }}"
+                          continue_on_error: true
+                        - variables:
+                            charge_leg_started: "{{ as_timestamp(now()) }}"
+                            pre_top_stalled: false
+                        - delay:
+                            seconds: 2
+                        - repeat:
+                            while:
+                              - condition: template
+                                value_template: >-
+                                  {{ is_state(run_request, 'on')
+                                     and is_state(battery_manual_mode, 'on')
+                                     and is_number(states(battery_soc))
+                                     and is_number(states(battery_power))
+                                     and is_number(states(max_cell_voltage))
+                                     and (states(max_cell_voltage) | float(0)) < (top_zone_voltage_v | float(3.49))
+                                     and (states(battery_soc) | float(0)) < 99
+                                     and not pre_top_stalled }}
+                            sequence:
+                              - delay:
+                                  seconds: 2
+                              - variables:
+                                  pre_top_stalled: >-
+                                    {% set soc = states(battery_soc) | float(0) %}
+                                    {% set power = states(battery_power) | float(9999) %}
+                                    {{ soc >= 95
+                                       and power | abs <= 10
+                                       and (as_timestamp(now()) - charge_leg_started | float(0)) >= (charge_engage_grace_s | float(10)) }}
+                        - choose:
+                            - conditions:
+                                - condition: template
+                                  value_template: >-
+                                    {{ is_state(run_request, 'on')
+                                       and is_state(battery_manual_mode, 'on')
+                                       and (not is_number(states(battery_soc))
+                                            or not is_number(states(battery_power))
+                                            or not is_number(states(max_cell_voltage))) }}
+                              sequence:
+                                - variables:
+                                    run_error: "Telemetry became invalid during the initial climb."
+                          default:
+                            - variables:
+                                phase: "CHARGE"
+
+                    - alias: "CHARGE"
+                      conditions:
+                        - condition: template
+                          value_template: "{{ phase == 'CHARGE' }}"
+                      sequence:
+                        - service: number.set_value
+                          target:
+                            entity_id: "{{ set_discharge_power }}"
+                          data:
+                            value: 0
+                          continue_on_error: true
+                        - service: number.set_value
+                          target:
+                            entity_id: "{{ set_charge_power }}"
+                          data:
+                            value: "{{ top_charge_power_w | float(95) }}"
+                          continue_on_error: true
+                        - service: select.select_option
+                          target:
+                            entity_id: "{{ force_mode }}"
+                          data:
+                            option: "{{ force_mode_charge }}"
+                          continue_on_error: true
+                        - variables:
+                            charge_leg_started: "{{ as_timestamp(now()) }}"
+                            rejection_count: 0
+                            charge_seen_power: false
+                        - delay:
+                            seconds: 2
+                        - repeat:
+                            while:
+                              - condition: template
+                                value_template: >-
+                                  {{ is_state(run_request, 'on')
+                                     and is_state(battery_manual_mode, 'on')
+                                     and is_number(states(battery_power))
+                                     and is_number(states(max_cell_voltage))
+                                     and is_number(states(min_cell_voltage))
+                                     and (states(max_cell_voltage) | float(0)) < (charge_stop_voltage_v | float(3.60))
+                                     and (rejection_count | int(0)) < (rejection_samples | int(3)) }}
+                            sequence:
+                              - delay:
+                                  seconds: 2
+                              - variables:
+                                  charge_seen_power: >-
+                                    {{ charge_seen_power or states(battery_power) | float(0) > 10 }}
+                                  rejection_count: >-
+                                    {% set power = states(battery_power) | float(9999) %}
+                                    {% set elapsed = as_timestamp(now()) - charge_leg_started | float(0) %}
+                                    {% if elapsed < charge_engage_grace_s | float(10) %}
+                                      0
+                                    {% elif power | abs <= 10 %}
+                                      {{ rejection_count | int(0) + 1 }}
+                                    {% else %}
+                                      0
+                                    {% endif %}
+                        - choose:
+                            - conditions:
+                                - condition: template
+                                  value_template: >-
+                                    {{ is_state(run_request, 'on')
+                                       and is_state(battery_manual_mode, 'on')
+                                       and (not is_number(states(battery_power))
+                                            or not is_number(states(max_cell_voltage))
+                                            or not is_number(states(min_cell_voltage))) }}
+                              sequence:
+                                - variables:
+                                    run_error: "Telemetry became invalid during regulated charging."
+                            - conditions:
+                                - condition: template
+                                  value_template: >-
+                                    {{ is_number(states(max_cell_voltage))
+                                       and (states(max_cell_voltage) | float(0)) >= (charge_stop_voltage_v | float(3.60)) }}
+                              sequence:
+                                - variables:
+                                    phase: "WAIT_MEASURE"
+                                    retry_voltage: "{{ top_zone_voltage_v | float(3.49) }}"
+                            - conditions:
+                                - condition: template
+                                  value_template: "{{ rejection_count | int(0) >= rejection_samples | int(3) }}"
+                              sequence:
+                                - variables:
+                                    retry_voltage: >-
+                                      {{ [
+                                           adaptive_min_resume_voltage_v | float(3.40),
+                                           [
+                                             retry_voltage | float(3.49) - adaptive_resume_step_v | float(0.01),
+                                             states(max_cell_voltage) | float(3.49) - adaptive_resume_step_v | float(0.01)
+                                           ] | min
+                                         ] | max | round(3) }}
+                                    phase: "DISCHARGE"
+
+                    - alias: "WAIT_MEASURE"
+                      conditions:
+                        - condition: template
+                          value_template: "{{ phase == 'WAIT_MEASURE' }}"
+                      sequence:
+                        - service: number.set_value
+                          target:
+                            entity_id: "{{ set_charge_power }}"
+                          data:
+                            value: 0
+                          continue_on_error: true
+                        - service: number.set_value
+                          target:
+                            entity_id: "{{ set_discharge_power }}"
+                          data:
+                            value: 0
+                          continue_on_error: true
+                        - choose:
+                            - conditions:
+                                - condition: template
+                                  value_template: "{{ force_mode_has_canonical_idle }}"
+                              sequence:
+                                - service: select.select_option
+                                  target:
+                                    entity_id: "{{ force_mode }}"
+                                  data:
+                                    option: "None"
+                                  continue_on_error: true
+                          default:
+                            - service: select.select_option
+                              target:
+                                entity_id: "{{ force_mode }}"
+                              data:
+                                option: "{{ force_mode_idle_alias }}"
+                              continue_on_error: true
+                        - delay:
+                            seconds: "{{ measurement_wait_s | int(60) }}"
+                        - choose:
+                            - conditions:
+                                - condition: template
+                                  value_template: >-
+                                    {{ is_state(run_request, 'on')
+                                       and is_state(battery_manual_mode, 'on')
+                                       and (not is_number(states(max_cell_voltage))
+                                            or not is_number(states(min_cell_voltage))) }}
+                              sequence:
+                                - variables:
+                                    run_error: "Cell-voltage telemetry became invalid during the measurement rest."
+                          default:
+                            - variables:
+                                last_delta_v: >-
+                                  {{ (states(max_cell_voltage) | float(0) - states(min_cell_voltage) | float(0)) | round(4) }}
+                            - choose:
+                                - conditions:
+                                    - condition: template
+                                      value_template: >-
+                                        {{ is_state(run_request, 'on')
+                                           and is_state(battery_manual_mode, 'on') }}
+                                  sequence:
+                                    - variables:
+                                        measurement_index: "{{ measurement_index | int(0) + 1 }}"
+                                    - event: omnibattery_balance_measurement_ready
+                                      event_data:
+                                        device_id: "{{ battery_device }}"
+                                        phase: "WAIT_MEASURE"
+                                        measurement_id: "{{ started_at }}:{{ measurement_index }}"
+                            - choose:
+                                - conditions:
+                                    - condition: template
+                                      value_template: "{{ last_delta_v | float(0) <= target_delta_v | float(0.03) }}"
+                                  sequence:
+                                    - variables:
+                                        phase: "FINAL_DISCHARGE"
+                              default:
+                                - variables:
+                                    phase: "DISCHARGE"
+
+                    - alias: "DISCHARGE"
+                      conditions:
+                        - condition: template
+                          value_template: "{{ phase == 'DISCHARGE' }}"
+                      sequence:
+                        - variables:
+                            discharge_target_voltage: "{{ [retry_voltage | float(3.49), top_zone_voltage_v | float(3.49)] | min }}"
+                        - choose:
+                            - conditions:
+                                - condition: template
+                                  value_template: >-
+                                    {{ is_number(states(max_cell_voltage))
+                                       and (states(max_cell_voltage) | float(0)) > (discharge_target_voltage | float(3.49)) }}
+                              sequence:
+                                - service: number.set_value
+                                  target:
+                                    entity_id: "{{ set_charge_power }}"
+                                  data:
+                                    value: 0
+                                  continue_on_error: true
+                                - service: number.set_value
+                                  target:
+                                    entity_id: "{{ set_discharge_power }}"
+                                  data:
+                                    value: "{{ discharge_power_w | float(200) }}"
+                                  continue_on_error: true
+                                - service: select.select_option
+                                  target:
+                                    entity_id: "{{ force_mode }}"
+                                  data:
+                                    option: "{{ force_mode_discharge }}"
+                                  continue_on_error: true
+                                - delay:
+                                    seconds: 2
+                                - repeat:
+                                    while:
+                                      - condition: template
+                                        value_template: >-
+                                          {{ is_state(run_request, 'on')
+                                             and is_state(battery_manual_mode, 'on')
+                                             and is_number(states(max_cell_voltage))
+                                             and (states(max_cell_voltage) | float(0)) > (discharge_target_voltage | float(3.49)) }}
+                                    sequence:
+                                      - delay:
+                                          seconds: 2
+                                - choose:
+                                    - conditions:
+                                        - condition: template
+                                          value_template: >-
+                                            {{ is_state(run_request, 'on')
+                                               and is_state(battery_manual_mode, 'on')
+                                               and not is_number(states(max_cell_voltage)) }}
+                                      sequence:
+                                        - variables:
+                                            run_error: "Telemetry became invalid during intermediate discharge."
+                          default:
+                            - variables:
+                                phase: "CHARGE"
+
+                    - alias: "FINAL_DISCHARGE"
+                      conditions:
+                        - condition: template
+                          value_template: "{{ phase == 'FINAL_DISCHARGE' }}"
+                      sequence:
+                        - choose:
+                            - conditions:
+                                - condition: template
+                                  value_template: >-
+                                    {{ is_number(states(max_cell_voltage))
+                                       and (states(max_cell_voltage) | float(0)) > (final_discharge_voltage_v | float(3.48)) }}
+                              sequence:
+                                - service: number.set_value
+                                  target:
+                                    entity_id: "{{ set_charge_power }}"
+                                  data:
+                                    value: 0
+                                  continue_on_error: true
+                                - service: number.set_value
+                                  target:
+                                    entity_id: "{{ set_discharge_power }}"
+                                  data:
+                                    value: "{{ discharge_power_w | float(200) }}"
+                                  continue_on_error: true
+                                - service: select.select_option
+                                  target:
+                                    entity_id: "{{ force_mode }}"
+                                  data:
+                                    option: "{{ force_mode_discharge }}"
+                                  continue_on_error: true
+                                - delay:
+                                    seconds: 2
+                                - repeat:
+                                    while:
+                                      - condition: template
+                                        value_template: >-
+                                          {{ is_state(run_request, 'on')
+                                             and is_state(battery_manual_mode, 'on')
+                                             and is_number(states(max_cell_voltage))
+                                             and (states(max_cell_voltage) | float(0)) > (final_discharge_voltage_v | float(3.48)) }}
+                                    sequence:
+                                      - delay:
+                                          seconds: 2
+                                - choose:
+                                    - conditions:
+                                        - condition: template
+                                          value_template: >-
+                                            {{ is_state(run_request, 'on')
+                                               and is_state(battery_manual_mode, 'on')
+                                               and not is_number(states(max_cell_voltage)) }}
+                                      sequence:
+                                        - variables:
+                                            run_error: "Telemetry became invalid during final discharge."
+                          default:
+                            - variables:
+                                phase: "DONE"
+
+  # All paths after ownership acquisition converge here. A failed confirmation
+  # intentionally prevents releasing Battery Manual Mode.
+  - variables:
+      cleanup_reason: >-
+        {% if phase == 'DONE' %}completed
+        {% elif run_error | trim != '' %}error
+        {% elif not is_state(battery_manual_mode, 'on') %}manual_mode_released
+        {% else %}cancelled{% endif %}
+      cleanup_final_delta_v: >-
+        {%- if is_number(last_delta_v) -%}
+        {{ last_delta_v | float(0) | round(4) }}
+        {%- else -%}
+        unknown
+        {%- endif -%}
+
+  - service: number.set_value
+    target:
+      entity_id: "{{ set_charge_power }}"
+    data:
+      value: 0
+    continue_on_error: true
+  - service: number.set_value
+    target:
+      entity_id: "{{ set_discharge_power }}"
+    data:
+      value: 0
+    continue_on_error: true
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ force_mode_has_canonical_idle }}"
+        sequence:
+          - service: select.select_option
+            target:
+              entity_id: "{{ force_mode }}"
+            data:
+              option: "None"
+            continue_on_error: true
+    default:
+      - service: select.select_option
+        target:
+          entity_id: "{{ force_mode }}"
+        data:
+          option: "{{ force_mode_idle_alias }}"
+        continue_on_error: true
+  - wait_template: >-
+      {{ states(set_charge_power) | float(-1) <= 0
+         and states(set_discharge_power) | float(-1) <= 0
+         and states(force_mode) in [force_mode_idle, 'None', 'stop', 'none', 'standby'] }}
+    timeout: "00:00:15"
+    continue_on_timeout: true
+  - variables:
+      cleanup_idle_ok: >-
+        {{ states(set_charge_power) | float(-1) <= 0
+           and states(set_discharge_power) | float(-1) <= 0
+           and states(force_mode) in [force_mode_idle, 'None', 'stop', 'none', 'standby'] }}
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ cleanup_idle_ok }}"
+        sequence:
+          - service: number.set_value
+            target:
+              entity_id: "{{ max_soc }}"
+            data:
+              value: "{{ soc_maximo_normal | float(100) }}"
+            continue_on_error: true
+          - wait_template: >-
+              {{ states(max_soc) | float(-1) == soc_maximo_normal | float(100) }}
+            timeout: "00:00:15"
+            continue_on_timeout: true
+          - variables:
+              cleanup_soc_ok: >-
+                {{ states(max_soc) | float(-1) == soc_maximo_normal | float(100) }}
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ cleanup_soc_ok and is_state(battery_manual_mode, 'on') }}"
+                sequence:
+                  - service: switch.turn_off
+                    target:
+                      entity_id: "{{ battery_manual_mode }}"
+                    continue_on_error: true
+                  - wait_template: "{{ is_state(battery_manual_mode, 'off') }}"
+                    timeout: "00:00:15"
+                    continue_on_timeout: true
+
+  - variables:
+      cleanup_ok: >-
+        {{ cleanup_idle_ok
+           and states(max_soc) | float(-1) == soc_maximo_normal | float(100)
+           and is_state(battery_manual_mode, 'off') }}
+  - variables:
+      cleanup_status: >-
+        {%- if cleanup_reason == 'completed' and cleanup_ok -%}
+        ✅ Delta within range and final discharge complete
+        {%- elif cleanup_reason == 'error' or not cleanup_ok -%}
+        ❌ Stopped with an error{% if run_error | trim != '' %}: {{ run_error }}{% endif %}
+        {%- elif cleanup_reason == 'manual_mode_released' -%}
+        ⚠️ Manual mode released before completion
+        {%- else -%}
+        ✅ Stopped by user
+        {%- endif -%}
+  - variables:
+      cleanup_final_delta_text: >-
+        {%- if is_number(cleanup_final_delta_v) -%}
+        {{ (cleanup_final_delta_v | float(0) * 1000) | round(0) | int }} mV
+        {%- else -%}
+        n/a
+        {%- endif -%}
+      cleanup_improvement_text: >-
+        {%- if is_number(initial_delta_v) and is_number(cleanup_final_delta_v) -%}
+        {{ ((initial_delta_v | float(0) - cleanup_final_delta_v | float(0)) * 1000) | round(0) | int }} mV
+        {%- else -%}
+        n/a
+        {%- endif -%}
+  - variables:
+      cleanup_title: >-
+        {%- if cleanup_ok and cleanup_reason in ['completed', 'cancelled'] -%}
+        ✅ Active balancing finished - {{ battery_name }}
+        {%- else -%}
+        ⚠️ Active balancing stopped - {{ battery_name }}
+        {%- endif -%}
+      cleanup_message: |-
+        {{ cleanup_status }}
+        📊 Delta: {{ initial_delta_text }} → {{ cleanup_final_delta_text }} (improvement {{ cleanup_improvement_text }})
+        ⏱️ Duration: {{ ((as_timestamp(now()) - started_at | float(0)) / 3600) | round(2) }} h
+        {%- if not cleanup_ok %}
+        ⚠️ Battery Manual Mode remains ON as a safety hold; inspect the battery before releasing it.
+        {%- endif %}
+  - service: persistent_notification.create
+    data:
+      title: "{{ cleanup_title }}"
+      message: "{{ cleanup_message }}"
+      notification_id: "omnibattery_marstek_active_balance_result_{{ run_request | replace('.', '_') }}"
+  - service: input_boolean.turn_off
+    target:
+      entity_id: !input run_request
+    continue_on_error: true

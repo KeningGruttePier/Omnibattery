@@ -11,11 +11,17 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
     DOMAIN,
+    CONF_BATTERY_PHASE,
+    CONF_THREE_PHASE_ENABLED,
     CONF_WEEKLY_FULL_CHARGE_DAY,
+    DEFAULT_THREE_PHASE_ENABLED,
+    PHASE_ASSIGNMENT_VALUES,
+    PHASE_UNASSIGNED,
     CONF_PD_TUNING_PROFILE,
     PD_PROFILE_CUSTOM,
     PD_TUNING_PROFILES,
     PD_TUNING_PROFILE_OPTIONS,
+    normalize_battery_phase,
     pd_profile_from_params,
 )
 from .infra.coordinator import MarstekVenusDataUpdateCoordinator
@@ -35,10 +41,15 @@ async def async_setup_entry(
 
     # Add Modbus register selects (per battery)
     for coordinator in coordinators:
+        # Physical phase is metadata for the safety limiter, not a battery
+        # register. It remains available as a live selector whenever the global
+        # protection switch is on.
+        entities.append(BatteryPhaseSelect(hass, entry, coordinator))
         for definition in coordinator.select_definitions:
             entities.append(MarstekVenusSelect(coordinator, definition))
         # Drivers without a force_mode register (Zendure) get a software force
-        # mode; the controller applies it via apply_setpoint in manual mode.
+        # mode; the controller applies it via apply_setpoint while global manual
+        # mode or this battery's individual manual ownership is active.
         if coordinator.needs_software_manual_control:
             entities.append(MarstekManualForceModeSelect(coordinator))
 
@@ -51,6 +62,75 @@ async def async_setup_entry(
     entities.append(PdTuningProfileSelect(hass, entry))
 
     async_add_entities(entities)
+
+
+class BatteryPhaseSelect(CoordinatorEntity, SelectEntity):
+    """Live physical-phase assignment for one battery."""
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        entry: ConfigEntry,
+        coordinator: MarstekVenusDataUpdateCoordinator,
+    ) -> None:
+        """Initialize the phase selector."""
+        super().__init__(coordinator)
+        self.hass = hass
+        self.entry = entry
+
+        self._attr_has_entity_name = True
+        self._attr_translation_key = "battery_phase"
+        self._attr_unique_id = f"{coordinator.device_key}_battery_phase"
+        self.entity_id = english_entity_id("select", coordinator.name, "battery_phase")
+        self._attr_options = list(PHASE_ASSIGNMENT_VALUES)
+        self._attr_icon = "mdi:transmission-tower"
+        self._attr_should_poll = False
+
+    @property
+    def current_option(self) -> str:
+        """Return the normalized live phase assignment."""
+        return normalize_battery_phase(
+            getattr(self.coordinator, "phase", PHASE_UNASSIGNED)
+        )
+
+    @property
+    def available(self) -> bool:
+        """Expose the selector only while three-phase protection is active."""
+        coordinator_available = getattr(self.coordinator, "available", None)
+        if coordinator_available is None:
+            is_available = getattr(self.coordinator, "is_available", None)
+            coordinator_available = (
+                is_available() if callable(is_available) else True
+            )
+        return bool(
+            coordinator_available
+            and self.entry.data.get(
+                CONF_THREE_PHASE_ENABLED, DEFAULT_THREE_PHASE_ENABLED
+            )
+        )
+
+    async def async_select_option(self, option: str) -> None:
+        """Update the phase metadata and persist it for the next restart."""
+        if option not in self._attr_options:
+            raise ValueError(f"Invalid battery phase: {option}")
+        phase = normalize_battery_phase(option)
+        self.coordinator.phase = phase
+        self.coordinator.persist_battery_config(CONF_BATTERY_PHASE, phase)
+        _LOGGER.info("%s: battery phase set to %s", self.coordinator.name, phase)
+        self.async_write_ha_state()
+
+    async def async_added_to_hass(self) -> None:
+        """Refresh availability when the global protection switch changes."""
+        self.async_on_remove(self.entry.add_update_listener(self._handle_entry_update))
+
+    async def _handle_entry_update(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
+        """Re-render the selector after a config-entry update."""
+        self.async_write_ha_state()
+
+    @property
+    def device_info(self):
+        """Return device information for the battery."""
+        return self.coordinator.battery_device_info
 
 
 class MarstekVenusSelect(CoordinatorEntity, SelectEntity):
@@ -230,10 +310,10 @@ MANUAL_FORCE_MODE_OPTIONS = ["None", "Charge", "Discharge"]
 class MarstekManualForceModeSelect(CoordinatorEntity, SelectEntity):
     """Software force mode for drivers without a force_mode register.
 
-    Stores the choice on the coordinator; while the global Manual Mode switch is
-    on, the controller drives the battery to the matching charge/discharge
-    setpoint via apply_setpoint (see _apply_software_manual_setpoints). "None"
-    leaves the battery idle.
+    Stores the choice on the coordinator; while the global Manual Mode switch or
+    this battery's individual manual switch is on, the controller drives the
+    battery to the matching charge/discharge setpoint via apply_setpoint (see
+    _apply_software_manual_setpoints). "None" leaves the battery idle.
     """
 
     def __init__(self, coordinator: MarstekVenusDataUpdateCoordinator) -> None:
@@ -290,5 +370,3 @@ class MarstekManualForceModeSelect(CoordinatorEntity, SelectEntity):
     def device_info(self):
         """Return device information."""
         return self.coordinator.battery_device_info
-
-

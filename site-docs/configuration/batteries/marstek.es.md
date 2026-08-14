@@ -45,8 +45,10 @@ exponer en Home Assistant las entidades Marstek requeridas.
 La página de límites incluye los controles comunes de potencia de carga/descarga,
 SOC y umbral de backup. Marstek también ofrece la **reducción de carga por
 voltaje al 100 %**: cuando el objetivo es 100 %, la carga se limita a 200 W
-desde una tensión máxima de celda de 3,48 V y se detiene a 3,60 V para que la
-integración pueda medir el desequilibrio de celdas tras 60 segundos.
+desde una tensión máxima de celda de 3,48 V. En los modelos Venus E se detiene
+a 3,60 V para que la integración pueda medir el desequilibrio de celdas tras
+60 segundos; en Venus A/D con packs acoplados continúa a 200 W hasta que corta
+la BMS.
 
 Esta protección por tensión y el monitor de equilibrio de celdas son específicos
 de Marstek. Consulta el [Monitor de equilibrio de celdas](../../features/cell-balance-monitor.md)

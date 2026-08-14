@@ -3,6 +3,7 @@
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
+import aiohttp
 import pytest
 import voluptuous as vol
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
@@ -30,6 +31,9 @@ class _Response:
     async def json(self, content_type=None):
         return self._data
 
+    async def read(self):
+        return b"{}"
+
 
 class _Context:
     def __init__(self, response): self.response = response
@@ -48,6 +52,25 @@ def _session(status=None, energy=None, network=None, ota=None):
         _Context(_Response(200, ota or {"self": {"installed_firmware": {"version": "1.9.2"}}})),
     ]
     session.post.return_value = _Context(_Response(200))
+    return session
+
+
+def _connect_session(auth_status=200):
+    session = MagicMock()
+    session.closed = False
+    session.get.side_effect = [
+        _Context(_Response(auth_status, {"strategy": "POWER_STRATEGY_NOM"})),
+        _Context(_Response(200, {
+            "sessy": {
+                "state_of_charge": 0.6,
+                "power": 0,
+                "power_setpoint": 0,
+            },
+            "renewable_energy_phase1": {"power": 0},
+            "renewable_energy_phase2": {"power": 0},
+            "renewable_energy_phase3": {"power": 0},
+        })),
+    ]
     return session
 
 
@@ -72,6 +95,64 @@ def test_sessy_uses_dongle_credentials_for_http_basic_auth():
         "Authorization": "Basic U0VTU1kxMjM0OnNlY3JldA=="
     }
     assert driver.model_label == "Sessy"
+
+
+@pytest.mark.asyncio
+async def test_connect_validates_authenticated_strategy_endpoint(caplog):
+    session = _connect_session(auth_status=401)
+    driver = SessyLocalDriver(
+        "sessy.local",
+        username="SESSY1234",
+        password="secret",
+        session=session,
+    )
+
+    assert await driver.connect() is False
+    assert session.get.call_args_list[0].args[0].endswith(
+        "/api/v1/power/active_strategy"
+    )
+    assert "Reconfigure the battery" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_connect_checks_telemetry_after_authentication():
+    session = _connect_session()
+    driver = SessyLocalDriver(
+        "sessy.local",
+        username="SESSY1234",
+        password="secret",
+        session=session,
+    )
+
+    assert await driver.connect() is True
+    assert [call.args[0].rsplit("/api", 1)[-1] for call in session.get.call_args_list] == [
+        "/v1/power/active_strategy",
+        "/v1/power/status",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_repeated_auth_failures_emit_one_actionable_warning(caplog):
+    session = MagicMock()
+    session.closed = False
+    session.get.side_effect = [
+        _Context(_Response(401)),
+        _Context(_Response(401)),
+    ]
+    driver = SessyLocalDriver(
+        "sessy.local",
+        username="SESSY1234",
+        password="secret",
+        session=session,
+    )
+
+    await driver._get_json("/api/v1/energy/status")
+    await driver._get_json("/api/v1/network/status")
+
+    assert sum(
+        "Sessy local API authentication failed" in record.message
+        for record in caplog.records
+    ) == 1
 
 
 def test_sessy_device_info_exposes_local_ui_and_firmware():
@@ -102,6 +183,30 @@ async def test_setpoint_selects_api_strategy_and_inverts_sign():
     assert result.ok and result.net_power_w == 700
     assert session.post.call_args_list[0].kwargs["json"] == {"strategy": "POWER_STRATEGY_API"}
     assert session.post.call_args_list[1].kwargs["json"] == {"setpoint": -700}
+
+
+@pytest.mark.asyncio
+async def test_setpoint_retries_after_sessy_closes_http_connection():
+    session = _session()
+    session.post.side_effect = [
+        aiohttp.ServerDisconnectedError(),
+        _Context(_Response(200)),
+        _Context(_Response(200)),
+    ]
+
+    result = await SessyLocalDriver("sessy.local", session=session).apply_setpoint(
+        700, read_back=False
+    )
+
+    assert result.ok
+    assert session.post.call_count == 3
+    assert session.post.call_args_list[0].kwargs["json"] == {
+        "strategy": "POWER_STRATEGY_API"
+    }
+    assert session.post.call_args_list[1].kwargs["json"] == {
+        "strategy": "POWER_STRATEGY_API"
+    }
+    assert session.post.call_args_list[2].kwargs["json"] == {"setpoint": -700}
 
 
 @pytest.mark.asyncio
@@ -168,6 +273,8 @@ def test_sessy_reports_counters_but_not_nominal_capacity():
     assert capabilities.has_energy_counters is True
     assert capabilities.has_nominal_capacity is False
     assert capabilities.cycles_from_discharge_only is True
+    assert capabilities.readback_latency_s == 65.0
+    assert capabilities.engage_grace_s == 65.0
 
 
 def test_coordinator_clamps_legacy_sessy_power_limits_before_allocation(monkeypatch):

@@ -56,7 +56,6 @@ subpackages by responsibility.
 | `control/charge_delay.py` | — | Solar charge delay |
 | `control/max_soc_charge.py` | — | 100 % voltage taper / top-of-charge protection |
 | `control/weekly_full_charge.py` | `WeeklyFullChargeManager` | Weekly full charge state, persistence and register-write orchestration |
-| `control/active_balance_mode.py` | — | Active cell-balance measurement |
 | `tracking/consumption_tracker.py` | `ConsumptionTracker` | Consumption history, daily energy accumulators, solar-timing detection, recorder backfill, daily capture |
 | `tracking/balance_monitor.py` | `CellBalanceMonitor` | Post-full-charge cell voltage spread measurement and health history |
 | `tracking/non_responsive_tracker.py` | `NonResponsiveTracker` | Non-responsive battery detection and 5-minute exclusion windows |
@@ -91,6 +90,14 @@ layer.
 `apply_setpoint` returns a `SetpointResult` carrying the applied power, whether
 the write was confirmed by a readback, the measured delivered power, and a
 brand-native state echo the coordinator merges into `coordinator.data`.
+
+Individual manual ownership is coordinated above the driver. On handoff the
+controller verifies an idle (`0 W`) setpoint, then excludes the battery from
+automatic assignments. Drivers without force-mode/setpoint registers (for
+example Zendure and Anker) receive their persisted manual charge/discharge
+setpoint through `apply_setpoint` on each control cycle; an idle (`None`) manual
+selection is deliberately not reasserted, so it does not fight the device's
+own app mode.
 
 ### Capabilities replace version checks
 

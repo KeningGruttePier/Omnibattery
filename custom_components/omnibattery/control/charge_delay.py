@@ -199,7 +199,11 @@ class ChargeDelayManager:
         # only resumes if SOC drops DELAY_SOC_SETPOINT_HYSTERESIS % below it.
         if ctrl._delay_soc_setpoint_enabled:
             min_soc = min(
-                (c.data.get("battery_soc", 100) for c in ctrl.coordinators if c.data),
+                (
+                    c.data.get("battery_soc", 100)
+                    for c in ctrl.coordinators
+                    if c.data and not getattr(c, "battery_manual_mode_enabled", False)
+                ),
                 default=100,
             )
             if not ctrl._delay_setpoint_reached:
@@ -260,15 +264,14 @@ class ChargeDelayManager:
             and not ctrl._balance_monitor_overrides_delay()
         )
         for coordinator in ctrl.coordinators:
+            if getattr(coordinator, "battery_manual_mode_enabled", False):
+                ctrl.remove_charge_block(
+                    "charge_delay_setpoint", coordinator=coordinator
+                )
+                continue
             soc = coordinator.data.get("battery_soc") if coordinator.data else None
-            active_balance_enabled = bool(
-                getattr(coordinator, "active_balance_mode_enabled", False)
-            )
-            # Active balance owns only its selected battery; other batteries at
-            # the floor must retain their individual charge-delay block.
             if (
                 setpoint_active
-                and not active_balance_enabled
                 and soc is not None
                 and soc >= ctrl._delay_soc_setpoint
             ):
@@ -309,6 +312,10 @@ class ChargeDelayManager:
         8. Otherwise → keep delay active
         """
         ctrl = self._controller
+        automatic_batteries = [
+            coordinator for coordinator in ctrl.coordinators
+            if not getattr(coordinator, "battery_manual_mode_enabled", False)
+        ]
 
         now = datetime.now()
         now_h = now.hour + now.minute / 60.0
@@ -364,12 +371,14 @@ class ChargeDelayManager:
 
         # Forecast recovered / valid — clear the transient tracker.
         ctrl._forecast_unavailable_since = None
-        forecast_today = raw_forecast * 0.85  # 15% conservative correction
+        forecast_today = raw_forecast
         status["forecast_kwh"] = raw_forecast
 
         # --- Exception 2: Energy balance check (dynamic, recalculated only when forecast changes) ---
         total_capacity_kwh = sum(
-            c.data.get("battery_total_energy", 0) for c in ctrl.coordinators if c.data
+            c.data.get("battery_total_energy", 0)
+            for c in automatic_batteries
+            if c.data
         )
         if total_capacity_kwh <= 0:
             _LOGGER.info("Charge Delay: Invalid battery capacity - unlocking")
@@ -379,22 +388,18 @@ class ChargeDelayManager:
             ctrl._charge_delay_forecast_cache is None
             or abs(forecast_today - ctrl._charge_delay_forecast_cache) > 0.05
         ):
-            coordinators_with_data = [c for c in ctrl.coordinators if c.data]
+            coordinators_with_data = [c for c in automatic_batteries if c.data]
             avg_soc = (
                 sum(c.data.get("battery_soc", 0) for c in coordinators_with_data)
                 / len(coordinators_with_data)
             ) if coordinators_with_data else 0
-            min_soc_values = [c.min_soc for c in ctrl.coordinators]
+            min_soc_values = [c.min_soc for c in automatic_batteries]
             min_soc = max(min_soc_values) if min_soc_values else 20
             usable_energy_kwh = max(0, ((avg_soc - min_soc) / 100) * total_capacity_kwh)
             avg_consumption_kwh = ctrl._consumption_tracker.get_avg_daily_consumption()
             prev_cache = ctrl._charge_delay_forecast_cache
-            # Binary "is grid needed today?" gate. Use the RAW forecast, not the
-            # 0.85 haircut applied below: the haircut is a conservatism for the
-            # energy SCHEDULING math, but on this all-or-nothing gate it turns a
-            # balanced day (raw forecast ~= consumption) into a false deficit and a
-            # latched pre-dawn unlock (#4). A small deadband absorbs sensor noise so
-            # a near-balanced day still holds for the cheap window. Runtime-tunable.
+            # Binary "is grid needed today?" gate. A small deadband absorbs sensor
+            # noise so a near-balanced day still holds for the cheap window.
             deadband_kwh = ctrl._charge_delay_balance_deadband_kwh
             ctrl._charge_delay_balance_needs_charge = (
                 (usable_energy_kwh + raw_forecast)
@@ -402,11 +407,11 @@ class ChargeDelayManager:
             )
             ctrl._charge_delay_forecast_cache = forecast_today
             _LOGGER.info(
-                "Charge Delay: Forecast %s (raw %.2f, scheduling %.2f kWh) → "
+                "Charge Delay: Forecast %s (%.2f kWh) → "
                 "balance: %.2f usable + %.2f solar = %.2f kWh vs %.2f kWh consumption "
                 "(deadband %.2f) → %s",
                 "initialised" if prev_cache is None else "changed",
-                raw_forecast, forecast_today,
+                forecast_today,
                 usable_energy_kwh, raw_forecast, usable_energy_kwh + raw_forecast,
                 avg_consumption_kwh, deadband_kwh,
                 "grid needed (unlock delay)" if ctrl._charge_delay_balance_needs_charge else "solar sufficient (keep delay)",
@@ -440,7 +445,7 @@ class ChargeDelayManager:
         if now_h >= t_end:
             any_charging = any(
                 (c.data.get("battery_power", 0) or 0) > 0
-                for c in ctrl.coordinators if c.data
+                for c in automatic_batteries if c.data
             )
             if not any_charging:
                 _LOGGER.info("Charge Delay: Past T_end (%.2fh) with no production - unlocking", t_end)
@@ -450,7 +455,7 @@ class ChargeDelayManager:
         # Energy needed to reach target_soc
         energy_needed_kwh = sum(
             (target_soc - c.data.get("battery_soc", 100)) / 100.0 * c.data.get("battery_total_energy", 0)
-            for c in ctrl.coordinators if c.data
+            for c in automatic_batteries if c.data
         )
 
         if energy_needed_kwh <= 0:
@@ -458,7 +463,7 @@ class ChargeDelayManager:
 
         # Charge time estimate
         max_charge_power_kw = ctrl._effective_system_capacity(
-            ctrl.coordinators,
+            automatic_batteries,
             is_charging=True,
         ) / 1000.0
         if max_charge_power_kw <= 0:

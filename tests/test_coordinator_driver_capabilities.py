@@ -78,6 +78,59 @@ def test_marstek_writable_max_charge_skips_software_max():
     )
 
 
+def test_venus_e_v2_v3_keep_a_software_power_cap_during_polling():
+    for version in ("v2", "v3"):
+        coordinator = SimpleNamespace(brand="marstek", battery_version=version)
+        assert (
+            MarstekVenusDataUpdateCoordinator.needs_software_power_cap.fget(
+                coordinator
+            )
+            is True
+        )
+
+    for version in ("vA", "vD"):
+        coordinator = SimpleNamespace(brand="marstek", battery_version=version)
+        assert (
+            MarstekVenusDataUpdateCoordinator.needs_software_power_cap.fget(
+                coordinator
+            )
+            is False
+        )
+
+
+def test_power_limits_expose_normalized_layers_and_legacy_aliases():
+    coordinator = object.__new__(MarstekVenusDataUpdateCoordinator)
+    coordinator._device_max_charge_power = 2400
+    coordinator._device_max_discharge_power = 2200
+    coordinator._configured_max_charge_power = 600
+    coordinator._configured_max_discharge_power = 700
+    coordinator._effective_max_charge_power = 600
+    coordinator._effective_max_discharge_power = 700
+
+    assert coordinator.device_max_charge_power == 2400
+    assert coordinator.device_max_discharge_power == 2200
+    assert coordinator.configured_max_charge_power == 600
+    assert coordinator.configured_max_discharge_power == 700
+    assert coordinator.effective_max_charge_power == 600
+    assert coordinator.effective_max_discharge_power == 700
+    assert coordinator.max_charge_power == coordinator.effective_max_charge_power
+    assert coordinator.max_discharge_power == coordinator.effective_max_discharge_power
+    assert coordinator.user_max_charge_power == coordinator.configured_max_charge_power
+    assert coordinator.user_max_discharge_power == coordinator.configured_max_discharge_power
+
+    coordinator.configured_max_charge_power = 2500
+    coordinator.device_max_discharge_power = 500
+
+    assert coordinator.configured_max_charge_power == 2500
+    assert coordinator.effective_max_charge_power == 2400
+    assert coordinator.effective_max_discharge_power == 500
+
+    coordinator.max_charge_power = 3000
+
+    assert coordinator.configured_max_charge_power == 3000
+    assert coordinator.effective_max_charge_power == 2400
+
+
 async def test_reconnect_skips_rs485_for_driver_without_capability():
     driver = SimpleNamespace(connect=AsyncMock(return_value=True))
     coordinator = SimpleNamespace(

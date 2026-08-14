@@ -19,6 +19,7 @@ from custom_components.omnibattery.control.weekly_full_charge import (
     WeeklyFullChargeManager,
     _BMS_CUTOFF_REQUIRED_CYCLES,
 )
+from custom_components.omnibattery.control.max_soc_charge import MaxSocChargeManager
 
 _IN_ZONE = NORMAL_BALANCE_TAPER_CELL_VOLTAGE + 0.05  # cell above taper entry
 _STANDBY = 1
@@ -27,8 +28,10 @@ _STANDBY = 1
 class _Coord:
     """Identity-hashable coordinator stand-in (name-keyed in the counter dict)."""
 
-    def __init__(self, name, *, soc, power, commanded, vmax=_IN_ZONE, inv=_STANDBY):
+    def __init__(self, name, *, soc, power, commanded, vmax=_IN_ZONE, inv=_STANDBY,
+                 battery_version="v2"):
         self.name = name
+        self.battery_version = battery_version
         self.commanded_charge_power = commanded
         self.data = {
             "battery_soc": soc,
@@ -38,9 +41,11 @@ class _Coord:
         }
 
 
-def _mgr(coord):
+def _mgr(coord, *, top_charge_manager=None):
     """Build a manager without its Store (only the cutoff-counter state matters)."""
     ctrl = SimpleNamespace(coordinators=[coord], weekly_full_charge_enabled=True)
+    if top_charge_manager is not None:
+        ctrl._max_soc_mgr = top_charge_manager
     m = WeeklyFullChargeManager.__new__(WeeklyFullChargeManager)
     m._controller = ctrl
     m._bms_cutoff_counts = {}
@@ -108,3 +113,72 @@ def test_accepting_charge_resets_counter():
     m.tick_bms_cutoff()
     assert m._bms_cutoff_counts["bat"] == 0
     assert m.is_battery_full(coord) is False
+
+
+def test_venus_ad_100_soc_waits_for_bms_cutoff_when_top_charge_path_is_active():
+    coord = _Coord("bat", soc=100, power=200, commanded=200, vmax=3.60,
+                   battery_version="vA")
+    top_charge_manager = SimpleNamespace(
+        should_charge_to_bms_cutoff=lambda _coord, _max_soc: True,
+    )
+    m = _mgr(coord, top_charge_manager=top_charge_manager)
+
+    assert m.is_battery_full(coord) is False
+
+
+def test_bms_cutoff_confirmation_is_read_without_soc_interpretation():
+    coord = _Coord("bat", soc=100, power=0, commanded=200, vmax=3.60,
+                   battery_version="vD")
+    m = _mgr(coord)
+
+    for _ in range(_BMS_CUTOFF_REQUIRED_CYCLES):
+        m.tick_bms_cutoff()
+
+    assert m.is_bms_cutoff_confirmed(coord) is True
+
+
+def test_venus_ad_first_cutoff_does_not_complete_until_retry_is_refused():
+    coord = _Coord(
+        "bat",
+        soc=94,
+        power=0,
+        commanded=200,
+        vmax=3.60,
+        battery_version="vA",
+    )
+    ctrl = SimpleNamespace(
+        coordinators=[coord],
+        weekly_full_charge_enabled=True,
+        _normal_balance_bms_cutoff_active={},
+        _normal_balance_bms_cutoff_retry_pending={},
+        _normal_balance_bms_cutoff_retry_active={},
+        _normal_balance_bms_cutoff_measurement={},
+        _normal_balance_date=None,
+    )
+    weekly = WeeklyFullChargeManager.__new__(WeeklyFullChargeManager)
+    weekly._controller = ctrl
+    weekly._bms_cutoff_counts = {"bat": _BMS_CUTOFF_REQUIRED_CYCLES}
+    weekly._already_complete_logged = False
+    weekly.is_active = lambda: True
+    ctrl._weekly_charge_mgr = weekly
+    ctrl._max_soc_mgr = MaxSocChargeManager(SimpleNamespace(), ctrl)
+
+    # The first five-cycle refusal is provisional and must not complete weekly
+    # charge or be exposed as a final full signal.
+    assert weekly.is_battery_full(coord) is False
+    assert ctrl._normal_balance_bms_cutoff_retry_pending[coord] is True
+
+    # Relaxation opens exactly one retry window and clears the first counter.
+    coord.data["max_cell_voltage"] = 3.57
+    assert weekly.is_battery_full(coord) is False
+    assert ctrl._normal_balance_bms_cutoff_retry_active[coord] is True
+    assert weekly._bms_cutoff_counts == {}
+
+    # The retry is accepted, then a later five-cycle refusal is final.
+    coord.data["battery_power"] = 200
+    weekly.tick_bms_cutoff()
+    coord.data["battery_power"] = 0
+    for _ in range(_BMS_CUTOFF_REQUIRED_CYCLES):
+        weekly.tick_bms_cutoff()
+    assert weekly.is_battery_full(coord) is True
+    assert coord not in ctrl._normal_balance_bms_cutoff_retry_active

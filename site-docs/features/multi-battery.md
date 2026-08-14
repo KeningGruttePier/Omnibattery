@@ -115,6 +115,14 @@ These switches do not write Modbus control registers directly. They only affect 
 
 The state is stored per battery as `allow_charge` and `allow_discharge`. Missing values default to enabled, so existing installations keep their previous behavior after updating.
 
+## Manual control per battery
+
+Each battery also exposes `switch.*_battery_manual_mode`. When enabled, Omnibattery first sends and verifies a `0 W` command, clears the integration's software force mode and power setpoints, and removes that battery from the automatic pool. The switch state is persisted per battery, so the exclusion survives a restart. The battery continues to be polled and remains included in physical battery/grid telemetry, but it receives no automatic power setpoints; driver and BMS safety handling remains active.
+
+Turning the switch off keeps the battery under manual ownership while the final idle command is verified. Only then is it returned to the automatic pool and an immediate control cycle scheduled. If the idle handoff fails, the switch stays enabled and the battery remains manual.
+
+This control is independent from the global `Manual Mode` switch. For example, with two batteries, battery A can be left in manual mode at a user-selected power while battery B remains automatic. If B is already charging, the PD controller includes A's measured AC grid charge so B reduces its own charge and the meter remains at zero. Once the automatic batteries are no longer charging, A's intentional grid charge is excluded from feedback so B does not discharge to compensate it. DC-coupled solar power is not included when the driver exposes a separate AC-power reading.
+
 ## Unified blocker registry
 
 Charge and discharge permissions are resolved through a runtime blocker registry. Blockers can be system-wide or scoped to one battery. The controller checks this registry before deadband and stale-sensor early returns, so an active command is stopped as soon as a blocker appears.

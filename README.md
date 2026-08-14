@@ -8,16 +8,18 @@
 - Zendure Solarflow 2400 AC+, 2400 AC 2400 Pro, 1600 AC+, 800 Pro, 800 Plus and 800 (Local API)
 - Anker SOLIX Solarbank Max AC and Solarbank 4 E5000 Pro via Modbus TCP (thanks @wouterbouvy!)
 - Sessy Home Battery (Looking for testers!!!)
-- Hoymiles MS-A2
+- Hoymiles MS-A2 and HiBattery MQTT models
 
 ## Key Features
 
-- **Mix and match different battery brands**: Marstek, Zendure, Anker Solix, Sessy, Hoymiles MS-A2 and more to come!
+- **Mix and match different battery brands**: Marstek, Zendure, Anker Solix, Sessy, Hoymiles MQTT and more to come!
 - **Zero Export/Import PD Controller**: Keeps grid exchange near zero using a Proportional-Derivative algorithm.
 - **Integrated dashboard**: All the controls and adjustments from a single place. Graphs and power flow diagram included!
 - **One-Click PD Profiles + Quality Sensor**: Pick a tuning profile (Very smooth → Very aggressive) instead of tuning gains by hand; a control-quality sensor reports whether the result is stable, oscillating or sluggish.
 - **Multi-Battery Support**: Manage up to 6 batteries with intelligent load sharing and SOC-based priority.
 - **Predictive Grid Charging**: Automatically charges from the grid when solar forecast + battery won't cover tomorrow's consumption. Supports fixed time slots, dynamic pricing, and real-time pricing modes. An optional grid-charge margin (%) tops up the grid amount to hedge optimistic solar forecasts.
+- **Negative-price opportunistic charging**: Optional Dynamic Pricing-only charging fills each battery to its configured maximum SOC during negative import-price slots, even without solar panels or a forecast energy deficit.
+- **Smart Pre-discharge / Anti-curtailment**: Optional Dynamic Pricing-only planning creates battery headroom before forecast PV surplus at negative-injection prices, then blocks discharge during the protected window while preserving SOC floors and safety ownership.
 - **Time Slots**: Per-battery windows with independent charge/discharge ticks, optional SOC and power overrides, and a manual mode that forces a fixed charge or discharge power. Up to 8 slots per integration.
 - **Weekly Full Charge**: Forces 100% SOC once a week for LFP cell balancing.
 - **Solar-Aware Charge Delay**: Holds back grid charging while solar can still cover the required energy.

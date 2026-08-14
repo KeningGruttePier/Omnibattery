@@ -65,7 +65,9 @@ plugins:
             Configuration: Configuración
             Overview: Resumen
             Main sensor: Sensor principal
+            Three-phase current protection: Protección de corriente trifásica
             Batteries: Baterías
+            Hoymiles MQTT: Hoymiles MQTT
             Hoymiles MS-A2 setup: Instalación de Hoymiles MS-A2
             Time slots: Franjas horarias
             Excluded devices: Dispositivos excluidos
@@ -139,13 +141,14 @@ nav:
   - Configuration:
       - Overview: configuration/index.md
       - Main sensor: configuration/main-sensor.md
+      - Three-phase current protection: configuration/three-phase.md
       - Batteries:
           - Overview: configuration/batteries/index.md
           - Marstek: configuration/batteries/marstek.md
           - Zendure: configuration/batteries/zendure.md
           - Anker SOLIX: configuration/batteries/anker.md
           - Sessy: configuration/batteries/sessy.md
-          - Hoymiles MS-A2: configuration/batteries/hoymiles.md
+          - Hoymiles MQTT: configuration/batteries/hoymiles.md
       - Time slots: configuration/time-slots.md
       - Excluded devices: configuration/excluded-devices.md
       - Predictive charging:

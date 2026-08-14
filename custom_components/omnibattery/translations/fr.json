@@ -1,5 +1,9 @@
 {
   "issues": {
+    "three_phase_manual_mode": {
+      "title": "La protection triphasée peut être contournée par des commandes manuelles",
+      "description": "La protection triphasée est activée, mais les commandes manuelles de registres ou de créneaux peuvent écrire directement sur une batterie. Gardez ces commandes dans les limites configurées."
+    },
     "slow_main_sensor": {
       "title": "Le capteur de puissance réseau se met à jour trop lentement",
       "description": "Le capteur réseau configuré {sensor} se met à jour environ toutes les {observed_interval} secondes. Des intervalles de {warning_interval} secondes ou plus sont plus lents que recommandé et peuvent réduire la qualité de régulation. Omnibattery suit la dernière mesure jusqu'à ce qu'elle date de plus de {stale_limit} secondes. Utilisez un capteur plus rapide si vous avez besoin d'un contrôle temps réel plus précis."
@@ -27,15 +31,42 @@
           "solar_forecast_sensor": "Capteur de prévision solaire (optionnel)",
           "solar_production_sensor": "Capteur de production solaire (optionnel)",
           "meter_inverted": "Signe du compteur inversé",
-          "max_contracted_power": "Puissance maximale souscrite (W)"
+          "max_contracted_power": "Puissance maximale souscrite (W)",
+          "three_phase_enabled": "Activer la protection de courant triphasée"
         },
         "data_description": {
           "consumption_sensor": "Capteur temps réel de puissance importée (+) ou exportée (-) vers le réseau. Des mises à jour toutes les 1-2 secondes sont recommandées. Les capteurs plus lents sont acceptés, mais les mesures retardées réduisent la qualité de régulation ; la dernière mesure est suivie pendant 65 secondes au maximum.",
           "solar_forecast_sensor": "Capteur fournissant la prévision de production solaire en kWh (ex : Solcast). S'il est configuré ici, il sera utilisé automatiquement pour la charge prédictive et le retard de charge solaire.",
           "solar_production_sensor": "Capteur de puissance de production photovoltaïque en temps réel (W/kW) d'un onduleur externe non raccordé aux entrées MPPT de la batterie. Utilisé pour afficher le nœud Solaire dans le diagramme de flux d'énergie du tableau de bord. Laissez vide si vos panneaux alimentent directement le MPPT de la batterie.",
           "meter_inverted": "Activez cette option si votre compteur utilise la convention opposée : positif = exportation, négatif = importation. L'unité (W/kW) est détectée automatiquement.",
-          "max_contracted_power": "Puissance totale souscrite en watts. Le système ne dépassera pas cette limite lors de la charge pour éviter de déclencher le disjoncteur"
+          "max_contracted_power": "Puissance totale souscrite en watts. Le système ne dépassera pas cette limite lors de la charge pour éviter de déclencher le disjoncteur",
+          "three_phase_enabled": "Enveloppe de sécurité de courant optionnelle pour les installations triphasées ; configurez les capteurs et la phase physique de chaque batterie à l'étape suivante."
         }
+      },
+      "three_phase": {
+        "title": "Protection de courant triphasée",
+        "description": "Configurez pour chaque phase à protéger un capteur de courant RMS signé en temps réel et une taille/limite de fusible en ampères. Laissez les deux champs vides pour les phases non utilisées. Les capteurs doivent être des entités sensor distinctes avec une unité A ou mA ; positif signifie importation et négatif exportation.",
+        "data": {
+          "phase_1_current_sensor": "Capteur de courant réseau L1",
+          "phase_2_current_sensor": "Capteur de courant réseau L2",
+          "phase_3_current_sensor": "Capteur de courant réseau L3",
+          "phase_1_fuse_size": "Taille du fusible L1 (A)",
+          "phase_2_fuse_size": "Taille du fusible L2 (A)",
+          "phase_3_fuse_size": "Taille du fusible L3 (A)"
+        },
+        "data_description": {
+          "phase_1_current_sensor": "Courant RMS signé en temps réel de la phase physique L1. Les unités A et mA sont acceptées.",
+          "phase_2_current_sensor": "Courant RMS signé en temps réel de la phase physique L2. Les unités A et mA sont acceptées.",
+          "phase_3_current_sensor": "Courant RMS signé en temps réel de la phase physique L3. Les unités A et mA sont acceptées.",
+          "phase_1_fuse_size": "Taille/limite du fusible de L1 en ampères. Saisissez une valeur inférieure au nominal pour laisser une marge aux latences et aux pointes transitoires.",
+          "phase_2_fuse_size": "Taille/limite du fusible de L2 en ampères. Saisissez une valeur inférieure au nominal pour laisser une marge aux latences et aux pointes transitoires.",
+          "phase_3_fuse_size": "Taille/limite du fusible de L3 en ampères. Saisissez une valeur inférieure au nominal pour laisser une marge aux latences et aux pointes transitoires."
+        }
+      },
+      "phase_assignments": {
+        "title": "Affectation de phase de la batterie {battery_num}",
+        "description": "Sélectionnez la phase physique à laquelle {battery_name} est raccordée, ou Non assignée si aucune phase protégée n'est utilisée.",
+        "data": {"battery_phase": "Phase physique de la batterie"}
       },
       "batteries": {
         "title": "Nombre de batteries",
@@ -91,8 +122,8 @@
       "battery_connection_hoymiles": {
         "title": "Configurer la batterie {battery_num} — Connexion (Hoymiles)",
         "description": "Activez MQTT Service dans S-Miles Home et utilisez le broker MQTT configuré dans Home Assistant.",
-        "data": {"name": "Nom", "device_id": "ID d'appareil MQTT"},
-        "data_description": {"device_id": "ID MQTT MS-A2, par exemple MSA-280024341346."}
+        "data": {"name": "Nom", "device_id": "ID d'appareil MQTT", "hoymiles_model": "Modèle de batterie"},
+        "data_description": {"device_id": "ID MQTT Hoymiles, par exemple MSA-280024341346.", "hoymiles_model": "Utilisez la détection automatique sauf si l'appareil publie un modèle incorrect ou générique."}
       },
       "battery_connection_esphome": {
         "title": "Configurer la batterie {battery_num} — Connexion (LilyGo/ESPHome)",
@@ -117,7 +148,10 @@
           "charge_hysteresis_percent": "Hystérésis de charge (%)",
           "backup_offgrid_threshold": "Seuil de charge hors réseau de secours (W)",
           "full_charge_voltage_taper_enabled": "Activer la réduction de charge à 100% par tension",
-          "battery_capacity_kwh": "Capacité nominale de la batterie (kWh)"
+          "battery_capacity_kwh": "Capacité nominale de la batterie (kWh)",
+          "battery_phase": "Phase physique de la batterie",
+          "track_mac": "Retrouver cette batterie par son adresse MAC si son IP change",
+          "mac": "Adresse MAC"
         },
         "data_description": {
           "max_charge_power": "Puissance maximale autorisée pour charger la batterie",
@@ -126,8 +160,11 @@
           "min_soc": "État de charge minimum - la batterie ne se déchargera pas en dessous de cette valeur",
           "charge_hysteresis_percent": "Toujours active (minimum 2%). Une fois le maximum atteint, la batterie ne se recharge pas tant que le SOC ne descend pas à (SOC max − hystérésis). Ex : SOC max 100% avec 2% = pas de charge avant 98%.",
           "backup_offgrid_threshold": "Une charge hors réseau supérieure à cette valeur est traitée comme un événement de secours actif, excluant la batterie du contrôle PD. Augmenter si des charges permanentes (routeur, caméras) sont connectées au port hors réseau.",
-          "full_charge_voltage_taper_enabled": "Lorsque la cible est 100%, limite la charge à 200 W à partir de 3.48 V de tension maximale de cellule et s'arrête à 3.60 V pour mesurer le déséquilibre après 60 secondes.",
-          "battery_capacity_kwh": "Capacité utilisable nominale du pack de batteries. Elle sert à calculer l'énergie stockée et l'efficacité à partir du SOC. Pour Sessy, saisissez la capacité réelle ; pour les autres batteries, laissez 0 si elle est inconnue."
+          "full_charge_voltage_taper_enabled": "Lorsque la cible est 100%, limite la charge à 200 W à partir de 3.48 V de tension maximale de cellule. Les Venus E s'arrêtent à 3.60 V pour mesurer le déséquilibre après 60 secondes ; les Venus A/D avec des packs couplés continuent à 200 W jusqu'à la coupure du BMS.",
+          "battery_capacity_kwh": "Capacité utilisable nominale du pack de batteries. Elle sert à calculer l'énergie stockée et l'efficacité à partir du SOC. Pour Sessy, saisissez la capacité réelle ; pour les autres batteries, laissez 0 si elle est inconnue.",
+          "battery_phase": "Phase AC physique (L1/L2/L3) à laquelle cette batterie est raccordée, ou Non assignée hors du schéma de phases protégées. Une batterie sans phase est exclue de l'enveloppe triphasée et continue à fonctionner normalement en automatique.",
+          "track_mac": "L'adresse MAC est l'adresse matérielle permanente de la batterie : contrairement à l'adresse IP ci-dessus, elle ne change jamais. Home Assistant s'en sert pour retrouver la batterie et mettre l'adresse IP à jour tout seul.",
+          "mac": "Adresse matérielle permanente de l'interface que la batterie utilise sur le réseau. Prenez-la dans la liste des appareils de votre box : une batterie peut annoncer une adresse différente de celle de son interface filaire. Remplie automatiquement quand le cache DHCP de Home Assistant est disponible."
         }
       },
       "time_slots": {
@@ -271,7 +308,7 @@
           "end_time": "Heure de fin de la fenêtre de charge (ex : 06:00)",
           "days": "Jours où la charge depuis le réseau est autorisée",
           "solar_forecast_sensor": "Capteur fournissant la prévision de production solaire en kWh (ex : Solcast). Avec panneaux solaires : configurez ce capteur — le système ne chargera depuis le réseau que si la prévision est insuffisante. Sans panneaux solaires : laissez vide — le système chargera quand l'énergie de la batterie est insuffisante pour la journée. Non requis si ce capteur a déjà été configuré à l'étape initiale — il sera utilisé automatiquement.",
-          "predictive_safety_margin_kwh": "Tampon d'énergie supplémentaire ajouté à la prévision de consommation. Utile si la prévision solaire est trop optimiste. Mettre à 0 pour désactiver (défaut). Limité à la capacité totale de la batterie.",
+          "predictive_safety_margin_kwh": "Tampon d'énergie supplémentaire ajouté à la prévision de consommation. Le même tampon en kWh est aussi réservé comme espace supplémentaire contre l'écrêtement en tarification dynamique. Mettre à 0 pour désactiver (défaut). Limité à la capacité totale de la batterie.",
           "predictive_grid_charge_margin_pct": "Pourcentage supplémentaire chargé depuis le réseau au-dessus du déficit solaire, pour couvrir des prévisions solaires optimistes. Ex. : un besoin réseau de 2 kWh à 50% charge 3 kWh. 0 pour désactiver (défaut). Plafonné à l'écart jusqu'au SOC max."
         }
       },
@@ -294,6 +331,11 @@
           "max_price_threshold": "Seuil de prix maximum (€/kWh, optionnel)",
           "discharge_price_threshold": "Prix plancher de décharge (optionnel)",
           "dp_price_discharge_control": "Décharger uniquement si le prix dépasse le seuil",
+          "negative_price_charging_enabled": "Activer la charge opportuniste à prix négatif",
+          "smart_predischarge_enabled": "Pré-décharge intelligente / anti-écrêtement",
+          "negative_injection_threshold": "Seuil d'injection négative",
+          "predischarge_reserve_soc": "Réserve de SOC de pré-décharge (%)",
+          "predischarge_export_mode": "Mode d'exportation délibérée vers le réseau",
           "solar_forecast_sensor": "Capteur de prévision solaire (kWh)",
           "predictive_safety_margin_kwh": "Marge de sécurité prévision solaire (kWh)",
           "predictive_grid_charge_margin_pct": "Marge de charge réseau prédictive (%)"
@@ -304,9 +346,24 @@
           "max_price_threshold": "Les créneaux au-dessus de ce prix ne seront pas sélectionnés. Quand le contrôle de décharge par prix est activé, cette valeur sert aussi de seuil de décharge. Utiliser la devise principale/kWh : €/kWh pour Nordpool/PVPC, CHF/kWh pour CKW. Les prix Nordpool HACS configurés en centimes sont convertis automatiquement. Laisser vide pour utiliser tous les créneaux et utiliser la moyenne journalière comme seuil de décharge. Sauf si un prix plancher de décharge distinct est défini ci-dessous.",
           "discharge_price_threshold": "Seuil distinct optionnel pour la décharge pilotée par le prix. La décharge est bloquée tant que le prix est inférieur ou égal à cette valeur, ouvrant une bande neutre entre le prix maximal de charge (au-dessus) et ce plancher : dans cette bande, la batterie ne se charge pas depuis le réseau et ne se décharge pas (la charge par surplus solaire fonctionne toujours). Laissez vide pour réutiliser le prix maximal pour les deux (comportement actuel à seuil unique).",
           "dp_price_discharge_control": "Si activé, la batterie ne se décharge que lorsque le prix actuel dépasse le seuil de prix maximum configuré. Si aucun seuil n'est configuré, la moyenne journalière calculée automatiquement depuis le capteur de prix est utilisée. Si les plages horaires limitent la décharge, les deux conditions doivent être remplies.",
+          "negative_price_charging_enabled": "Fonction optionnelle de tarification dynamique qui charge pendant les créneaux d'importation les plus négatifs, même si la prévision normale ne demande pas de charge réseau. Aucun capteur de prévision solaire n'est requis.",
+          "smart_predischarge_enabled": "Active la pré-décharge optionnelle uniquement en mode de tarification dynamique pour créer de l'espace avant les créneaux d'injection négative.",
+          "negative_injection_threshold": "Les prix inférieurs ou égaux à ce seuil sont considérés comme des créneaux à risque lorsqu'un surplus solaire est prévu.",
+          "predischarge_reserve_soc": "SOC à réserver en plus des limites minimales existantes.",
+          "predischarge_export_mode": "Choisissez comment créer l'espace anti-écrêtement : Autoconsommation uniquement (0 W), Automatique (seulement la puissance nécessaire) ou Limite personnalisée (configurée à l'étape suivante). Il s'agit d'une limite d'exportation délibérée, pas de la puissance totale de décharge.",
           "solar_forecast_sensor": "Capteur fournissant la prévision de production solaire en kWh (ex : Solcast). Avec panneaux solaires : configurez ce capteur — le système ne chargera depuis le réseau que si la prévision est insuffisante. Sans panneaux solaires : laissez vide — le système chargera quand l'énergie de la batterie est insuffisante pour la journée. Non requis si ce capteur a déjà été configuré à l'étape initiale — il sera utilisé automatiquement.",
-          "predictive_safety_margin_kwh": "Tampon d'énergie supplémentaire ajouté à la prévision de consommation. Utile si la prévision solaire est trop optimiste. Mettre à 0 pour désactiver (défaut). Limité à la capacité totale de la batterie.",
+          "predictive_safety_margin_kwh": "Tampon d'énergie supplémentaire ajouté à la prévision de consommation. Le même tampon en kWh est aussi réservé comme espace supplémentaire contre l'écrêtement en tarification dynamique. Mettre à 0 pour désactiver (défaut). Limité à la capacité totale de la batterie.",
           "predictive_grid_charge_margin_pct": "Pourcentage supplémentaire chargé depuis le réseau au-dessus du déficit solaire, pour couvrir des prévisions solaires optimistes. Ex. : un besoin réseau de 2 kWh à 50% charge 3 kWh. 0 pour désactiver (défaut). Plafonné à l'écart jusqu'au SOC max."
+        }
+      },
+      "predischarge_export_limit": {
+        "title": "Anti-écrêtement — Limite d'exportation personnalisée",
+        "description": "Définissez l'exportation délibérée maximale vers le réseau lors de la création de l'espace. Il s'agit d'une limite d'exportation, pas de la puissance totale de décharge de la batterie.",
+        "data": {
+          "predischarge_max_export_power_w": "Limite d'exportation délibérée vers le réseau (W)"
+        },
+        "data_description": {
+          "predischarge_max_export_power_w": "Puissance maximale exportée délibérément avant une fenêtre de risque solaire. Le SOC, la réserve, la puissance et les blocages existants restent prioritaires."
         }
       },
       "realtime_price_config": {
@@ -327,7 +384,7 @@
           "average_price_sensor": "Si renseigné, sa valeur est utilisée comme seuil à la place de la valeur fixe — utile si votre intégration de prix expose déjà un prix moyen journalier. Laissez vide pour utiliser le seuil fixe.",
           "rt_price_discharge_control": "Si activé, la batterie ne se décharge que lorsque le prix actuel dépasse le seuil. Si les plages horaires limitent la décharge, les deux conditions doivent être remplies.",
           "solar_forecast_sensor": "Capteur fournissant les prévisions de production solaire en kWh. Non requis si vous avez déjà configuré ce capteur à l'étape initiale — il sera utilisé automatiquement.",
-          "predictive_safety_margin_kwh": "Tampon d'énergie supplémentaire ajouté à la prévision de consommation. Utile si la prévision solaire est trop optimiste. Mettre à 0 pour désactiver (défaut). Limité à la capacité totale de la batterie.",
+          "predictive_safety_margin_kwh": "Tampon d'énergie supplémentaire ajouté à la prévision de consommation. Le même tampon en kWh est aussi réservé comme espace supplémentaire contre l'écrêtement en tarification dynamique. Mettre à 0 pour désactiver (défaut). Limité à la capacité totale de la batterie.",
           "predictive_grid_charge_margin_pct": "Pourcentage supplémentaire chargé depuis le réseau au-dessus du déficit solaire, pour couvrir des prévisions solaires optimistes. Ex. : un besoin réseau de 2 kWh à 50% charge 3 kWh. 0 pour désactiver (défaut). Plafonné à l'écart jusqu'au SOC max."
         }
       },
@@ -444,7 +501,7 @@
           "pd_direction_hysteresis": "Seuil de puissance requis pour basculer entre charge et décharge. Empêche les changements rapides de direction. Plage : 0-200W, par défaut : 60W",
           "pd_min_charge_power": "Puissance minimale pour charger. En dessous de ce seuil, le contrôleur reste en veille au lieu de charger à faible puissance. 0 = désactivé.",
           "pd_min_discharge_power": "Puissance minimale pour décharger. En dessous de ce seuil, le contrôleur reste en veille au lieu de décharger à faible puissance. 0 = désactivé.",
-          "pd_target_grid_power": "Consigne de puissance réseau que le contrôleur régule. Négatif = injection réseau, positif = soutirage, 0 = bilan nul. Plage : -500 à +500 W, défaut : 0 W.",
+          "pd_target_grid_power": "Consigne de puissance réseau que le contrôleur régule. Positif = soutirage du réseau (la batterie charge), négatif = injection vers le réseau (la batterie décharge), 0 = bilan nul. La plage suit la puissance totale configurée de vos batteries, limitée par les limites de puissance système lorsqu'elles sont actives. Défaut : 0 W.",
           "enable_system_power_limits": "Si active, les deux curseurs ci-dessous limitent la puissance combinee de charge/decharge de toutes les batteries actives.",
           "system_max_charge_power": "Limite optionnelle pour la puissance de charge combinee de toutes les batteries actives. 0 = desactive; les limites par batterie s'appliquent toujours.",
           "system_max_discharge_power": "Limite optionnelle pour la puissance de decharge combinee de toutes les batteries actives. 0 = desactive; les limites par batterie s'appliquent toujours."
@@ -531,8 +588,9 @@
       },
       "reconfigure_battery_hoymiles": {
         "title": "Reconfigurer la batterie {battery_num} — MQTT Hoymiles",
-        "description": "Saisissez l'ID MQTT de la MS-A2 ; Home Assistant gère le broker.",
-        "data": {"name": "Nom", "device_id": "ID d'appareil MQTT"}
+        "description": "Saisissez l'ID MQTT Hoymiles ; Home Assistant gère le broker et Omnibattery détecte le modèle.",
+        "data": {"name": "Nom", "device_id": "ID d'appareil MQTT", "hoymiles_model": "Modèle de batterie"},
+        "data_description": {"hoymiles_model": "Utilisez la détection automatique sauf si l'appareil publie un modèle incorrect ou générique."}
       },
       "reconfigure_battery_esphome": {
         "title": "Reconfigurer la batterie {battery_num} — Connexion (LilyGo/ESPHome)",
@@ -577,10 +635,20 @@
       }
     },
     "error": {
+      "invalid_mac": "Cela ne ressemble pas à une adresse MAC. Six paires de chiffres hexadécimaux sont attendues, par exemple dc:04:5a:14:6b:33.",
       "cannot_connect": "Impossible de se connecter à la batterie. Vérifiez l'adresse IP et que la batterie est accessible sur le réseau.",
       "esphome_entities_missing": "Il manque des entités requises à l'appareil ESPHome sélectionné : {missing}. Vérifiez qu'il exécute le firmware marstek-lilygo-rs485 avec les noms d'entités d'origine.",
       "sensor_not_found": "Le capteur de prévision solaire n'existe pas. Vérifiez que le capteur est disponible.",
       "invalid_unit": "Le capteur de prévision solaire doit avoir 'kWh' ou 'Wh' comme unité.",
+      "solar_production_sensor_not_found": "Le capteur de production solaire n'existe pas. Vérifiez que le capteur est disponible.",
+      "solar_production_invalid_unit": "Le capteur de production solaire doit avoir 'W' ou 'kW' comme unité.",
+      "phase_sensors_must_differ": "Chaque phase doit utiliser un capteur de courant différent.",
+      "phase_sensor_not_found": "Le capteur de courant de phase n'existe pas ou n'est pas disponible.",
+      "phase_sensor_invalid_domain": "La source de courant de phase doit être une entité sensor.",
+      "phase_sensor_invalid_unit": "Le capteur de courant de phase doit avoir 'A' ou 'mA' comme unité.",
+      "phase_limit_must_be_positive": "La taille du fusible de phase doit être une valeur positive et finie en ampères.",
+      "phase_sensor_and_limit_required": "Renseignez à la fois le capteur de courant de phase et la taille du fusible, ou laissez les deux champs vides.",
+      "battery_phase_required": "Sélectionnez la phase physique de cette batterie.",
       "incomplete_window": "Chaque fenêtre de charge supplémentaire nécessite une heure de début et de fin. Remplissez les deux, ou laissez les deux vides pour l'ignorer.",
       "overlapping_slots": "Ce créneau chevauche un autre créneau pour la même batterie. Ajustez les horaires, jours ou batterie cible.",
       "midnight_crossing": "L'heure de début doit être antérieure à l'heure de fin. Pour les périodes nocturnes, créez deux créneaux séparés (ex: 22:00-23:59 et 00:00-06:00).",
@@ -594,6 +662,8 @@
       "missing_activity_sensor": "Sélectionnez un capteur appareil actif / charge VE pour le contrôle dynamique ou un chargeur sans télémétrie."
     },
     "abort": {
+      "ip_updated": "L'adresse IP de la batterie a changé ; la connexion a été mise à jour toute seule.",
+      "no_tracked_battery": "Aucune batterie configurée n'est suivie par l'adresse MAC de cet appareil.",
       "already_configured": "Cette intégration est déjà configurée.",
       "reconfigure_successful": "Paramètres de connexion de la batterie mis à jour avec succès.",
       "no_legacy_entries": "Aucune configuration Marstek Venus existante n’a été trouvée pour la migration.",
@@ -603,6 +673,31 @@
   },
   "options": {
     "step": {
+      "three_phase": {
+        "title": "Protection de courant triphasée",
+        "description": "Configurez pour chaque phase à protéger un capteur de courant RMS signé en temps réel et une taille/limite de fusible en ampères. Laissez les deux champs vides pour les phases non utilisées. Les capteurs doivent être des entités sensor distinctes avec une unité A ou mA ; positif signifie importation et négatif exportation.",
+        "data": {
+          "phase_1_current_sensor": "Capteur de courant réseau L1",
+          "phase_2_current_sensor": "Capteur de courant réseau L2",
+          "phase_3_current_sensor": "Capteur de courant réseau L3",
+          "phase_1_fuse_size": "Taille du fusible L1 (A)",
+          "phase_2_fuse_size": "Taille du fusible L2 (A)",
+          "phase_3_fuse_size": "Taille du fusible L3 (A)"
+        },
+        "data_description": {
+          "phase_1_current_sensor": "Courant RMS signé en temps réel de la phase physique L1. Les unités A et mA sont acceptées.",
+          "phase_2_current_sensor": "Courant RMS signé en temps réel de la phase physique L2. Les unités A et mA sont acceptées.",
+          "phase_3_current_sensor": "Courant RMS signé en temps réel de la phase physique L3. Les unités A et mA sont acceptées.",
+          "phase_1_fuse_size": "Taille/limite du fusible de L1 en ampères. Saisissez une valeur inférieure au nominal pour laisser une marge aux latences et aux pointes transitoires.",
+          "phase_2_fuse_size": "Taille/limite du fusible de L2 en ampères. Saisissez une valeur inférieure au nominal pour laisser une marge aux latences et aux pointes transitoires.",
+          "phase_3_fuse_size": "Taille/limite du fusible de L3 en ampères. Saisissez une valeur inférieure au nominal pour laisser une marge aux latences et aux pointes transitoires."
+        }
+      },
+      "phase_assignments": {
+        "title": "Affectation de phase de la batterie {battery_num}",
+        "description": "Sélectionnez la phase physique à laquelle {battery_name} est raccordée, ou Non assignée si aucune phase protégée n'est utilisée.",
+        "data": {"battery_phase": "Phase physique de la batterie"}
+      },
       "init": {
         "title": "Reconfigurer Omnibattery",
         "description": "Sélectionnez la section que vous souhaitez configurer.",
@@ -628,14 +723,16 @@
           "solar_forecast_sensor": "Capteur de prévision solaire (optionnel)",
           "solar_production_sensor": "Capteur de production solaire (optionnel)",
           "meter_inverted": "Signe du compteur inversé",
-          "max_contracted_power": "Puissance maximale souscrite (W)"
+          "max_contracted_power": "Puissance maximale souscrite (W)",
+          "three_phase_enabled": "Activer la protection de courant triphasée"
         },
         "data_description": {
           "consumption_sensor": "Capteur temps réel de puissance importée (+) ou exportée (-) vers le réseau. Des mises à jour toutes les 1-2 secondes sont recommandées. Les capteurs plus lents sont acceptés, mais les mesures retardées réduisent la qualité de régulation ; la dernière mesure est suivie pendant 65 secondes au maximum.",
           "solar_forecast_sensor": "Capteur fournissant la prévision de production solaire en kWh (ex : Solcast). S'il est configuré ici, il sera utilisé automatiquement pour la charge prédictive et le retard de charge solaire.",
           "solar_production_sensor": "Capteur de puissance de production photovoltaïque en temps réel (W/kW) d'un onduleur externe non raccordé aux entrées MPPT de la batterie. Utilisé pour afficher le nœud Solaire dans le diagramme de flux d'énergie du tableau de bord. Laissez vide si vos panneaux alimentent directement le MPPT de la batterie.",
           "meter_inverted": "Activez cette option si votre compteur utilise la convention opposée : positif = exportation, négatif = importation. L'unité (W/kW) est détectée automatiquement.",
-          "max_contracted_power": "Puissance totale souscrite en watts. Le système ne dépassera pas cette limite lors de la charge pour éviter de déclencher le disjoncteur"
+          "max_contracted_power": "Puissance totale souscrite en watts. Le système ne dépassera pas cette limite lors de la charge pour éviter de déclencher le disjoncteur",
+          "three_phase_enabled": "Enveloppe de sécurité de courant optionnelle pour les installations triphasées ; configurez les capteurs et la phase physique de chaque batterie à l'étape suivante."
         }
       },
       "batteries": {
@@ -712,7 +809,10 @@
           "charge_hysteresis_percent": "Hystérésis de charge (%)",
           "backup_offgrid_threshold": "Seuil de charge hors réseau de secours (W)",
           "full_charge_voltage_taper_enabled": "Activer la réduction de charge à 100% par tension",
-          "battery_capacity_kwh": "Capacité nominale de la batterie (kWh)"
+          "battery_capacity_kwh": "Capacité nominale de la batterie (kWh)",
+          "battery_phase": "Phase physique de la batterie",
+          "track_mac": "Retrouver cette batterie par son adresse MAC si son IP change",
+          "mac": "Adresse MAC"
         },
         "data_description": {
           "max_charge_power": "Puissance maximale autorisée pour charger la batterie",
@@ -721,8 +821,11 @@
           "min_soc": "État de charge minimum",
           "charge_hysteresis_percent": "Toujours active (minimum 2%). Une fois le maximum atteint, la batterie ne se recharge pas tant que le SOC ne descend pas à (SOC max − hystérésis). Ex : SOC max 100% avec 2% = pas de charge avant 98%.",
           "backup_offgrid_threshold": "Une charge hors réseau supérieure à cette valeur est traitée comme un événement de secours actif, excluant la batterie du contrôle PD. Augmenter si des charges permanentes (routeur, caméras) sont connectées au port hors réseau.",
-          "full_charge_voltage_taper_enabled": "Lorsque la cible est 100%, limite la charge à 200 W à partir de 3.48 V de tension maximale de cellule et s'arrête à 3.60 V pour mesurer le déséquilibre après 60 secondes.",
-          "battery_capacity_kwh": "Capacité utilisable nominale du pack de batteries. Elle sert à calculer l'énergie stockée et l'efficacité à partir du SOC. Pour Sessy, saisissez la capacité réelle ; pour les autres batteries, laissez 0 si elle est inconnue."
+          "full_charge_voltage_taper_enabled": "Lorsque la cible est 100%, limite la charge à 200 W à partir de 3.48 V de tension maximale de cellule. Les Venus E s'arrêtent à 3.60 V pour mesurer le déséquilibre après 60 secondes ; les Venus A/D avec des packs couplés continuent à 200 W jusqu'à la coupure du BMS.",
+          "battery_capacity_kwh": "Capacité utilisable nominale du pack de batteries. Elle sert à calculer l'énergie stockée et l'efficacité à partir du SOC. Pour Sessy, saisissez la capacité réelle ; pour les autres batteries, laissez 0 si elle est inconnue.",
+          "battery_phase": "Phase AC physique (L1/L2/L3) à laquelle cette batterie est raccordée, ou Non assignée hors du schéma de phases protégées. Une batterie sans phase est exclue de l'enveloppe triphasée et continue à fonctionner normalement en automatique.",
+          "track_mac": "L'adresse MAC est l'adresse matérielle permanente de la batterie : contrairement à l'adresse IP ci-dessus, elle ne change jamais. Home Assistant s'en sert pour retrouver la batterie et mettre l'adresse IP à jour tout seul.",
+          "mac": "Adresse matérielle permanente de l'interface que la batterie utilise sur le réseau. Prenez-la dans la liste des appareils de votre box : une batterie peut annoncer une adresse différente de celle de son interface filaire. Remplie automatiquement quand le cache DHCP de Home Assistant est disponible."
         }
       },
       "time_slots": {
@@ -866,7 +969,7 @@
           "end_time": "Heure de fin de la fenêtre de charge (ex : 06:00)",
           "days": "Jours où la charge depuis le réseau est autorisée",
           "solar_forecast_sensor": "Capteur fournissant la prévision de production solaire en kWh (ex : Solcast). Avec panneaux solaires : configurez ce capteur — le système ne chargera depuis le réseau que si la prévision est insuffisante. Sans panneaux solaires : laissez vide — le système chargera quand l'énergie de la batterie est insuffisante pour la journée. Non requis si ce capteur a déjà été configuré à l'étape initiale — il sera utilisé automatiquement.",
-          "predictive_safety_margin_kwh": "Tampon d'énergie supplémentaire ajouté à la prévision de consommation. Utile si la prévision solaire est trop optimiste. Mettre à 0 pour désactiver (défaut). Limité à la capacité totale de la batterie.",
+          "predictive_safety_margin_kwh": "Tampon d'énergie supplémentaire ajouté à la prévision de consommation. Le même tampon en kWh est aussi réservé comme espace supplémentaire contre l'écrêtement en tarification dynamique. Mettre à 0 pour désactiver (défaut). Limité à la capacité totale de la batterie.",
           "predictive_grid_charge_margin_pct": "Pourcentage supplémentaire chargé depuis le réseau au-dessus du déficit solaire, pour couvrir des prévisions solaires optimistes. Ex. : un besoin réseau de 2 kWh à 50% charge 3 kWh. 0 pour désactiver (défaut). Plafonné à l'écart jusqu'au SOC max."
         }
       },
@@ -889,6 +992,11 @@
           "max_price_threshold": "Seuil de prix maximum (€/kWh, optionnel)",
           "discharge_price_threshold": "Prix plancher de décharge (optionnel)",
           "dp_price_discharge_control": "Décharger uniquement si le prix dépasse le seuil",
+          "negative_price_charging_enabled": "Activer la charge opportuniste à prix négatif",
+          "smart_predischarge_enabled": "Pré-décharge intelligente / anti-écrêtement",
+          "negative_injection_threshold": "Seuil d'injection négative",
+          "predischarge_reserve_soc": "Réserve de SOC de pré-décharge (%)",
+          "predischarge_export_mode": "Mode d'exportation délibérée vers le réseau",
           "solar_forecast_sensor": "Capteur de prévision solaire (kWh)",
           "predictive_safety_margin_kwh": "Marge de sécurité prévision solaire (kWh)",
           "predictive_grid_charge_margin_pct": "Marge de charge réseau prédictive (%)"
@@ -899,9 +1007,24 @@
           "max_price_threshold": "Les créneaux au-dessus de ce prix ne seront pas sélectionnés. Quand le contrôle de décharge par prix est activé, cette valeur sert aussi de seuil de décharge. Utiliser la devise principale/kWh : €/kWh pour Nordpool/PVPC, CHF/kWh pour CKW. Les prix Nordpool HACS configurés en centimes sont convertis automatiquement. Laisser vide pour utiliser tous les créneaux et utiliser la moyenne journalière comme seuil de décharge. Sauf si un prix plancher de décharge distinct est défini ci-dessous.",
           "discharge_price_threshold": "Seuil distinct optionnel pour la décharge pilotée par le prix. La décharge est bloquée tant que le prix est inférieur ou égal à cette valeur, ouvrant une bande neutre entre le prix maximal de charge (au-dessus) et ce plancher : dans cette bande, la batterie ne se charge pas depuis le réseau et ne se décharge pas (la charge par surplus solaire fonctionne toujours). Laissez vide pour réutiliser le prix maximal pour les deux (comportement actuel à seuil unique).",
           "dp_price_discharge_control": "Si activé, la batterie ne se décharge que lorsque le prix actuel dépasse le seuil de prix maximum configuré. Si aucun seuil n'est configuré, la moyenne journalière calculée automatiquement depuis le capteur de prix est utilisée. Si les plages horaires limitent la décharge, les deux conditions doivent être remplies.",
+          "negative_price_charging_enabled": "Fonction optionnelle de tarification dynamique qui charge pendant les créneaux d'importation les plus négatifs, même si la prévision normale ne demande pas de charge réseau. Aucun capteur de prévision solaire n'est requis.",
+          "smart_predischarge_enabled": "Active la pré-décharge optionnelle uniquement en mode de tarification dynamique pour créer de l'espace avant les créneaux d'injection négative.",
+          "negative_injection_threshold": "Les prix inférieurs ou égaux à ce seuil sont considérés comme des créneaux à risque lorsqu'un surplus solaire est prévu.",
+          "predischarge_reserve_soc": "SOC à réserver en plus des limites minimales existantes.",
+          "predischarge_export_mode": "Choisissez comment créer l'espace anti-écrêtement : Autoconsommation uniquement (0 W), Automatique (seulement la puissance nécessaire) ou Limite personnalisée (configurée à l'étape suivante). Il s'agit d'une limite d'exportation délibérée, pas de la puissance totale de décharge.",
           "solar_forecast_sensor": "Capteur fournissant la prévision de production solaire en kWh (ex : Solcast). Avec panneaux solaires : configurez ce capteur — le système ne chargera depuis le réseau que si la prévision est insuffisante. Sans panneaux solaires : laissez vide — le système chargera quand l'énergie de la batterie est insuffisante pour la journée. Non requis si ce capteur a déjà été configuré à l'étape initiale — il sera utilisé automatiquement.",
-          "predictive_safety_margin_kwh": "Tampon d'énergie supplémentaire ajouté à la prévision de consommation. Utile si la prévision solaire est trop optimiste. Mettre à 0 pour désactiver (défaut). Limité à la capacité totale de la batterie.",
+          "predictive_safety_margin_kwh": "Tampon d'énergie supplémentaire ajouté à la prévision de consommation. Le même tampon en kWh est aussi réservé comme espace supplémentaire contre l'écrêtement en tarification dynamique. Mettre à 0 pour désactiver (défaut). Limité à la capacité totale de la batterie.",
           "predictive_grid_charge_margin_pct": "Pourcentage supplémentaire chargé depuis le réseau au-dessus du déficit solaire, pour couvrir des prévisions solaires optimistes. Ex. : un besoin réseau de 2 kWh à 50% charge 3 kWh. 0 pour désactiver (défaut). Plafonné à l'écart jusqu'au SOC max."
+        }
+      },
+      "predischarge_export_limit": {
+        "title": "Anti-écrêtement — Limite d'exportation personnalisée",
+        "description": "Définissez l'exportation délibérée maximale vers le réseau lors de la création de l'espace. Il s'agit d'une limite d'exportation, pas de la puissance totale de décharge de la batterie.",
+        "data": {
+          "predischarge_max_export_power_w": "Limite d'exportation délibérée vers le réseau (W)"
+        },
+        "data_description": {
+          "predischarge_max_export_power_w": "Puissance maximale exportée délibérément avant une fenêtre de risque solaire. Le SOC, la réserve, la puissance et les blocages existants restent prioritaires."
         }
       },
       "realtime_price_config": {
@@ -922,7 +1045,7 @@
           "average_price_sensor": "Si renseigné, sa valeur est utilisée comme seuil à la place de la valeur fixe — utile si votre intégration de prix expose déjà un prix moyen journalier. Laissez vide pour utiliser le seuil fixe.",
           "rt_price_discharge_control": "Si activé, la batterie ne se décharge que lorsque le prix actuel dépasse le seuil. Si les plages horaires limitent la décharge, les deux conditions doivent être remplies.",
           "solar_forecast_sensor": "Capteur fournissant les prévisions de production solaire en kWh. Non requis si vous avez déjà configuré ce capteur à l'étape initiale — il sera utilisé automatiquement.",
-          "predictive_safety_margin_kwh": "Tampon d'énergie supplémentaire ajouté à la prévision de consommation. Utile si la prévision solaire est trop optimiste. Mettre à 0 pour désactiver (défaut). Limité à la capacité totale de la batterie.",
+          "predictive_safety_margin_kwh": "Tampon d'énergie supplémentaire ajouté à la prévision de consommation. Le même tampon en kWh est aussi réservé comme espace supplémentaire contre l'écrêtement en tarification dynamique. Mettre à 0 pour désactiver (défaut). Limité à la capacité totale de la batterie.",
           "predictive_grid_charge_margin_pct": "Pourcentage supplémentaire chargé depuis le réseau au-dessus du déficit solaire, pour couvrir des prévisions solaires optimistes. Ex. : un besoin réseau de 2 kWh à 50% charge 3 kWh. 0 pour désactiver (défaut). Plafonné à l'écart jusqu'au SOC max."
         }
       },
@@ -1039,7 +1162,7 @@
           "pd_direction_hysteresis": "Seuil de puissance requis pour basculer entre charge et décharge. Empêche les changements rapides de direction. Plage : 0-200W, par défaut : 60W",
           "pd_min_charge_power": "Puissance minimale pour charger. En dessous de ce seuil, le contrôleur reste en veille au lieu de charger à faible puissance. 0 = désactivé.",
           "pd_min_discharge_power": "Puissance minimale pour décharger. En dessous de ce seuil, le contrôleur reste en veille au lieu de décharger à faible puissance. 0 = désactivé.",
-          "pd_target_grid_power": "Consigne de puissance réseau que le contrôleur régule. Négatif = injection réseau, positif = soutirage, 0 = bilan nul. Plage : -500 à +500 W, défaut : 0 W.",
+          "pd_target_grid_power": "Consigne de puissance réseau que le contrôleur régule. Positif = soutirage du réseau (la batterie charge), négatif = injection vers le réseau (la batterie décharge), 0 = bilan nul. La plage suit la puissance totale configurée de vos batteries, limitée par les limites de puissance système lorsqu'elles sont actives. Défaut : 0 W.",
           "enable_system_power_limits": "Si active, les deux curseurs ci-dessous limitent la puissance combinee de charge/decharge de toutes les batteries actives.",
           "system_max_charge_power": "Limite optionnelle pour la puissance de charge combinee de toutes les batteries actives. 0 = desactive; les limites par batterie s'appliquent toujours.",
           "system_max_discharge_power": "Limite optionnelle pour la puissance de decharge combinee de toutes les batteries actives. 0 = desactive; les limites par batterie s'appliquent toujours."
@@ -1092,10 +1215,20 @@
       }
     },
     "error": {
+      "invalid_mac": "Cela ne ressemble pas à une adresse MAC. Six paires de chiffres hexadécimaux sont attendues, par exemple dc:04:5a:14:6b:33.",
       "cannot_connect": "Impossible de se connecter à la batterie. Vérifiez l'adresse IP et que la batterie est accessible sur le réseau.",
       "esphome_entities_missing": "Il manque des entités requises à l'appareil ESPHome sélectionné : {missing}. Vérifiez qu'il exécute le firmware marstek-lilygo-rs485 avec les noms d'entités d'origine.",
       "sensor_not_found": "Le capteur de prévision solaire n'existe pas. Vérifiez que le capteur est disponible.",
       "invalid_unit": "Le capteur de prévision solaire doit avoir 'kWh' ou 'Wh' comme unité.",
+      "solar_production_sensor_not_found": "Le capteur de production solaire n'existe pas. Vérifiez que le capteur est disponible.",
+      "solar_production_invalid_unit": "Le capteur de production solaire doit avoir 'W' ou 'kW' comme unité.",
+      "phase_sensors_must_differ": "Chaque phase doit utiliser un capteur de courant différent.",
+      "phase_sensor_not_found": "Le capteur de courant de phase n'existe pas ou n'est pas disponible.",
+      "phase_sensor_invalid_domain": "La source de courant de phase doit être une entité sensor.",
+      "phase_sensor_invalid_unit": "Le capteur de courant de phase doit avoir 'A' ou 'mA' comme unité.",
+      "phase_limit_must_be_positive": "La taille du fusible de phase doit être une valeur positive et finie en ampères.",
+      "phase_sensor_and_limit_required": "Renseignez à la fois le capteur de courant de phase et la taille du fusible, ou laissez les deux champs vides.",
+      "battery_phase_required": "Sélectionnez la phase physique de cette batterie.",
       "incomplete_window": "Chaque fenêtre de charge supplémentaire nécessite une heure de début et de fin. Remplissez les deux, ou laissez les deux vides pour l'ignorer.",
       "overlapping_slots": "Ce créneau chevauche un autre créneau pour la même batterie. Ajustez les horaires, jours ou batterie cible.",
       "midnight_crossing": "L'heure de début doit être antérieure à l'heure de fin. Pour les périodes nocturnes, créez deux créneaux séparés (ex: 22:00-23:59 et 00:00-06:00).",
@@ -1110,6 +1243,18 @@
     }
   },
   "selector": {
+    "hoymiles_model": {
+      "options": {
+        "auto": "Détection automatique (recommandé)",
+        "ms_a2": "MS-A2",
+        "hibattery_1920_ac": "HiBattery 1920 AC",
+        "hibattery_4020_x": "HiBattery 4020 X",
+        "hibattery_4020_ac": "HiBattery 4020 AC"
+      }
+    },
+    "battery_phase": {
+      "options": {"unassigned": "Non assignée", "l1": "L1", "l2": "L2", "l3": "L3"}
+    },
     "weekday": {
       "options": {
         "mon": "Lundi",
@@ -1139,7 +1284,7 @@
         "realtime_price": "Prix en temps réel (seuil instantané)"
       }
     },
-    "price_integration_type": {
+      "price_integration_type": {
       "options": {
         "nordpool": "Nordpool",
         "pvpc": "PVPC (Espagne – ESIOS REE)",
@@ -1148,12 +1293,22 @@
         "entsoe": "ENTSO-e (Plateforme de Transparence)",
         "tibber": "Tibber (basé sur un service)"
       }
+    },
+    "predischarge_export_mode": {
+      "options": {
+        "self_consumption": "Autoconsommation uniquement",
+        "automatic": "Automatique",
+        "custom": "Limite personnalisée"
+      }
     }
   },
   "entity": {
     "switch": {
       "manual_mode": {
         "name": "Mode Manuel"
+      },
+      "three_phase_protection": {
+        "name": "Protection de courant triphasé"
       },
       "no_pd_mode": {
         "name": "Suivi Direct sans PD"
@@ -1200,11 +1355,11 @@
       "battery_allow_discharge": {
         "name": "Autoriser la Decharge"
       },
+      "battery_manual_mode": {
+        "name": "Contrôle manuel de la batterie"
+      },
       "full_charge_voltage_taper": {
         "name": "Réduction Charge 100% par Tension"
-      },
-      "active_balance_mode": {
-        "name": "Mode d'Équilibrage Actif"
       },
       "automation_charging_active": {
         "name": "Charge par Prix Externe"
@@ -1233,6 +1388,12 @@
       "dp_price_discharge_control": {
         "name": "Décharge selon le prix"
       },
+      "smart_predischarge": {
+        "name": "Pré-décharge intelligente / anti-écrêtement"
+      },
+      "negative_price_charging": {
+        "name": "Charge opportuniste à prix négatif"
+      },
       "rt_price_discharge_control": {
         "name": "Décharge selon le prix"
       },
@@ -1256,6 +1417,15 @@
       },
       "active_batteries": {
         "name": "Batteries Actives"
+      },
+      "three_phase_protection_status": {
+        "name": "État de la Protection Triphasée",
+        "state": {
+          "disabled": "Désactivée",
+          "active": "Active",
+          "limiting": "Batteries limitées",
+          "degraded": "Dégradée / sécurité"
+        }
       },
       "system_battery_cell_power": {
         "name": "Puissance de cellule batterie du système"
@@ -1292,9 +1462,6 @@
       "non_responsive_batteries": {
         "name": "Batteries Non Réactives"
       },
-      "configuration_summary": {
-        "name": "Résumé de Configuration"
-      },
       "integration_status": {
         "name": "État de l'Intégration",
         "state": {
@@ -1302,7 +1469,6 @@
           "manual": "Mode Manuel",
           "grid_charging": "Charge depuis le Réseau",
           "weekly_full_charge": "Charge Complète Hebdomadaire",
-          "active_balance_mode": "Mode d'Équilibrage Actif",
           "charge_delayed": "Charge Retardée",
           "waiting_for_solar": "En Attente du Solaire",
           "charging_to_setpoint": "Charge jusqu'au Seuil",
@@ -1366,6 +1532,18 @@
       "internal_temperature": {
         "name": "Température Interne"
       },
+      "internal_mos1_temperature": {
+        "name": "Température MOS1 Interne"
+      },
+      "internal_mos2_temperature": {
+        "name": "Température MOS2 Interne"
+      },
+      "max_cell_temperature": {
+        "name": "Température Maximale de Cellule"
+      },
+      "min_cell_temperature": {
+        "name": "Température Minimale de Cellule"
+      },
       "ac_power": {
         "name": "Puissance CA"
       },
@@ -1398,6 +1576,9 @@
       },
       "min_cell_voltage": {
         "name": "Tension Minimale de Cellule"
+      },
+      "cell_voltage_delta": {
+        "name": "Delta de Tension de Cellule"
       },
       "fault_status": {
         "name": "État de Défaut"
@@ -1468,6 +1649,9 @@
       "software_version": {
         "name": "Version Logiciel"
       },
+      "battery_runtime_estimate": {
+        "name": "Estimation d'Autonomie de la Batterie"
+      },
       "bms_version": {
         "name": "Version BMS"
       },
@@ -1483,8 +1667,26 @@
       "mac_address": {
         "name": "Adresse MAC"
       },
+      "esp_ip": {
+        "name": "IP ESPHome"
+      },
+      "esp_ssid": {
+        "name": "SSID ESPHome"
+      },
+      "esp_version": {
+        "name": "Version ESP"
+      },
       "wifi_signal_strength": {
         "name": "Force du Signal WiFi"
+      },
+      "esp_wifi_signal_strength": {
+        "name": "Force du Signal WiFi de l'ESP"
+      },
+      "bt_status": {
+        "name": "État BT"
+      },
+      "power_restriction": {
+        "name": "Limitation de Puissance"
       },
       "battery_cycle_count": {
         "name": "Cycles Batterie"
@@ -1560,11 +1762,89 @@
       "predictive_charging_active": {
         "name": "Charge Prédictive Active"
       },
+      "curtailment_status": {
+        "name": "État de la pré-décharge intelligente"
+      },
       "wifi_status": {
         "name": "État WiFi"
       },
       "cloud_status": {
         "name": "État Cloud"
+      },
+      "esp_wifi_status": {
+        "name": "État WiFi de l'ESP"
+      },
+      "pll_abnormal_restart": {
+        "name": "Redémarrage PLL Anormal"
+      },
+      "overtemperature_limit": {
+        "name": "Limite de Surchauffe"
+      },
+      "low_temperature_limit": {
+        "name": "Limite de Basse Température"
+      },
+      "fan_abnormal_warning": {
+        "name": "Alerte de Ventilateur Anormal"
+      },
+      "low_battery_soc_warning": {
+        "name": "Alerte de SOC Batterie Faible"
+      },
+      "output_overcurrent_warning": {
+        "name": "Alerte de Surintensité de Sortie"
+      },
+      "abnormal_line_sequence_detection": {
+        "name": "Détection de Séquence de Ligne Anormale"
+      },
+      "wifi_abnormal": {
+        "name": "WiFi Anormal"
+      },
+      "ble_abnormal": {
+        "name": "BLE Anormal"
+      },
+      "network_abnormal": {
+        "name": "Réseau Anormal"
+      },
+      "ct_connection_abnormal": {
+        "name": "Connexion CT Anormale"
+      },
+      "grid_overvoltage": {
+        "name": "Surtension Réseau"
+      },
+      "grid_undervoltage": {
+        "name": "Sous-tension Réseau"
+      },
+      "grid_overfrequency": {
+        "name": "Surfréquence Réseau"
+      },
+      "grid_underfrequency": {
+        "name": "Sous-fréquence Réseau"
+      },
+      "grid_peak_voltage_abnormal": {
+        "name": "Pic de Tension Réseau Anormal"
+      },
+      "current_dcover": {
+        "name": "Dcover de Courant"
+      },
+      "voltage_dcover": {
+        "name": "Dcover de Tension"
+      },
+      "bat_overvoltage": {
+        "name": "Surtension Batterie"
+      },
+      "bat_undervoltage": {
+        "name": "Sous-tension Batterie"
+      },
+      "bat_overcurrent": {
+        "name": "Surintensité Batterie"
+      },
+      "bat_low_soc": {
+        "name": "SOC Batterie Faible"
+      },
+      "bat_communication_failure": {
+        "name": "Échec de Communication Batterie"
+      },
+      "bms_protect": {
+        "name": "Protection BMS"
       },
       "balancing_mode": {
         "name": "Mode d'Équilibrage"
@@ -1576,6 +1856,15 @@
     "select": {
       "force_mode": {
         "name": "Mode Forcé"
+      },
+      "battery_phase": {
+        "name": "Phase de la batterie",
+        "state": {
+          "unassigned": "Non assignée",
+          "l1": "L1",
+          "l2": "L2",
+          "l3": "L3"
+        }
       },
       "user_work_mode": {
         "name": "Mode de Fonctionnement",
@@ -1719,6 +2008,15 @@
       },
       "predictive_grid_charge_margin_pct": {
         "name": "Marge de Charge Réseau Prédictive"
+      },
+      "negative_injection_threshold": {
+        "name": "Seuil d'injection négative"
+      },
+      "predischarge_reserve_soc": {
+        "name": "Réserve de SOC de pré-décharge"
+      },
+      "predischarge_max_export_power_w": {
+        "name": "Limite d'exportation délibérée vers le réseau"
       },
       "predictive_min_soc_floor": {
         "name": "SOC minimum garanti"

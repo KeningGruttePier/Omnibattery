@@ -45,8 +45,8 @@ blueprint:
       default: -50
       selector:
         number:
-          min: -2500
-          max: 2500
+          min: -15000
+          max: 15000
           step: 10
           unit_of_measurement: W
           mode: box
@@ -57,8 +57,8 @@ blueprint:
       default: 50
       selector:
         number:
-          min: -2500
-          max: 2500
+          min: -15000
+          max: 15000
           step: 10
           unit_of_measurement: W
           mode: box
@@ -88,8 +88,8 @@ blueprint:
       default: 0
       selector:
         number:
-          min: -2500
-          max: 2500
+          min: -15000
+          max: 15000
           step: 10
           unit_of_measurement: W
           mode: box

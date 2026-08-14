@@ -93,20 +93,18 @@ La integración detecta que la marca de tiempo del sensor no ha cambiado:
 
 ---
 
-## Reportar un problema — Sensor de Resumen de Configuración
+## Reportar un problema — Descargar diagnósticos
 
-Al abrir un informe de error o pedir ayuda, es muy útil compartir la configuración actual de la integración. El sensor **Resumen de Configuración** expone la configuración relevante para soporte como atributos de la entidad: sensores, modelos y límites de batería, franjas horarias, carga predictiva, carga semanal, retraso de carga, protección de capacidad, balance horario, parámetros PD, limites globales de carga/descarga y dispositivos excluidos. Las IPs y puertos de las baterías no se exponen intencionadamente.
+Al abrir un informe de error o pedir ayuda, adjunta el JSON generado por la acción **Descargar diagnósticos** de Home Assistant para la entrada de configuración de Omnibattery. El archivo contiene la configuración persistida junto con el estado de conexión de las baterías, las capacidades de los drivers, el seguimiento de baterías sin respuesta y los detalles de ejecución de los precios dinámicos. La integración redacta los campos sensibles de conexión y los identificadores conocidos.
 
-Para límites de potencia multi-batería informa si la funcionalidad está activada (`system_power_limits_enabled`), los totales configurados por batería (`total_max_charge_power_W`, `total_max_discharge_power_W`) y los totales efectivos tras aplicar límites globales de sistema opcionales (`effective_total_max_charge_power_W`, `effective_total_max_discharge_power_W`).
+**Cómo descargarlo:**
 
-**Cómo activarlo:**
+1. Ve a **Configuración → Dispositivos y servicios**.
+2. Abre la integración **Omnibattery** y su entrada de configuración.
+3. Pulsa **Descargar diagnósticos**.
+4. Adjunta el archivo JSON resultante al caso de soporte.
 
-1. Ve a **Configuración → Dispositivos y servicios → Omnibattery**.
-2. Selecciona el dispositivo **Omnibattery System**.
-3. Busca el sensor **Resumen de Configuración** (está oculto por defecto) y actívalo.
-4. Abre la tarjeta de detalle del sensor y comparte sus atributos (estado + atributos).
-
-El sensor es de solo lectura y diagnóstico. No afecta al comportamiento de la integración de ninguna manera.
+Revisa el archivo antes de compartirlo y elimina cualquier dato específico de tu instalación que no quieras revelar.
 
 ---
 

@@ -1,5 +1,9 @@
 {
   "issues": {
+    "three_phase_manual_mode": {
+      "title": "La protecció trifàsica es pot saltar amb ordres manuals",
+      "description": "La protecció trifàsica està activa, però les ordres manuals de registre o de franja poden escriure directament a una bateria sense l'envolupant automàtica. Mantén-les dins dels límits configurats."
+    },
     "slow_main_sensor": {
       "title": "El sensor de potència de xarxa s'actualitza massa lentament",
       "description": "El sensor de xarxa configurat {sensor} s'actualitza aproximadament cada {observed_interval} segons. Els intervals de {warning_interval} segons o més són més lents del recomanat i poden reduir la qualitat de la regulació. Omnibattery segueix l'última lectura fins que supera els {stale_limit} segons d'antiguitat. Utilitza un sensor més ràpid si necessites un control en temps real més precís."
@@ -27,15 +31,42 @@
           "solar_forecast_sensor": "Sensor de predicció solar (opcional)",
           "solar_production_sensor": "Sensor de producció solar (opcional)",
           "meter_inverted": "Signe del comptador invertit",
-          "max_contracted_power": "Potència màxima contractada (W)"
+          "max_contracted_power": "Potència màxima contractada (W)",
+          "three_phase_enabled": "Activa la protecció de corrent trifàsica"
         },
         "data_description": {
           "consumption_sensor": "Sensor en temps real de potència importada (+) o exportada (-) a la xarxa. Es recomanen actualitzacions cada 1-2 segons. S'accepten sensors més lents, però les lectures retardades redueixen la qualitat de la regulació; l'última lectura se segueix durant un màxim de 65 segons.",
           "solar_forecast_sensor": "Sensor que proporciona la predicció de producció solar en kWh (ex: Solcast). Si es configura aquí, s'utilitzarà automàticament per la càrrega predictiva i el retard de càrrega solar.",
           "solar_production_sensor": "Sensor de potència de producció fotovoltaica en temps real (W/kW) d'un inversor extern que no passa per les entrades MPPT de la bateria. S'utilitza per mostrar el node Solar al diagrama de flux del tauler. Deixa'l buit si els teus panells alimenten directament el MPPT de la bateria.",
           "meter_inverted": "Activa aquesta opció si el teu comptador utilitza el conveni oposat: positiu = exportació, negatiu = importació. La unitat (W/kW) es detecta automàticament.",
-          "max_contracted_power": "Potència total contractada en watts. El sistema no superarà aquest límit en carregar per evitar que salti el comptador"
+          "max_contracted_power": "Potència total contractada en watts. El sistema no superarà aquest límit en carregar per evitar que salti el comptador",
+          "three_phase_enabled": "Envolupant de seguretat opcional per a instal·lacions trifàsiques; configura els sensors i la fase física de cada bateria al pas següent."
         }
+      },
+      "three_phase": {
+        "title": "Protecció de corrent trifàsica",
+        "description": "Configura un sensor de corrent RMS amb signe i la mida del fusible en amperes per a cada fase que vulguis protegir. Deixa tots dos camps buits per a les fases no utilitzades. Els sensors han de ser entitats sensor diferents amb unitats A o mA; positiu significa importació i negatiu exportació.",
+        "data": {
+          "phase_1_current_sensor": "Sensor de corrent de xarxa L1",
+          "phase_2_current_sensor": "Sensor de corrent de xarxa L2",
+          "phase_3_current_sensor": "Sensor de corrent de xarxa L3",
+          "phase_1_fuse_size": "Mida del fusible L1 (A)",
+          "phase_2_fuse_size": "Mida del fusible L2 (A)",
+          "phase_3_fuse_size": "Mida del fusible L3 (A)"
+        },
+        "data_description": {
+          "phase_1_current_sensor": "Corrent RMS amb signe en temps real de la fase física L1. S'accepten A i mA.",
+          "phase_2_current_sensor": "Corrent RMS amb signe en temps real de la fase física L2. S'accepten A i mA.",
+          "phase_3_current_sensor": "Corrent RMS amb signe en temps real de la fase física L3. S'accepten A i mA.",
+          "phase_1_fuse_size": "Mida o límit del fusible de L1 en amperes. Introdueix un valor inferior al nominal per deixar marge.",
+          "phase_2_fuse_size": "Mida o límit del fusible de L2 en amperes. Introdueix un valor inferior al nominal per deixar marge.",
+          "phase_3_fuse_size": "Mida o límit del fusible de L3 en amperes. Introdueix un valor inferior al nominal per deixar marge."
+        }
+      },
+      "phase_assignments": {
+        "title": "Assignació de fase de la bateria {battery_num}",
+        "description": "Selecciona la fase física on està connectada {battery_name}, o tria Sense assignar si no està connectada a una fase protegida.",
+        "data": {"battery_phase": "Fase física de la bateria"}
       },
       "batteries": {
         "title": "Nombre de bateries",
@@ -91,8 +122,8 @@
       "battery_connection_hoymiles": {
         "title": "Configura la bateria {battery_num} — Connexió (Hoymiles)",
         "description": "Activa MQTT Service a S-Miles Home i fes-lo servir amb el broker MQTT configurat a Home Assistant.",
-        "data": {"name": "Nom", "device_id": "ID de dispositiu MQTT"},
-        "data_description": {"device_id": "ID MQTT de MS-A2, per exemple MSA-280024341346."}
+        "data": {"name": "Nom", "device_id": "ID de dispositiu MQTT", "hoymiles_model": "Model de bateria"},
+        "data_description": {"device_id": "ID MQTT de Hoymiles, per exemple MSA-280024341346.", "hoymiles_model": "Utilitzeu la detecció automàtica tret que el dispositiu publiqui un model incorrecte o genèric."}
       },
       "battery_connection_esphome": {
         "title": "Configura la bateria {battery_num} — Connexió (LilyGo/ESPHome)",
@@ -117,7 +148,8 @@
           "charge_hysteresis_percent": "Histèresi de càrrega (%)",
           "backup_offgrid_threshold": "Llindar de càrrega offgrid (fora de la xarxa) de backup (W)",
           "full_charge_voltage_taper_enabled": "Activa la reducció per voltatge en carregar al 100%",
-          "battery_capacity_kwh": "Capacitat nominal de la bateria (kWh)"
+          "battery_capacity_kwh": "Capacitat nominal de la bateria (kWh)",
+          "battery_phase": "Fase física de la bateria"
         },
         "data_description": {
           "max_charge_power": "Potència màxima permesa per carregar la bateria",
@@ -126,8 +158,9 @@
           "min_soc": "Estat de càrrega mínim per a descàrrega (12-30%) - la bateria no descarregarà per sota d'aquest valor",
           "charge_hysteresis_percent": "Sempre activa (mínim 2%). En arribar al màxim, la bateria no tornarà a carregar fins que el SOC baixi a (SOC màx − histèresi). Ex: SOC màx 100% amb 2% = no carrega fins a 98%.",
           "backup_offgrid_threshold": "Una càrrega offgrid superior a aquest valor es considera un esdeveniment de backup actiu, excloent la bateria del control PD. Augmenta'l si tens càrregues permanents (router, càmeres) al port offgrid.",
-          "full_charge_voltage_taper_enabled": "Quan l'objectiu és 100%, limita la càrrega a 200 W des de 3,48 V de cel·la màxima i s'atura a 3,60 V per mesurar el desbalanç durant 60 segons.",
-          "battery_capacity_kwh": "Capacitat útil nominal del pack de bateries. Es fa servir per calcular energia emmagatzemada i eficiència a partir del SOC. Per a Sessy, introdueix la capacitat real; per a altres bateries, deixa 0 si no la coneixes."
+          "full_charge_voltage_taper_enabled": "Quan l'objectiu és 100%, limita la càrrega a 200 W des de 3,48 V de cel·la màxima. En Venus E s'atura a 3,60 V per mesurar el desbalanç durant 60 segons; les Venus A/D amb packs acoblats continuen a 200 W fins que la BMS talla.",
+          "battery_capacity_kwh": "Capacitat útil nominal del pack de bateries. Es fa servir per calcular energia emmagatzemada i eficiència a partir del SOC. Per a Sessy, introdueix la capacitat real; per a altres bateries, deixa 0 si no la coneixes.",
+          "battery_phase": "Fase AC física (L1/L2/L3) on està cablejada aquesta bateria, o Sense assignar si queda fora de l'esquema de fases protegides. Una bateria sense fase queda fora de l'envolupant trifàsica i continua funcionant normalment en automàtic."
         }
       },
       "time_slots": {
@@ -281,7 +314,7 @@
           "end_time": "Hora de fi de la franja de càrrega (ex: 06:00)",
           "days": "Dies en els quals es permet carregar des de la xarxa",
           "solar_forecast_sensor": "Sensor que proporciona la predicció de producció solar en kWh (ex: Solcast). Si tens panells solars, configura'l — el sistema només carregarà des de la xarxa quan la previsió solar sigui insuficient. Si no tens panells, deixa'l buit — el sistema carregarà quan la bateria no tingui energia suficient per al dia. No cal si ja has configurat aquest sensor al pas inicial: s'utilitzarà automàticament.",
-          "predictive_safety_margin_kwh": "Energia addicional afegida a la previsió de consum abans de decidir si carregar. Útil quan la teva previsió solar tendeix a ser optimista. Posa 0 per desactivar (per defecte). Limitat a la capacitat total de la bateria.",
+          "predictive_safety_margin_kwh": "Energia addicional afegida a la previsió de consum abans de decidir si carregar. El mateix marge en kWh també es reserva com a espai addicional contra l'anti-abocament en Preu Dinàmic. Posa 0 per desactivar (per defecte). Limitat a la capacitat total de la bateria.",
           "predictive_grid_charge_margin_pct": "Percentatge extra carregat des de la xarxa sobre el dèficit solar, per cobrir previsions solars optimistes. Ex.: una necessitat de 2 kWh de xarxa al 50% carrega 3 kWh. 0 per desactivar (per defecte). Limitat al marge fins al SOC màxim."
         }
       },
@@ -294,6 +327,11 @@
           "max_price_threshold": "Preu màxim (opcional)",
           "discharge_price_threshold": "Preu mínim de descàrrega (opcional)",
           "dp_price_discharge_control": "Descarregar només quan el preu superi el llindar",
+          "negative_price_charging_enabled": "Activar la càrrega oportunista per preu negatiu",
+          "smart_predischarge_enabled": "Predescàrrega intel·ligent / anti-abocament",
+          "negative_injection_threshold": "Llindar d'injecció negativa",
+          "predischarge_reserve_soc": "Reserva de SOC de predescàrrega (%)",
+          "predischarge_export_mode": "Mode d'exportació deliberada a la xarxa",
           "solar_forecast_sensor": "Sensor de predicció solar (kWh)",
           "predictive_safety_margin_kwh": "Marge de seguretat de previsió solar (kWh)",
           "predictive_grid_charge_margin_pct": "Marge de càrrega de xarxa predictiva (%)"
@@ -304,9 +342,24 @@
           "max_price_threshold": "Les hores per sobre d'aquest preu no seran seleccionades. Quan el control de descàrrega per preu està activat, aquest valor també s'usa com a llindar de descàrrega. Usa moneda principal/kWh: €/kWh per a Nordpool/PVPC, CHF/kWh per a CKW. Els preus Nordpool HACS configurats en cèntims es converteixen automàticament. Deixa buit per usar totes les hores i usar la mitjana diària com a llindar de descàrrega. Tret que configuris a sota un preu mínim de descàrrega per separat.",
           "discharge_price_threshold": "Llindar separat opcional per a la descàrrega per preu. La descàrrega es bloqueja mentre el preu sigui igual o inferior a aquest valor, obrint una banda neutra entre el preu màxim de càrrega (a dalt) i aquest mínim: en aquesta banda la bateria ni carrega de xarxa ni descarrega (la càrrega per excedent solar continua funcionant). Deixa-ho buit per reutilitzar el preu màxim per a tots dos (comportament actual d'un sol llindar).",
           "dp_price_discharge_control": "Si està activat, la bateria només descarrega quan el preu elèctric actual supera el preu màxim configurat. Si no hi ha llindar configurat, usa el preu mitjà del dia calculat automàticament a partir del sensor de preus. Si les franges horàries restringeixen la descàrrega, s'han de complir totes dues condicions.",
+          "negative_price_charging_enabled": "Funció opcional de preus dinàmics que carrega durant les franges d'importació més negatives encara que la previsió normal no requereixi càrrega de xarxa. No cal cap sensor de previsió solar.",
+          "smart_predischarge_enabled": "Activa la predescàrrega optativa només en el mode de preus dinàmics per crear espai abans de franges amb preu d'injecció negatiu.",
+          "negative_injection_threshold": "Preus iguals o inferiors a aquest llindar es consideren franges de risc quan hi ha excedent solar previst.",
+          "predischarge_reserve_soc": "SOC que la predescàrrega ha de reservar, a més dels límits mínims existents.",
+          "predischarge_export_mode": "Tria com crear espai anti-abocament: Solo autoconsum (0 W), Automàtic (només la potència necessària) o Límit personalitzat (es configura al pas següent). És un límit d'exportació deliberada, no la potència total de descàrrega.",
           "solar_forecast_sensor": "Sensor que proporciona la predicció de producció solar en kWh (ex: Solcast). Si tens panells solars, configura'l — el sistema només carregarà des de la xarxa quan la previsió solar sigui insuficient. Si no tens panells, deixa'l buit — el sistema carregarà quan la bateria no tingui energia suficient per al dia. No cal si ja has configurat aquest sensor al pas inicial: s'utilitzarà automàticament.",
-          "predictive_safety_margin_kwh": "Energia addicional afegida a la previsió de consum abans de decidir si carregar. Útil quan la teva previsió solar tendeix a ser optimista. Posa 0 per desactivar (per defecte). Limitat a la capacitat total de la bateria.",
+          "predictive_safety_margin_kwh": "Energia addicional afegida a la previsió de consum abans de decidir si carregar. El mateix marge en kWh també es reserva com a espai addicional contra l'anti-abocament en Preu Dinàmic. Posa 0 per desactivar (per defecte). Limitat a la capacitat total de la bateria.",
           "predictive_grid_charge_margin_pct": "Percentatge extra carregat des de la xarxa sobre el dèficit solar, per cobrir previsions solars optimistes. Ex.: una necessitat de 2 kWh de xarxa al 50% carrega 3 kWh. 0 per desactivar (per defecte). Limitat al marge fins al SOC màxim."
+        }
+      },
+      "predischarge_export_limit": {
+        "title": "Anti-abocament — Límit d'exportació personalitzat",
+        "description": "Configura la màxima exportació deliberada a la xarxa mentre es crea espai. És un límit d'exportació, no la potència total de descàrrega de la bateria.",
+        "data": {
+          "predischarge_max_export_power_w": "Límit d'exportació deliberada a la xarxa (W)"
+        },
+        "data_description": {
+          "predischarge_max_export_power_w": "Potència màxima que es pot exportar deliberadament abans d'una finestra de risc solar. Els límits de SOC, reserva, potència i bloquejos existents continuen tenint prioritat."
         }
       },
       "realtime_price_config": {
@@ -327,7 +380,7 @@
           "average_price_sensor": "Si es configura, el seu valor s'usa com a llindar en lloc del valor fix anterior — útil quan la teva integració de preus ja exposa un preu mitjà diari. Deixa'l buit per usar el llindar fix.",
           "rt_price_discharge_control": "Si està activat, la bateria només descarrega quan el preu elèctric actual supera el llindar (fix o preu mitjà diari). Si les franges horàries restringeixen la descàrrega, s'han de complir totes dues condicions.",
           "solar_forecast_sensor": "Sensor que proporciona la predicció de producció solar en kWh (ex: Solcast). Si tens panells solars, configura'l — el sistema només carregarà des de la xarxa quan la previsió solar sigui insuficient. No cal si ja has configurat aquest sensor al pas inicial: s'utilitzarà automàticament.",
-          "predictive_safety_margin_kwh": "Energia addicional afegida a la previsió de consum abans de decidir si carregar. Útil quan la teva previsió solar tendeix a ser optimista. Posa 0 per desactivar (per defecte). Limitat a la capacitat total de la bateria.",
+          "predictive_safety_margin_kwh": "Energia addicional afegida a la previsió de consum abans de decidir si carregar. El mateix marge en kWh també es reserva com a espai addicional contra l'anti-abocament en Preu Dinàmic. Posa 0 per desactivar (per defecte). Limitat a la capacitat total de la bateria.",
           "predictive_grid_charge_margin_pct": "Percentatge extra carregat des de la xarxa sobre el dèficit solar, per cobrir previsions solars optimistes. Ex.: una necessitat de 2 kWh de xarxa al 50% carrega 3 kWh. 0 per desactivar (per defecte). Limitat al marge fins al SOC màxim."
         }
       },
@@ -451,7 +504,7 @@
           "pd_direction_hysteresis": "Llindar de potència necessari per canviar entre càrrega i descàrrega. Prevé canvis ràpids de direcció. Rang: 0-200W, predeterminat: 60W",
           "pd_min_charge_power": "Potència mínima per carregar. Per sota d'aquest llindar, el controlador queda en repòs en lloc de carregar a baixa potència. 0 = desactivat.",
           "pd_min_discharge_power": "Potència mínima per descarregar. Per sota d'aquest llindar, el controlador queda en repòs en lloc de descarregar a baixa potència. 0 = desactivat.",
-          "pd_target_grid_power": "Consigna de potència de xarxa que regula el controlador. Negatiu = exportar a xarxa, positiu = importar de xarxa, 0 = balanç net zero. Rang: -500 a +500 W, valor per defecte: 0 W.",
+          "pd_target_grid_power": "Consigna de potència de xarxa que regula el controlador. Positiu = importar de la xarxa (la bateria carrega), negatiu = exportar a la xarxa (la bateria descarrega), 0 = balanç net zero. El rang segueix la potència total configurada de les teves bateries, limitat pels límits de potència del sistema quan estan actius. Valor per defecte: 0 W.",
           "enable_system_power_limits": "En activar-lo, els dos sliders inferiors limiten la potència combinada de càrrega/descàrrega de totes les bateries actives.",
           "system_max_charge_power": "Límit opcional per a la potència de càrrega combinada de totes les bateries actives. 0 = desactivat; els límits per bateria segueixen aplicant-se.",
           "system_max_discharge_power": "Límit opcional per a la potència de descàrrega combinada de totes les bateries actives. 0 = desactivat; els límits per bateria segueixen aplicant-se."
@@ -531,8 +584,9 @@
       },
       "reconfigure_battery_hoymiles": {
         "title": "Reconfigura la bateria {battery_num} — MQTT Hoymiles",
-        "description": "Introduïu l'ID MQTT de MS-A2; Home Assistant gestiona el broker.",
-        "data": {"name": "Nom", "device_id": "ID de dispositiu MQTT"}
+        "description": "Introduïu l'ID MQTT de Hoymiles; Home Assistant gestiona el broker i Omnibattery detecta el model.",
+        "data": {"name": "Nom", "device_id": "ID de dispositiu MQTT", "hoymiles_model": "Model de bateria"},
+        "data_description": {"hoymiles_model": "Utilitzeu la detecció automàtica tret que el dispositiu publiqui un model incorrecte o genèric."}
       },
       "reconfigure_battery_esphome": {
         "title": "Reconfigura la bateria {battery_num} — Connexió (LilyGo/ESPHome)",
@@ -581,6 +635,15 @@
       "esphome_entities_missing": "Al dispositiu ESPHome seleccionat li falten entitats necessàries: {missing}. Assegura't que executa el firmware marstek-lilygo-rs485 amb els noms d'entitat originals.",
       "sensor_not_found": "El sensor de predicció solar no existeix. Verifica que el sensor estigui disponible.",
       "invalid_unit": "El sensor de predicció solar ha de tenir com a unitat 'kWh' o 'Wh'.",
+      "solar_production_sensor_not_found": "El sensor de producció solar no existeix. Verifica que el sensor estigui disponible.",
+      "solar_production_invalid_unit": "El sensor de producció solar ha de tenir com a unitat 'W' o 'kW'.",
+      "phase_sensors_must_differ": "Cada fase ha d'utilitzar un sensor de corrent diferent.",
+      "phase_sensor_not_found": "El sensor de corrent de fase no existeix o no està disponible.",
+      "phase_sensor_invalid_domain": "La font de corrent de fase ha de ser una entitat sensor.",
+      "phase_sensor_invalid_unit": "El sensor de corrent de fase ha de tenir com a unitat 'A' o 'mA'.",
+      "phase_limit_must_be_positive": "La mida del fusible de fase ha de ser un valor finit i positiu en amperes.",
+      "phase_sensor_and_limit_required": "Indica el sensor de corrent de fase i la mida del fusible, o deixa tots dos camps buits.",
+      "battery_phase_required": "Selecciona la fase física d'aquesta bateria.",
       "incomplete_window": "Cada franja de càrrega addicional necessita hora d'inici i de fi. Omple les dues o deixa-les buides per ometre-la.",
       "overlapping_slots": "Aquesta franja es solapa amb una altra ja configurada per a la mateixa bateria. Ajusta els horaris, dies o bateria.",
       "midnight_crossing": "L'hora d'inici ha de ser anterior a l'hora de fi. Per a períodes nocturns, crea dues franges separades (ex: 22:00-23:59 i 00:00-06:00).",
@@ -603,6 +666,31 @@
   },
   "options": {
     "step": {
+      "three_phase": {
+        "title": "Protecció de corrent trifàsica",
+        "description": "Configura un sensor de corrent RMS amb signe i la mida del fusible en amperes per a cada fase que vulguis protegir. Deixa tots dos camps buits per a les fases no utilitzades. Els sensors han de ser entitats sensor diferents amb unitats A o mA; positiu significa importació i negatiu exportació.",
+        "data": {
+          "phase_1_current_sensor": "Sensor de corrent de xarxa L1",
+          "phase_2_current_sensor": "Sensor de corrent de xarxa L2",
+          "phase_3_current_sensor": "Sensor de corrent de xarxa L3",
+          "phase_1_fuse_size": "Mida del fusible L1 (A)",
+          "phase_2_fuse_size": "Mida del fusible L2 (A)",
+          "phase_3_fuse_size": "Mida del fusible L3 (A)"
+        },
+        "data_description": {
+          "phase_1_current_sensor": "Sensor de la fase física L1.",
+          "phase_2_current_sensor": "Sensor de la fase física L2.",
+          "phase_3_current_sensor": "Sensor de la fase física L3.",
+          "phase_1_fuse_size": "Mida o límit del fusible de L1 en amperes. Introdueix un valor inferior al nominal per deixar marge.",
+          "phase_2_fuse_size": "Mida o límit del fusible de L2 en amperes. Introdueix un valor inferior al nominal per deixar marge.",
+          "phase_3_fuse_size": "Mida o límit del fusible de L3 en amperes. Introdueix un valor inferior al nominal per deixar marge."
+        }
+      },
+      "phase_assignments": {
+        "title": "Assignació de fase de la bateria {battery_num}",
+        "description": "Selecciona la fase física on està connectada {battery_name}, o tria Sense assignar si no està connectada a una fase protegida.",
+        "data": {"battery_phase": "Fase física de la bateria"}
+      },
       "init": {
         "title": "Reconfigura Omnibattery",
         "description": "Selecciona la secció que vols configurar.",
@@ -628,14 +716,16 @@
           "solar_forecast_sensor": "Sensor de predicció solar (opcional)",
           "solar_production_sensor": "Sensor de producció solar (opcional)",
           "meter_inverted": "Signe del comptador invertit",
-          "max_contracted_power": "Potència màxima contractada (W)"
+          "max_contracted_power": "Potència màxima contractada (W)",
+          "three_phase_enabled": "Activa la protecció de corrent trifàsica"
         },
         "data_description": {
           "consumption_sensor": "Sensor en temps real de potència importada (+) o exportada (-) a la xarxa. Es recomanen actualitzacions cada 1-2 segons. S'accepten sensors més lents, però les lectures retardades redueixen la qualitat de la regulació; l'última lectura se segueix durant un màxim de 65 segons.",
           "solar_forecast_sensor": "Sensor que proporciona la predicció de producció solar en kWh (ex: Solcast). Si es configura aquí, s'utilitzarà automàticament en càrrega predictiva i retard de càrrega solar.",
           "solar_production_sensor": "Sensor de potència de producció fotovoltaica en temps real (W/kW) d'un inversor extern que no passa per les entrades MPPT de la bateria. S'utilitza per mostrar el node Solar al diagrama de flux del tauler. Deixa'l buit si els teus panells alimenten directament el MPPT de la bateria.",
           "meter_inverted": "Activa aquesta opció si el teu comptador utilitza el conveni oposat: positiu = exportació, negatiu = importació. La unitat (W/kW) es detecta automàticament.",
-          "max_contracted_power": "Potència total contractada en watts. El sistema no superarà aquest límit en carregar per evitar que salti el diferencial"
+          "max_contracted_power": "Potència total contractada en watts. El sistema no superarà aquest límit en carregar per evitar que salti el diferencial",
+          "three_phase_enabled": "Envolupant de seguretat opcional per a instal·lacions trifàsiques; configura els sensors i la fase física de cada bateria al pas següent."
         }
       },
       "batteries": {
@@ -712,7 +802,8 @@
           "charge_hysteresis_percent": "Histèresi de càrrega (%)",
           "backup_offgrid_threshold": "Llindar de càrrega offgrid de backup (W)",
           "full_charge_voltage_taper_enabled": "Activar reducció per voltatge en carregar al 100%",
-          "battery_capacity_kwh": "Capacitat nominal de la bateria (kWh)"
+          "battery_capacity_kwh": "Capacitat nominal de la bateria (kWh)",
+          "battery_phase": "Fase física de la bateria"
         },
         "data_description": {
           "max_charge_power": "Potència màxima permesa per carregar la bateria",
@@ -721,8 +812,9 @@
           "min_soc": "Estat de càrrega mínim per a descàrrega (12-30%)",
           "charge_hysteresis_percent": "Sempre activa (mínim 2%). En arribar al màxim, la bateria no tornarà a carregar fins que el SOC baixi a (SOC màx − histèresi). Ex: SOC màx 100% amb 2% = no carrega fins a 98%.",
           "backup_offgrid_threshold": "Una càrrega offgrid superior a aquest valor es considera un esdeveniment de backup actiu, excloent la bateria del control PD. Augmenta'l si tens càrregues permanents (router, càmeres) al port offgrid.",
-          "full_charge_voltage_taper_enabled": "Quan l'objectiu és 100%, limita la càrrega a 200 W des de 3,48 V de cel·la màxima i s'atura a 3,60 V per mesurar el desbalanç durant 60 segons.",
-          "battery_capacity_kwh": "Capacitat útil nominal del pack de bateries. Es fa servir per calcular energia emmagatzemada i eficiència a partir del SOC. Per a Sessy, introdueix la capacitat real; per a altres bateries, deixa 0 si no la coneixes."
+          "full_charge_voltage_taper_enabled": "Quan l'objectiu és 100%, limita la càrrega a 200 W des de 3,48 V de cel·la màxima. En Venus E s'atura a 3,60 V per mesurar el desbalanç durant 60 segons; les Venus A/D amb packs acoblats continuen a 200 W fins que la BMS talla.",
+          "battery_capacity_kwh": "Capacitat útil nominal del pack de bateries. Es fa servir per calcular energia emmagatzemada i eficiència a partir del SOC. Per a Sessy, introdueix la capacitat real; per a altres bateries, deixa 0 si no la coneixes.",
+          "battery_phase": "Fase AC física (L1/L2/L3) on està cablejada aquesta bateria, o Sense assignar si queda fora de l'esquema de fases protegides. Una bateria sense fase queda fora de l'envolupant trifàsica i continua funcionant normalment en automàtic."
         }
       },
       "time_slots": {
@@ -876,7 +968,7 @@
           "end_time": "Hora de fi de la franja de càrrega (ex: 06:00)",
           "days": "Dies en els quals es permet carregar des de la xarxa",
           "solar_forecast_sensor": "Sensor que proporciona la predicció de producció solar en kWh (ex: Solcast). Si tens panells solars, configura'l — el sistema només carregarà des de la xarxa quan la previsió solar sigui insuficient. Si no tens panells, deixa'l buit — el sistema carregarà quan la bateria no tingui energia suficient per al dia. No cal si ja has configurat aquest sensor al pas inicial: s'utilitzarà automàticament.",
-          "predictive_safety_margin_kwh": "Energia addicional afegida a la previsió de consum abans de decidir si carregar. Útil quan la teva previsió solar tendeix a ser optimista. Posa 0 per desactivar (per defecte). Limitat a la capacitat total de la bateria.",
+          "predictive_safety_margin_kwh": "Energia addicional afegida a la previsió de consum abans de decidir si carregar. El mateix marge en kWh també es reserva com a espai addicional contra l'anti-abocament en Preu Dinàmic. Posa 0 per desactivar (per defecte). Limitat a la capacitat total de la bateria.",
           "predictive_grid_charge_margin_pct": "Percentatge extra carregat des de la xarxa sobre el dèficit solar, per cobrir previsions solars optimistes. Ex.: una necessitat de 2 kWh de xarxa al 50% carrega 3 kWh. 0 per desactivar (per defecte). Limitat al marge fins al SOC màxim."
         }
       },
@@ -889,6 +981,11 @@
           "max_price_threshold": "Preu màxim (opcional)",
           "discharge_price_threshold": "Preu mínim de descàrrega (opcional)",
           "dp_price_discharge_control": "Descarrega només quan el preu superi el llindar",
+          "negative_price_charging_enabled": "Activar la càrrega oportunista per preu negatiu",
+          "smart_predischarge_enabled": "Predescàrrega intel·ligent / anti-abocament",
+          "negative_injection_threshold": "Llindar d'injecció negativa",
+          "predischarge_reserve_soc": "Reserva de SOC de predescàrrega (%)",
+          "predischarge_export_mode": "Mode d'exportació deliberada a la xarxa",
           "solar_forecast_sensor": "Sensor de predicció solar (kWh)",
           "predictive_safety_margin_kwh": "Marge de seguretat de previsió solar (kWh)",
           "predictive_grid_charge_margin_pct": "Marge de càrrega de xarxa predictiva (%)"
@@ -899,9 +996,24 @@
           "max_price_threshold": "Les hores per sobre d'aquest preu no seran seleccionades. Quan el control de descàrrega per preu està activat, aquest valor també s'usa com a llindar de descàrrega. Usa moneda principal/kWh: €/kWh per a Nordpool/PVPC, CHF/kWh per a CKW. Els preus Nordpool HACS configurats en cèntims es converteixen automàticament. Deixa buit per usar totes les hores i usar la mitjana diària com a llindar de descàrrega. Tret que configuris a sota un preu mínim de descàrrega per separat.",
           "discharge_price_threshold": "Llindar separat opcional per a la descàrrega per preu. La descàrrega es bloqueja mentre el preu sigui igual o inferior a aquest valor, obrint una banda neutra entre el preu màxim de càrrega (a dalt) i aquest mínim: en aquesta banda la bateria ni carrega de xarxa ni descarrega (la càrrega per excedent solar continua funcionant). Deixa-ho buit per reutilitzar el preu màxim per a tots dos (comportament actual d'un sol llindar).",
           "dp_price_discharge_control": "Si està activat, la bateria només descarrega quan el preu elèctric actual supera el preu màxim configurat. Si no hi ha llindar configurat, usa el preu mitjà del dia calculat automàticament a partir del sensor de preus. Si les franges horàries restringeixen la descàrrega, s'han de complir totes dues condicions.",
+          "negative_price_charging_enabled": "Funció opcional de preus dinàmics que carrega durant les franges d'importació més negatives encara que la previsió normal no requereixi càrrega de xarxa. No cal cap sensor de previsió solar.",
+          "smart_predischarge_enabled": "Activa la predescàrrega optativa només en el mode de preus dinàmics per crear espai abans de franges amb preu d'injecció negatiu.",
+          "negative_injection_threshold": "Preus iguals o inferiors a aquest llindar es consideren franges de risc quan hi ha excedent solar previst.",
+          "predischarge_reserve_soc": "SOC que la predescàrrega ha de reservar, a més dels límits mínims existents.",
+          "predischarge_export_mode": "Tria com crear espai anti-abocament: Solo autoconsum (0 W), Automàtic (només la potència necessària) o Límit personalitzat (es configura al pas següent). És un límit d'exportació deliberada, no la potència total de descàrrega.",
           "solar_forecast_sensor": "Sensor que proporciona la predicció de producció solar en kWh (ex: Solcast). Si tens panells solars, configura'l — el sistema només carregarà des de la xarxa quan la previsió solar sigui insuficient. Si no tens panells, deixa'l buit — el sistema carregarà quan la bateria no tingui energia suficient per al dia. No cal si ja has configurat aquest sensor al pas inicial: s'utilitzarà automàticament.",
-          "predictive_safety_margin_kwh": "Energia addicional afegida a la previsió de consum abans de decidir si carregar. Útil quan la teva previsió solar tendeix a ser optimista. Posa 0 per desactivar (per defecte). Limitat a la capacitat total de la bateria.",
+          "predictive_safety_margin_kwh": "Energia addicional afegida a la previsió de consum abans de decidir si carregar. El mateix marge en kWh també es reserva com a espai addicional contra l'anti-abocament en Preu Dinàmic. Posa 0 per desactivar (per defecte). Limitat a la capacitat total de la bateria.",
           "predictive_grid_charge_margin_pct": "Percentatge extra carregat des de la xarxa sobre el dèficit solar, per cobrir previsions solars optimistes. Ex.: una necessitat de 2 kWh de xarxa al 50% carrega 3 kWh. 0 per desactivar (per defecte). Limitat al marge fins al SOC màxim."
+        }
+      },
+      "predischarge_export_limit": {
+        "title": "Anti-abocament — Límit d'exportació personalitzat",
+        "description": "Configura la màxima exportació deliberada a la xarxa mentre es crea espai. És un límit d'exportació, no la potència total de descàrrega de la bateria.",
+        "data": {
+          "predischarge_max_export_power_w": "Límit d'exportació deliberada a la xarxa (W)"
+        },
+        "data_description": {
+          "predischarge_max_export_power_w": "Potència màxima que es pot exportar deliberadament abans d'una finestra de risc solar. Els límits de SOC, reserva, potència i bloquejos existents continuen tenint prioritat."
         }
       },
       "realtime_price_config": {
@@ -922,7 +1034,7 @@
           "average_price_sensor": "Si es configura, el seu valor s'usa com a llindar en lloc del valor fix anterior — útil quan la teva integració de preus ja exposa un preu mitjà diari. Deixa'l buit per usar el llindar fix.",
           "rt_price_discharge_control": "Si està activat, la bateria només descarrega quan el preu elèctric actual supera el llindar (fix o preu mitjà diari). Si les franges horàries restringeixen la descàrrega, s'han de complir totes dues condicions.",
           "solar_forecast_sensor": "Sensor que proporciona la predicció de producció solar en kWh (ex: Solcast). Si tens panells solars, configura'l — el sistema només carregarà des de la xarxa quan la previsió solar sigui insuficient. No cal si ja has configurat aquest sensor al pas inicial: s'utilitzarà automàticament.",
-          "predictive_safety_margin_kwh": "Energia addicional afegida a la previsió de consum abans de decidir si carregar. Útil quan la teva previsió solar tendeix a ser optimista. Posa 0 per desactivar (per defecte). Limitat a la capacitat total de la bateria.",
+          "predictive_safety_margin_kwh": "Energia addicional afegida a la previsió de consum abans de decidir si carregar. El mateix marge en kWh també es reserva com a espai addicional contra l'anti-abocament en Preu Dinàmic. Posa 0 per desactivar (per defecte). Limitat a la capacitat total de la bateria.",
           "predictive_grid_charge_margin_pct": "Percentatge extra carregat des de la xarxa sobre el dèficit solar, per cobrir previsions solars optimistes. Ex.: una necessitat de 2 kWh de xarxa al 50% carrega 3 kWh. 0 per desactivar (per defecte). Limitat al marge fins al SOC màxim."
         }
       },
@@ -1039,7 +1151,7 @@
           "pd_direction_hysteresis": "Llindar de potència necessari per canviar entre càrrega i descàrrega. Prevé canvis ràpids de direcció. Rang: 0-200W, predeterminat: 60W",
           "pd_min_charge_power": "Potència mínima per carregar. Per sota d'aquest llindar, el controlador queda en repòs en lloc de carregar a baixa potència. 0 = desactivat.",
           "pd_min_discharge_power": "Potència mínima per descarregar. Per sota d'aquest llindar, el controlador queda en repòs en lloc de descarregar a baixa potència. 0 = desactivat.",
-          "pd_target_grid_power": "Consigna de potència de xarxa que regula el controlador. Negatiu = exportar a xarxa, positiu = importar de xarxa, 0 = balanç net zero. Rang: -500 a +500 W, valor per defecte: 0 W.",
+          "pd_target_grid_power": "Consigna de potència de xarxa que regula el controlador. Positiu = importar de la xarxa (la bateria carrega), negatiu = exportar a la xarxa (la bateria descarrega), 0 = balanç net zero. El rang segueix la potència total configurada de les teves bateries, limitat pels límits de potència del sistema quan estan actius. Valor per defecte: 0 W.",
           "enable_system_power_limits": "En activar-lo, els dos sliders inferiors limiten la potència combinada de càrrega/descàrrega de totes les bateries actives.",
           "system_max_charge_power": "Límit opcional per a la potència de càrrega combinada de totes les bateries actives. 0 = desactivat; els límits per bateria segueixen aplicant-se.",
           "system_max_discharge_power": "Límit opcional per a la potència de descàrrega combinada de totes les bateries actives. 0 = desactivat; els límits per bateria segueixen aplicant-se."
@@ -1096,6 +1208,15 @@
       "esphome_entities_missing": "Al dispositiu ESPHome seleccionat li falten entitats necessàries: {missing}. Assegura't que executa el firmware marstek-lilygo-rs485 amb els noms d'entitat originals.",
       "sensor_not_found": "El sensor de predicció solar no existeix. Verifica que el sensor estigui disponible.",
       "invalid_unit": "El sensor de predicció solar ha de tenir com a unitat 'kWh' o 'Wh'.",
+      "solar_production_sensor_not_found": "El sensor de producció solar no existeix. Verifica que el sensor estigui disponible.",
+      "solar_production_invalid_unit": "El sensor de producció solar ha de tenir com a unitat 'W' o 'kW'.",
+      "phase_sensors_must_differ": "Cada fase ha d'utilitzar un sensor de corrent diferent.",
+      "phase_sensor_not_found": "El sensor de corrent de fase no existeix o no està disponible.",
+      "phase_sensor_invalid_domain": "La font de corrent de fase ha de ser una entitat sensor.",
+      "phase_sensor_invalid_unit": "El sensor de corrent de fase ha de tenir com a unitat 'A' o 'mA'.",
+      "phase_limit_must_be_positive": "La mida del fusible de fase ha de ser un valor finit i positiu en amperes.",
+      "phase_sensor_and_limit_required": "Indica el sensor de corrent de fase i la mida del fusible, o deixa tots dos camps buits.",
+      "battery_phase_required": "Selecciona la fase física d'aquesta bateria.",
       "incomplete_window": "Cada franja de càrrega addicional necessita hora d'inici i de fi. Omple les dues o deixa-les buides per ometre-la.",
       "overlapping_slots": "Aquesta franja es solapa amb una altra ja configurada per a la mateixa bateria. Ajusta els horaris, dies o bateria.",
       "midnight_crossing": "L'hora d'inici ha de ser anterior a l'hora de fi. Per a períodes nocturns, crea dues franges separades (ex: 22:00-23:59 i 00:00-06:00).",
@@ -1110,6 +1231,18 @@
     }
   },
   "selector": {
+    "hoymiles_model": {
+      "options": {
+        "auto": "Detecció automàtica (recomanat)",
+        "ms_a2": "MS-A2",
+        "hibattery_1920_ac": "HiBattery 1920 AC",
+        "hibattery_4020_x": "HiBattery 4020 X",
+        "hibattery_4020_ac": "HiBattery 4020 AC"
+      }
+    },
+    "battery_phase": {
+      "options": {"unassigned": "Sense assignar", "l1": "L1", "l2": "L2", "l3": "L3"}
+    },
     "weekday": {
       "options": {
         "mon": "Dilluns",
@@ -1139,7 +1272,7 @@
         "realtime_price": "Preu en temps real (llindar instantani)"
       }
     },
-    "price_integration_type": {
+      "price_integration_type": {
       "options": {
         "nordpool": "Nordpool",
         "pvpc": "PVPC (Espanya – ESIOS REE)",
@@ -1148,12 +1281,22 @@
         "entsoe": "ENTSO-e (Plataforma de Transparència)",
         "tibber": "Tibber (basat en servei)"
       }
+    },
+    "predischarge_export_mode": {
+      "options": {
+        "self_consumption": "Només autoconsum",
+        "automatic": "Automàtic",
+        "custom": "Límit personalitzat"
+      }
     }
   },
   "entity": {
     "switch": {
       "manual_mode": {
         "name": "Mode Manual"
+      },
+      "three_phase_protection": {
+        "name": "Protecció de corrent trifàsic"
       },
       "no_pd_mode": {
         "name": "Seguiment Directe sense PD"
@@ -1200,11 +1343,11 @@
       "battery_allow_discharge": {
         "name": "Permetre Descàrrega"
       },
+      "battery_manual_mode": {
+        "name": "Control Manual de la Bateria"
+      },
       "full_charge_voltage_taper": {
         "name": "Reducció Càrrega 100% per Voltatge"
-      },
-      "active_balance_mode": {
-        "name": "Mode de Balanç Actiu"
       },
       "automation_charging_active": {
         "name": "Càrrega per Preu Extern"
@@ -1233,6 +1376,12 @@
       "dp_price_discharge_control": {
         "name": "Descàrrega segons preu"
       },
+      "smart_predischarge": {
+        "name": "Predescàrrega intel·ligent / anti-abocament"
+      },
+      "negative_price_charging": {
+        "name": "Càrrega oportunista per preu negatiu"
+      },
       "rt_price_discharge_control": {
         "name": "Descàrrega segons preu"
       },
@@ -1256,6 +1405,15 @@
       },
       "active_batteries": {
         "name": "Bateries Actives"
+      },
+      "three_phase_protection_status": {
+        "name": "Estat de la Protecció Trifàsica",
+        "state": {
+          "disabled": "Desactivada",
+          "active": "Activa",
+          "limiting": "Limitant bateries",
+          "degraded": "Degradada / mode segur"
+        }
       },
       "system_battery_cell_power": {
         "name": "Potència de Cel·la del Sistema"
@@ -1292,9 +1450,6 @@
       "non_responsive_batteries": {
         "name": "Bateries Sense Resposta"
       },
-      "configuration_summary": {
-        "name": "Resum de Configuració"
-      },
       "integration_status": {
         "name": "Estat de la Integració",
         "state": {
@@ -1302,7 +1457,6 @@
           "manual": "Mode Manual",
           "grid_charging": "Carregant des de la Xarxa",
           "weekly_full_charge": "Càrrega Setmanal Completa",
-          "active_balance_mode": "Mode de Balanç Actiu",
           "charge_delayed": "Càrrega Retardada",
           "waiting_for_solar": "Esperant Solar",
           "charging_to_setpoint": "Carregant al Setpoint",
@@ -1366,6 +1520,18 @@
       "internal_temperature": {
         "name": "Temperatura Interna"
       },
+      "internal_mos1_temperature": {
+        "name": "Temperatura MOS1 Interna"
+      },
+      "internal_mos2_temperature": {
+        "name": "Temperatura MOS2 Interna"
+      },
+      "max_cell_temperature": {
+        "name": "Temperatura Màxima de Cel·la"
+      },
+      "min_cell_temperature": {
+        "name": "Temperatura Mínima de Cel·la"
+      },
       "ac_power": {
         "name": "Potència AC"
       },
@@ -1398,6 +1564,9 @@
       },
       "min_cell_voltage": {
         "name": "Tensió Mínima de Cel·la"
+      },
+      "cell_voltage_delta": {
+        "name": "Delta de Tensió de Cel·la"
       },
       "fault_status": {
         "name": "Estat de Fallada"
@@ -1468,6 +1637,9 @@
       "software_version": {
         "name": "Versió de Programari"
       },
+      "battery_runtime_estimate": {
+        "name": "Estimació d'Autonomia de la Bateria"
+      },
       "bms_version": {
         "name": "Versió BMS"
       },
@@ -1483,8 +1655,26 @@
       "mac_address": {
         "name": "Adreça MAC"
       },
+      "esp_ip": {
+        "name": "IP d'ESPHome"
+      },
+      "esp_ssid": {
+        "name": "SSID d'ESPHome"
+      },
+      "esp_version": {
+        "name": "Versió de l'ESP"
+      },
       "wifi_signal_strength": {
         "name": "Intensitat del Senyal WiFi"
+      },
+      "esp_wifi_signal_strength": {
+        "name": "Intensitat del Senyal WiFi de l'ESP"
+      },
+      "bt_status": {
+        "name": "Estat BT"
+      },
+      "power_restriction": {
+        "name": "Restricció de Potència"
       },
       "battery_cycle_count": {
         "name": "Cicles de la Bateria"
@@ -1560,11 +1750,89 @@
       "predictive_charging_active": {
         "name": "Càrrega Predictiva Activa"
       },
+      "curtailment_status": {
+        "name": "Estat de predescàrrega intel·ligent"
+      },
       "wifi_status": {
         "name": "Estat WiFi"
       },
       "cloud_status": {
         "name": "Estat Cloud"
+      },
+      "esp_wifi_status": {
+        "name": "Estat WiFi de l'ESP"
+      },
+      "pll_abnormal_restart": {
+        "name": "Reinici anòmal del PLL"
+      },
+      "overtemperature_limit": {
+        "name": "Límit de sobretemperatura"
+      },
+      "low_temperature_limit": {
+        "name": "Límit de baixa temperatura"
+      },
+      "fan_abnormal_warning": {
+        "name": "Advertiment de ventilador anòmal"
+      },
+      "low_battery_soc_warning": {
+        "name": "Advertiment de SOC baix de bateria"
+      },
+      "output_overcurrent_warning": {
+        "name": "Advertiment de sobrecorrent de sortida"
+      },
+      "abnormal_line_sequence_detection": {
+        "name": "Detecció de seqüència de línia anòmala"
+      },
+      "wifi_abnormal": {
+        "name": "WiFi anòmal"
+      },
+      "ble_abnormal": {
+        "name": "BLE anòmal"
+      },
+      "network_abnormal": {
+        "name": "Xarxa anòmala"
+      },
+      "ct_connection_abnormal": {
+        "name": "Connexió CT anòmala"
+      },
+      "grid_overvoltage": {
+        "name": "Sobretensió de xarxa"
+      },
+      "grid_undervoltage": {
+        "name": "Subtensió de xarxa"
+      },
+      "grid_overfrequency": {
+        "name": "Sobrefreqüència de xarxa"
+      },
+      "grid_underfrequency": {
+        "name": "Subfreqüència de xarxa"
+      },
+      "grid_peak_voltage_abnormal": {
+        "name": "Pic de tensió de xarxa anòmal"
+      },
+      "current_dcover": {
+        "name": "Dcover de corrent"
+      },
+      "voltage_dcover": {
+        "name": "Dcover de tensió"
+      },
+      "bat_overvoltage": {
+        "name": "Sobretensió BAT"
+      },
+      "bat_undervoltage": {
+        "name": "Subtensió BAT"
+      },
+      "bat_overcurrent": {
+        "name": "Sobrecorrent BAT"
+      },
+      "bat_low_soc": {
+        "name": "SOC baix BAT"
+      },
+      "bat_communication_failure": {
+        "name": "Fallada de comunicació BAT"
+      },
+      "bms_protect": {
+        "name": "Protecció BMS"
       },
       "balancing_mode": {
         "name": "Mode de Balanç"
@@ -1576,6 +1844,15 @@
     "select": {
       "force_mode": {
         "name": "Mode Forçat"
+      },
+      "battery_phase": {
+        "name": "Fase de la bateria",
+        "state": {
+          "unassigned": "Sense assignar",
+          "l1": "L1",
+          "l2": "L2",
+          "l3": "L3"
+        }
       },
       "user_work_mode": {
         "name": "Mode de Treball",
@@ -1719,6 +1996,15 @@
       },
       "predictive_grid_charge_margin_pct": {
         "name": "Marge de Càrrega de Xarxa Predictiva"
+      },
+      "negative_injection_threshold": {
+        "name": "Llindar d'injecció negativa"
+      },
+      "predischarge_reserve_soc": {
+        "name": "Reserva de SOC de predescàrrega"
+      },
+      "predischarge_max_export_power_w": {
+        "name": "Límit d'exportació deliberada a la xarxa"
       },
       "predictive_min_soc_floor": {
         "name": "SOC mínim garantit"

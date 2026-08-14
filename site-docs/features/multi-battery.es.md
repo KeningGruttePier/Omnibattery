@@ -115,6 +115,14 @@ Estos switches no escriben directamente registros Modbus de control. Solo afecta
 
 El estado se guarda por batería como `allow_charge` y `allow_discharge`. Si esas claves no existen, se interpretan como activadas, por lo que las instalaciones existentes mantienen su comportamiento tras actualizar.
 
+## Control manual por batería
+
+Cada batería también expone `switch.*_battery_manual_mode`. Al activarlo, Omnibattery envía y verifica primero una consigna de `0 W`, borra el modo forzado y las consignas de potencia de software de la integración, y retira esa batería del grupo automático. El estado se persiste por batería, por lo que la exclusión sobrevive a un reinicio. La batería sigue consultándose y permanece incluida en la telemetría física de batería/red, pero no recibe consignas automáticas de potencia; el manejo de seguridad del driver y del BMS sigue activo.
+
+Al apagar el switch, la batería mantiene la propiedad manual mientras se verifica la última consigna de reposo. Solo después vuelve al grupo automático y se programa un ciclo de control inmediato. Si falla la transición a reposo, el switch permanece activado y la batería sigue en modo manual.
+
+Este control es independiente del switch global `Manual Mode`. Por ejemplo, con dos baterías, la batería A puede permanecer en modo manual con la potencia elegida por el usuario mientras la batería B sigue en automático. Si B ya está cargando, el controlador PD incluye la carga AC medida de A para que B reduzca su propia carga y el meter permanezca a cero. Cuando las baterías automáticas ya no están cargando, la carga intencionada desde la red de A se excluye del feedback para que B no se descargue para compensarla. La potencia solar acoplada en CC no se incluye cuando el driver proporciona una lectura AC independiente.
+
 ## Registro unificado de bloqueos
 
 Los permisos de carga y descarga se resuelven mediante un registro runtime de bloqueos. Los bloqueos pueden ser globales o estar asociados a una batería concreta. El controlador consulta este registro antes de las salidas tempranas por banda muerta o sensor sin actualizar, por lo que una consigna activa se detiene en cuanto aparece un bloqueo.

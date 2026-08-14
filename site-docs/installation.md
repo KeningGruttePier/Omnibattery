@@ -13,7 +13,7 @@ battery. Adapters and bridges are only required where noted.
 | **Zendure SolarFlow 2400 AC+, 2400 AC Pro, 1600 AC+, 800 Pro, 800 Plus, 800** | Local HTTP API | Keep **HEMS disabled** in the Zendure app. HEMS overrides Omnibattery's manual power setpoint when enabled. |
 | **Anker SOLIX Solarbank Max AC, 4 E5000 Pro** | Modbus TCP | Enable **Third-Party Control** in the Anker app. Only one Modbus client can connect at a time. |
 | **Sessy Home Battery** | Local HTTP API through the Sessy dongle | The dongle must be reachable from Home Assistant. Enter its IP/hostname, port and dongle credentials; port `80` is the default. |
-| **Hoymiles MS-A2** | MQTT through Home Assistant's configured MQTT integration | A working local MQTT broker is required (for example, Mosquitto; an existing broker can be reused). Enable **MQTT Service** in S-Miles Home and make the broker reachable from the battery. |
+| **Hoymiles MS-A2 / HiBattery** | MQTT through Home Assistant's configured MQTT integration | A working local MQTT broker is required (for example, Mosquitto; an existing broker can be reused). Enable **MQTT Service** in S-Miles Home and make the broker reachable from the battery. |
 | **Grid sensor** | Home Assistant entity | Sensor measuring total grid consumption (e.g. Shelly EM3, Neurio, smart-meter integration). |
 | **Solar production meter** *(optional)* | Home Assistant entity | Real-time PV production power sensor in W or kW. It lets Omnibattery derive Home Consumption accurately and populate the Solar node in the integration dashboard. Leave it empty when the panels feed the battery's MPPT inputs directly. |
 
@@ -25,7 +25,7 @@ battery. Adapters and bridges are only required where noted.
 ### Software
 
 - Home Assistant **2024.1.0** or later
-- For **Hoymiles MS-A2** only: the Home Assistant MQTT integration and a working local MQTT broker. Omnibattery uses the broker through Home Assistant; it does not install one.
+- For **Hoymiles MQTT batteries** only: the Home Assistant MQTT integration and a working local MQTT broker. Omnibattery uses the broker through Home Assistant; it does not install one.
 - (Optional) Solar forecast sensor for predictive charging (Solcast, Forecast.Solar, etc.)
 
 ### Network
@@ -99,7 +99,7 @@ config/blueprints/automation/omnibattery/
     ```
 
 4. Click **Preview Blueprint** and then **Import Blueprint**.
-5. Create a new automation from the imported blueprint and select your entities.
+5. Create a new automation from the imported blueprint and configure its inputs. For the Marstek active-balance blueprint, select the Omnibattery battery device; its standard entities are discovered automatically.
 
 ### Manual installation
 

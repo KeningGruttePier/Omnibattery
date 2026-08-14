@@ -4,6 +4,18 @@ Blueprints are optional Home Assistant automations that complement Omnibattery. 
 
 For manual installation, copy the YAML file to `/config/blueprints/automation/omnibattery/` and reload blueprints. See [Installation](installation.md#blueprint-installation) for the general steps.
 
+## Active cell balancing for one Marstek battery
+
+[Import blueprint](https://raw.githubusercontent.com/ffunes/Omnibattery/main/blueprints/marstek_active_balance_blueprint.yaml)
+
+Runs the active cell-balancing profile for exactly one Marstek battery. Create one persistent `input_boolean` and one automation per battery, then select that battery's Omnibattery device. The blueprint discovers the standard telemetry and control entities from the device automatically, including the `charging_cutoff_capacity` number used as the maximum-SOC limit. Optional advanced entity-ID overrides remain available for installations where an entity was renamed. The automation uses the per-battery **Battery Manual Mode** switch as its ownership boundary, so Omnibattery's automatic controller and other manual automations cannot write competing setpoints while the run is active.
+
+The blueprint uses only Home Assistant entities; it does not access Modbus. It validates telemetry, force-mode options, voltage ordering and number limits before taking control. Its defaults are 3.49 V → 3.60 V, 95 W top charge, 200 W discharge, 60 s rest, a 30 mV target and a 3.40 V adaptive retry floor. The `force_mode` options are named **None**, **Charge** and **Discharge**; old lowercase ESPHome entities remain supported during migration.
+
+Turn the request helper ON to start or resume after a restart and OFF to cancel. The only helper you create is this persistent `input_boolean`; the blueprint does not require a new switch or sensor. Its notification baseline comes from the integration's persisted `Cell Delta` value, which represents the last formal 100%/OCV reading rather than instantaneous cell telemetry. Every exit attempts to write 0 W in both directions, restore the normal SOC maximum and release Battery Manual Mode. If any safety confirmation fails, the switch is deliberately left ON so the battery can be inspected before another automation is allowed to control it.
+
+After each settled 60-second measurement the blueprint fires the public `omnibattery_balance_measurement_ready` event with the selected device and a measurement ID. Omnibattery resolves the device, reads the cell voltages from its own coordinator and records the result in the existing `Cell Delta` history with `source: blueprint`. The event is read-only and does not grant the integration control of the battery.
+
 ## Central status webhook reporter
 
 [Import blueprint](https://raw.githubusercontent.com/ffunes/Omnibattery/main/blueprints/central_status_webhook_reporter_blueprint.yaml)

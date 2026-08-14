@@ -9,8 +9,8 @@ Owns:
 - Mid-charge abort handling when day or feature flag changes
 
 Weekly uses the same 100% top-voltage taper/measurement flow as a user-selected
-max_soc=100. Active cell balancing remains the job of the per-battery Active
-Balance Mode.
+max_soc=100. Active balancing, when desired, is provided by the optional
+Home Assistant blueprint.
 """
 from __future__ import annotations
 
@@ -21,7 +21,12 @@ from typing import TYPE_CHECKING, Any
 
 from homeassistant.helpers.storage import Store
 
-from ..const import DOMAIN, NORMAL_BALANCE_TAPER_CELL_VOLTAGE, WEEKDAY_MAP
+from ..const import (
+    DOMAIN,
+    NORMAL_BALANCE_BMS_CUTOFF_VERSIONS,
+    NORMAL_BALANCE_TAPER_CELL_VOLTAGE,
+    WEEKDAY_MAP,
+)
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -75,6 +80,10 @@ class WeeklyFullChargeManager:
         ctrl = self._controller
         self.is_active()  # side effect: day-boundary flag reset
         for c in ctrl.coordinators:
+            if getattr(c, "battery_manual_mode_enabled", False):
+                # Individual manual mode owns the battery. Freeze its cutoff
+                # evidence so weekly charge cannot classify or reconfigure it.
+                continue
             if not c.data:
                 self._bms_cutoff_counts[c.name] = 0
                 continue
@@ -140,21 +149,52 @@ class WeeklyFullChargeManager:
             else:
                 self._bms_cutoff_counts[c.name] = 0
 
+    def reset_bms_cutoff_confirmation(self, coordinator: Any) -> None:
+        """Forget a provisional cutoff before the one-shot retry begins."""
+        self._bms_cutoff_counts.pop(getattr(coordinator, "name", coordinator), None)
+        # Accept older/test state keyed directly by coordinator identity.
+        self._bms_cutoff_counts.pop(coordinator, None)
+
     def is_battery_full(self, coordinator: Any) -> bool:
         """Return True if this battery counts as fully charged.
 
-        Read-only: does not modify _bms_cutoff_counts (tick_bms_cutoff() does).
+        The cutoff counter is advanced only by tick_bms_cutoff(); a provisional
+        Venus A/D cutoff may be promoted to the one-shot retry here before the
+        battery is considered complete.
         Used by both handle_registers() (weekly completion) and
         _get_available_batteries() (normal max_soc=100% case).
         """
+        if getattr(coordinator, "battery_manual_mode_enabled", False):
+            return False
         if not coordinator.data:
             return False
         soc = coordinator.data.get("battery_soc", 0)
+        top_charge_manager = getattr(self._controller, "_max_soc_mgr", None)
+        prepare_retry = getattr(top_charge_manager, "prepare_bms_cutoff_retry", None)
+        if prepare_retry is not None:
+            retry_state = prepare_retry(coordinator)
+            if retry_state in {"pending", "active"}:
+                # A provisional first refusal must neither complete a weekly
+                # charge nor block the normal path permanently.
+                return False
         if soc >= 100:
+            # Venus A/D can expose 100% as soon as the first coupled pack is
+            # full. When the voltage taper is active, let the top-charge path
+            # keep the command alive until the shared BMS detector confirms the
+            # real cutoff for all packs.
+            should_charge_to_bms = getattr(
+                top_charge_manager, "should_charge_to_bms_cutoff", None
+            )
+            if should_charge_to_bms is not None and should_charge_to_bms(coordinator, 100):
+                return False
             return True
         # BMS cutoff confirmed — safe without SOC gate because tick_bms_cutoff
         # only increments the counter when soc >= 99 OR (weekly active AND cells
         # in taper zone), so the count is 0 outside those conditions.
+        return self._bms_cutoff_counts.get(coordinator.name, 0) >= _BMS_CUTOFF_REQUIRED_CYCLES
+
+    def is_bms_cutoff_confirmed(self, coordinator: Any) -> bool:
+        """Return only the debounced BMS-cutoff state, independent of SOC."""
         return self._bms_cutoff_counts.get(coordinator.name, 0) >= _BMS_CUTOFF_REQUIRED_CYCLES
 
     def is_active(self) -> bool:
@@ -311,7 +351,7 @@ class WeeklyFullChargeManager:
         if ctrl._weekly_charge_needs_restore:
             _LOGGER.info("Weekly Full Charge: Restoring hardware cutoff registers after mid-charge abort")
             for coordinator in ctrl.coordinators:
-                if ctrl._is_active_balance_mode_running(coordinator):
+                if getattr(coordinator, "battery_manual_mode_enabled", False):
                     continue
                 if ctrl._is_backup_function_active(coordinator):
                     continue
@@ -339,6 +379,19 @@ class WeeklyFullChargeManager:
         if not self.is_active():
             return
 
+        automatic_batteries = [
+            coordinator
+            for coordinator in ctrl.coordinators
+            if not getattr(coordinator, "battery_manual_mode_enabled", False)
+        ]
+        if not automatic_batteries:
+            # Do not mark a weekly run as active when every battery is owned by
+            # individual manual mode. Nothing may be written until a battery
+            # returns to the automatic pool.
+            ctrl._weekly_charge_status["state"] = "Idle"
+            ctrl._weekly_charge_status.pop("completion_reason", None)
+            return
+
         # Check if unified charge delay is active - if so, don't write registers yet
         # Skip delay logic when force button was pressed
         if (ctrl.charge_delay_enabled and not ctrl._charge_delay_unlocked
@@ -359,7 +412,7 @@ class WeeklyFullChargeManager:
             else:
                 _LOGGER.info("Weekly Full Charge: Activating for compatible batteries")
             for coordinator in ctrl.coordinators:
-                if ctrl._is_active_balance_mode_running(coordinator):
+                if getattr(coordinator, "battery_manual_mode_enabled", False):
                     continue
                 if ctrl._is_backup_function_active(coordinator):
                     _LOGGER.debug("%s: Skipping weekly full charge - backup function is active", coordinator.name)
@@ -404,7 +457,8 @@ class WeeklyFullChargeManager:
         batteries_with_data = [
             c
             for c in ctrl.coordinators
-            if c.data and not ctrl._is_active_balance_mode_running(c)
+            if c.data
+            and not getattr(c, "battery_manual_mode_enabled", False)
         ]
         all_batteries_full = bool(batteries_with_data) and all(
             self.is_battery_full(c)
@@ -418,7 +472,8 @@ class WeeklyFullChargeManager:
                 "is_full": self.is_battery_full(c),
             }
             for c in ctrl.coordinators
-            if c.data and not ctrl._is_active_balance_mode_running(c)
+            if c.data
+            and not getattr(c, "battery_manual_mode_enabled", False)
         }
 
         if all_batteries_full and not ctrl.weekly_full_charge_complete:
@@ -433,7 +488,7 @@ class WeeklyFullChargeManager:
         ctrl._weekly_charge_status["completion_reason"] = reason
         completion_batteries: dict = {}
         for coordinator in ctrl.coordinators:
-            if ctrl._is_active_balance_mode_running(coordinator):
+            if getattr(coordinator, "battery_manual_mode_enabled", False):
                 continue
             data = coordinator.data or {}
             soc = data.get("battery_soc")
@@ -451,11 +506,26 @@ class WeeklyFullChargeManager:
                 "bms_cutoff_cycles": self._bms_cutoff_counts.get(coordinator.name, 0),
             }
         ctrl._weekly_charge_status["batteries"] = completion_batteries
+
+        # Preserve the post-cutoff measurement request while clearing the
+        # debounce counters used by the weekly completion detector.
+        measurement_state = getattr(
+            ctrl, "_normal_balance_bms_cutoff_measurement", None
+        )
+        if measurement_state is not None:
+            for coordinator in ctrl.coordinators:
+                if (
+                    getattr(coordinator, "battery_version", None)
+                    in NORMAL_BALANCE_BMS_CUTOFF_VERSIONS
+                    and self._bms_cutoff_counts.get(coordinator.name, 0)
+                    >= _BMS_CUTOFF_REQUIRED_CYCLES
+                ):
+                    measurement_state[coordinator] = "pending"
         self._bms_cutoff_counts.clear()
 
         # Restore register 44000 to original max_soc values (v2 only).
         for coordinator in ctrl.coordinators:
-            if ctrl._is_active_balance_mode_running(coordinator):
+            if getattr(coordinator, "battery_manual_mode_enabled", False):
                 continue
             if ctrl._is_backup_function_active(coordinator):
                 _LOGGER.debug("%s: Skipping cutoff restore - backup function is active", coordinator.name)
@@ -483,7 +553,14 @@ class WeeklyFullChargeManager:
         # the 60-second diagnostic measurement (measurement is best-effort).
         measured = getattr(ctrl, "_normal_balance_last_delta_v", {})
         for coordinator in ctrl.coordinators:
-            if ctrl._is_active_balance_mode_running(coordinator):
+            if getattr(coordinator, "battery_manual_mode_enabled", False):
+                continue
+            if (
+                measurement_state is not None
+                and measurement_state.get(coordinator) == "pending"
+            ):
+                # Venus A/D get their 60 s measurement after the confirmed BMS
+                # cutoff; do not replace it with the immediate fallback sample.
                 continue
             if coordinator in measured:
                 continue
@@ -511,7 +588,7 @@ class WeeklyFullChargeManager:
 
         # Re-enable hysteresis for batteries that have it configured.
         for coordinator in ctrl.coordinators:
-            if ctrl._is_active_balance_mode_running(coordinator):
+            if getattr(coordinator, "battery_manual_mode_enabled", False):
                 continue
             if coordinator.enable_charge_hysteresis:
                 coordinator._hysteresis_active = True

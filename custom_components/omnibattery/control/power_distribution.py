@@ -55,15 +55,64 @@ class PowerDistribution:
         self._charge_selection_hold_until = {}
         self._discharge_selection_hold_until = {}
 
+    def _is_battery_manual_owned(self, coordinator) -> bool:
+        """Return whether a battery is outside automatic ownership."""
+        helper = getattr(self._controller, "_is_battery_manual_owned", None)
+        if helper is not None:
+            return bool(helper(coordinator))
+        return bool(getattr(coordinator, "battery_manual_mode_enabled", False))
+
     def _round_to_5w(self, value: float) -> int:
         """Round value to nearest 5W granularity."""
         return round(value / 5) * 5
+
+    def _ordered_batteries_for_operation(
+        self,
+        available_batteries: list,
+        is_charging: bool,
+    ) -> list:
+        """Return batteries in the selector's normal SOC/energy priority order."""
+        available_batteries = [
+            coordinator for coordinator in available_batteries
+            if not self._is_battery_manual_owned(coordinator)
+        ]
+        previous_active = (
+            self._controller._active_charge_batteries
+            if is_charging
+            else self._controller._active_discharge_batteries
+        )
+
+        def sort_key(coordinator):
+            soc = coordinator.data.get("battery_soc", 50) if coordinator.data else 50
+            is_active = coordinator in previous_active
+            if is_charging:
+                effective_soc = soc - (5.0 if is_active else 0)
+                energy = (
+                    coordinator.data.get("total_charging_energy", 0)
+                    if coordinator.data
+                    else 0
+                )
+                return (effective_soc, energy - (2.5 if is_active else 0))
+
+            effective_soc = soc + (5.0 if is_active else 0)
+            energy = (
+                coordinator.data.get("total_discharging_energy", 0)
+                if coordinator.data
+                else 0
+            )
+            return (-effective_soc, energy - (2.5 if is_active else 0))
+
+        return sorted(available_batteries, key=sort_key)
 
     def _distribute_power_by_limits(self, total_power: float, available_batteries: list, is_charging: bool) -> dict:
         """Distribute power among batteries proportionally to their individual limits.
 
         Returns dict mapping coordinator -> power (int, rounded to 5W).
         """
+        available_batteries = [
+            coordinator for coordinator in available_batteries
+            if not self._is_battery_manual_owned(coordinator)
+        ]
         if not available_batteries:
             return {}
 
@@ -114,6 +163,24 @@ class PowerDistribution:
             if c not in allocation:
                 allocation[c] = 0
 
+        # Preserve the normal selector and proportional distribution exactly.
+        # Three-phase protection is a final aggregate cap on that plan: it must
+        # never activate an unselected battery or move rejected power elsewhere.
+        phase_limiter = getattr(self._controller, "_phase_power_limiter", None)
+        if phase_limiter is not None and phase_limiter.enabled:
+            all_available = list(available_batteries)
+            get_available = getattr(self._controller, "_get_available_batteries", None)
+            if get_available is not None:
+                try:
+                    all_available = list(get_available(is_charging))
+                except TypeError:
+                    all_available = list(get_available(is_charging, True))
+            return phase_limiter.limit_allocation(
+                allocation,
+                is_charging,
+                self._ordered_batteries_for_operation(all_available, is_charging),
+            )
+
         return allocation
 
     def _select_batteries_for_operation(
@@ -140,6 +207,10 @@ class PowerDistribution:
         - SOC: Active batteries get 5% effective SOC advantage to avoid ping-pong
         - Power: Deactivation threshold = activation threshold − 10 pp
         """
+        available_batteries = [
+            coordinator for coordinator in available_batteries
+            if not self._is_battery_manual_owned(coordinator)
+        ]
         # No power requested: clear load-sharing state. This must run before
         # the single-battery fast path so a one-battery system is not retained
         # as active while the controller is intentionally idle.
@@ -179,9 +250,6 @@ class PowerDistribution:
             else MULTI_BATTERY_DISCHARGE_CROSSOVER_W
         )
         activation_threshold = MULTI_BATTERY_MIN_ACTIVATION  # updated per step in loop
-        SOC_HYSTERESIS = 5.0
-        ENERGY_HYSTERESIS = 2.5  # kWh advantage for active battery in tiebreaker
-
         previous_active = (
             self._controller._active_charge_batteries if is_charging
             else self._controller._active_discharge_batteries
@@ -192,26 +260,10 @@ class PowerDistribution:
         )
         now = time.monotonic()
 
-        def sort_key(coordinator):
-            soc = coordinator.data.get("battery_soc", 50) if coordinator.data else 50
-            is_active = coordinator in previous_active
-
-            if is_charging:
-                # Lowest SOC first; active batteries get -5% to stay selected
-                effective_soc = soc - (SOC_HYSTERESIS if is_active else 0)
-                energy = coordinator.data.get("total_charging_energy", 0) if coordinator.data else 0
-                # Active battery gets -2.5 kWh advantage (lower = selected first)
-                effective_energy = energy - (ENERGY_HYSTERESIS if is_active else 0)
-                return (effective_soc, effective_energy)
-            else:
-                # Highest SOC first; active batteries get +5% to stay selected
-                effective_soc = soc + (SOC_HYSTERESIS if is_active else 0)
-                energy = coordinator.data.get("total_discharging_energy", 0) if coordinator.data else 0
-                # Active battery gets -2.5 kWh advantage (lower = selected first)
-                effective_energy = energy - (ENERGY_HYSTERESIS if is_active else 0)
-                return (-effective_soc, effective_energy)
-
-        sorted_batteries = sorted(available_batteries, key=sort_key)
+        sorted_batteries = self._ordered_batteries_for_operation(
+            available_batteries,
+            is_charging,
+        )
 
         # Select minimum batteries needed
         selected = []
@@ -344,6 +396,14 @@ class PowerDistribution:
             self._controller._active_charge_batteries if is_charging
             else self._controller._active_discharge_batteries
         )
+        active_batteries = [
+            coordinator for coordinator in active_batteries
+            if not self._is_battery_manual_owned(coordinator)
+        ]
+        if is_charging:
+            self._controller._active_charge_batteries = active_batteries
+        else:
+            self._controller._active_discharge_batteries = active_batteries
         if len(active_batteries) <= 1:
             return False
 
@@ -367,34 +427,47 @@ class PowerDistribution:
         if set(selected_batteries) == set(active_batteries):
             return False
 
+        requested_power = self._controller.previous_power
         power_allocation = self._distribute_power_by_limits(
-            abs(self._controller.previous_power),
+            abs(requested_power),
             selected_batteries,
             is_charging,
         )
+        assigned_power = sum(power_allocation.values())
+        phase_limiter = getattr(self._controller, "_phase_power_limiter", None)
+        if phase_limiter is not None and phase_limiter.enabled:
+            self._controller.previous_power = (
+                assigned_power if is_charging else -assigned_power
+            )
         self._controller._log_power_command_plan(
             phase="hold_expired_deadband",
             grid_w=grid_w,
             target_w=target_w,
-            previous_power_w=self._controller.previous_power,
-            requested_power_w=self._controller.previous_power,
+            previous_power_w=requested_power,
+            requested_power_w=requested_power,
             is_charging=is_charging,
             available_batteries=available_batteries,
             selected_batteries=selected_batteries,
             power_allocation=power_allocation,
         )
 
-        for coordinator in selected_batteries:
-            power = power_allocation.get(coordinator, 0)
+        allocated_batteries = {
+            coordinator
+            for coordinator, power in power_allocation.items()
+            if power > 0
+        }
+        for coordinator, power in power_allocation.items():
+            if power <= 0:
+                continue
             if is_charging:
                 await self._controller._set_battery_power(coordinator, power, 0)
             else:
                 await self._controller._set_battery_power(coordinator, 0, power)
 
         for coordinator in self._controller.coordinators:
-            if coordinator not in selected_batteries:
-                if self._controller._is_active_balance_mode_running(coordinator):
-                    continue
+            if self._is_battery_manual_owned(coordinator):
+                continue
+            if coordinator not in allocated_batteries:
                 await self._controller._set_battery_power(coordinator, 0, 0)
 
         return True

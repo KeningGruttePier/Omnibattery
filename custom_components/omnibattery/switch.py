@@ -11,11 +11,9 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.util import dt as dt_util
 
 from .const import (
     DOMAIN,
-    CONF_ACTIVE_BALANCE_MODE_ENABLED,
     CONF_CAPACITY_PROTECTION_ENABLED,
     CONF_CAPACITY_PROTECTION_EXCLUDED_DEVICES,
     CONF_DELAY_SOC_SETPOINT_ENABLED,
@@ -29,17 +27,21 @@ from .const import (
     CONF_WEEKLY_FULL_CHARGE_SKIP_DELAY,
     CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED,
     CONF_MANUAL_MODE_ENABLED,
+    CONF_BATTERY_MANUAL_MODE_ENABLED,
     CONF_NO_PD_MODE_ENABLED,
     CONF_PREDICTIVE_CHARGING_OVERRIDDEN,
     CONF_PREDICTIVE_CHARGING_MODE,
     CONF_DP_PRICE_DISCHARGE_CONTROL,
     CONF_RT_PRICE_DISCHARGE_CONTROL,
+    CONF_SMART_PREDISCHARGE_ENABLED,
+    CONF_NEGATIVE_PRICE_CHARGING_ENABLED,
     PREDICTIVE_MODE_DYNAMIC_PRICING,
     PREDICTIVE_MODE_REALTIME_PRICE,
     CONF_SYSTEM_MAX_CHARGE_POWER,
     CONF_SYSTEM_MAX_DISCHARGE_POWER,
     CONF_ENABLE_MIN_SOC_FLOOR,
     CONF_ENABLE_PREDICTIVE_CHARGING,
+    CONF_THREE_PHASE_ENABLED,
     NOTIFICATION_ID_PREFIX,
 )
 from .infra.coordinator import MarstekVenusDataUpdateCoordinator
@@ -49,6 +51,7 @@ from .infra.entity_naming import (
     system_entity_id,
     SYSTEM_UNIQUE_ID_PREFIX,
 )
+from .pricing.engine import DynamicPricingEvaluationHorizon
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -70,16 +73,19 @@ async def async_setup_entry(
         if controller:
             entities.append(BatteryAllowChargeSwitch(hass, entry, controller, coordinator))
             entities.append(BatteryAllowDischargeSwitch(hass, entry, controller, coordinator))
-            # Marstek-only cell maintenance: voltage taper + active balance need
-            # per-cell voltages Anker/Zendure do not expose the same way.
+            entities.append(BatteryManualModeSwitch(hass, entry, controller, coordinator))
+            # Marstek-only cell maintenance: voltage taper needs per-cell
+            # voltages that Anker/Zendure do not expose in the same way.
             if coordinator.brand not in ("zendure", "anker"):
                 entities.append(BatteryFullChargeVoltageTaperSwitch(hass, entry, controller, coordinator))
-                entities.append(BatteryActiveBalanceModeSwitch(hass, entry, controller, coordinator))
 
     # Add manual mode switch (system-level, always present)
     if controller:
         entities.append(ManualModeSwitch(hass, entry, controller))
         entities.append(NoPdModeSwitch(hass, entry, controller))
+        # Keep the protection toggle present even when currently disabled so it
+        # can be enabled live from the dashboard without reloading the entry.
+        entities.append(ThreePhaseProtectionSwitch(hass, entry, controller))
         # Weekly full charge enable/disable (system-level, always present so it can
         # be turned on from the dashboard even if configured off at setup).
         entities.append(WeeklyFullChargeEnableSwitch(hass, entry, controller))
@@ -91,6 +97,8 @@ async def async_setup_entry(
         mode = entry.data.get(CONF_PREDICTIVE_CHARGING_MODE)
         if mode == PREDICTIVE_MODE_DYNAMIC_PRICING:
             entities.append(PriceDischargeControlSwitch(hass, entry, controller, "dp"))
+            entities.append(SmartPredischargeSwitch(hass, entry, controller))
+            entities.append(NegativePriceChargingSwitch(hass, entry, controller))
         elif mode == PREDICTIVE_MODE_REALTIME_PRICE:
             entities.append(PriceDischargeControlSwitch(hass, entry, controller, "rt"))
 
@@ -363,6 +371,47 @@ class BatteryAllowOperationSwitch(SwitchEntity):
         return self.coordinator.battery_device_info
 
 
+class BatteryManualModeSwitch(SwitchEntity):
+    """Switch that gives one battery exclusive manual-control ownership."""
+
+    def __init__(self, hass: HomeAssistant, entry: ConfigEntry, controller, coordinator) -> None:
+        self.hass = hass
+        self.entry = entry
+        self.controller = controller
+        self.coordinator = coordinator
+
+        self._attr_has_entity_name = True
+        self._attr_translation_key = "battery_manual_mode"
+        self._attr_unique_id = f"{coordinator.device_key}_battery_manual_mode"
+        self.entity_id = english_entity_id(
+            "switch", coordinator.name, "battery_manual_mode"
+        )
+        self._attr_icon = "mdi:hand-back-right-outline"
+        self._attr_should_poll = False
+
+    @property
+    def is_on(self) -> bool:
+        """Return whether this battery is owned by individual manual mode."""
+        return bool(
+            getattr(self.coordinator, CONF_BATTERY_MANUAL_MODE_ENABLED, False)
+        )
+
+    async def async_turn_on(self, **kwargs) -> None:
+        """Enter individual manual mode after the controller verifies idle."""
+        await self.controller._set_battery_manual_mode(self.coordinator, True)
+        self.async_write_ha_state()
+
+    async def async_turn_off(self, **kwargs) -> None:
+        """Return the battery to automatic control after a verified idle handoff."""
+        await self.controller._set_battery_manual_mode(self.coordinator, False)
+        self.async_write_ha_state()
+
+    @property
+    def device_info(self):
+        """Return device information."""
+        return self.coordinator.battery_device_info
+
+
 class BatteryAllowChargeSwitch(BatteryAllowOperationSwitch):
     """Switch allowing a battery to charge under automatic control."""
 
@@ -409,6 +458,21 @@ class BatteryFullChargeVoltageTaperSwitch(SwitchEntity):
 
     def _clear_runtime_state(self) -> None:
         self.controller._normal_balance_voltage_tapered.pop(self.coordinator, None)
+        bms_cutoff_state = getattr(self.controller, "_normal_balance_bms_cutoff_active", None)
+        if bms_cutoff_state is not None:
+            bms_cutoff_state.pop(self.coordinator, None)
+        for attr in (
+            "_normal_balance_bms_cutoff_retry_pending",
+            "_normal_balance_bms_cutoff_retry_active",
+        ):
+            retry_state = getattr(self.controller, attr, None)
+            if retry_state is not None:
+                retry_state.pop(self.coordinator, None)
+        bms_cutoff_measurement = getattr(
+            self.controller, "_normal_balance_bms_cutoff_measurement", None
+        )
+        if bms_cutoff_measurement is not None:
+            bms_cutoff_measurement.pop(self.coordinator, None)
 
     async def async_turn_on(self, **kwargs) -> None:
         self._persist(True)
@@ -422,51 +486,6 @@ class BatteryFullChargeVoltageTaperSwitch(SwitchEntity):
     @property
     def device_info(self):
         return self.coordinator.battery_device_info
-
-
-class BatteryActiveBalanceModeSwitch(SwitchEntity):
-    """Switch enabling active balancing for one battery."""
-
-    def __init__(self, hass: HomeAssistant, entry: ConfigEntry, controller, coordinator) -> None:
-        self.hass = hass
-        self.entry = entry
-        self.controller = controller
-        self.coordinator = coordinator
-
-        self._attr_has_entity_name = True
-        self._attr_translation_key = "active_balance_mode"
-        self._attr_unique_id = f"{coordinator.device_key}_active_balance_mode"
-        self.entity_id = english_entity_id("switch", coordinator.name, "active_balance_mode")
-        self._attr_icon = "mdi:battery-sync"
-        self._attr_should_poll = False
-
-    @property
-    def is_on(self) -> bool:
-        return bool(getattr(self.coordinator, CONF_ACTIVE_BALANCE_MODE_ENABLED, False))
-
-    def _persist(self, enabled: bool) -> None:
-        setattr(self.coordinator, CONF_ACTIVE_BALANCE_MODE_ENABLED, enabled)
-        self.coordinator.persist_battery_config(CONF_ACTIVE_BALANCE_MODE_ENABLED, enabled)
-
-    async def async_turn_on(self, **kwargs) -> None:
-        self._persist(True)
-        self.async_write_ha_state()
-
-    async def async_turn_off(self, **kwargs) -> None:
-        self._persist(False)
-        if self.controller._active_balance_mode_started(self.coordinator):
-            await self.controller._complete_active_balance_mode(
-                self.coordinator,
-                "disabled",
-                dt_util.now().date().isoformat(),
-                mark_completed=False,
-            )
-        self.async_write_ha_state()
-
-    @property
-    def device_info(self):
-        return self.coordinator.battery_device_info
-
 
 class PredictiveChargingSwitch(SwitchEntity):
     """Switch to enable/disable predictive grid charging at runtime.
@@ -1378,12 +1397,18 @@ class ManualModeSwitch(SwitchEntity):
         # Set all batteries to 0W (idle state) when entering manual mode
         for coordinator in self.controller.coordinators:
             try:
-                # A persisted Charge/Discharge choice from an earlier manual
-                # session must not be reasserted by the next control cycle.
-                coordinator.manual_force_mode = "None"
+                individual_manual = bool(
+                    getattr(coordinator, CONF_BATTERY_MANUAL_MODE_ENABLED, False)
+                )
+                # A persisted Charge/Discharge choice from an earlier global
+                # manual session must not be reasserted by the next control
+                # cycle. Preserve a per-battery manual choice: the individual
+                # owner is independent and resumes when global mode ends.
+                if not individual_manual:
+                    coordinator.manual_force_mode = "None"
+                    coordinator.persist_battery_config("manual_force_mode", "None")
                 coordinator.commanded_charge_power = 0
                 coordinator.commanded_discharge_power = 0
-                coordinator.persist_battery_config("manual_force_mode", "None")
                 await coordinator.apply_power(0, read_back=False)
                 await coordinator.async_request_refresh()
                 _LOGGER.info("Set %s to 0W (idle) for manual mode", coordinator.name)
@@ -1426,6 +1451,8 @@ class ManualModeSwitch(SwitchEntity):
             self.controller._active_discharge_batteries = []
             self.controller._active_charge_batteries = []
             for coordinator in self.controller.coordinators:
+                if getattr(coordinator, CONF_BATTERY_MANUAL_MODE_ENABLED, False):
+                    continue
                 coordinator.manual_force_mode = "None"
                 coordinator.persist_battery_config("manual_force_mode", "None")
 
@@ -1437,6 +1464,55 @@ class ManualModeSwitch(SwitchEntity):
             {"notification_id": f"{NOTIFICATION_ID_PREFIX}manual_mode_active"},
         )
         self.async_write_ha_state()
+
+    @property
+    def device_info(self):
+        """Return device information for the system."""
+        return {
+            "identifiers": {(DOMAIN, "marstek_venus_system")},
+            "name": "Omnibattery System",
+            "manufacturer": "Omnibattery",
+            "model": "Multi-Battery System",
+        }
+
+
+class ThreePhaseProtectionSwitch(SwitchEntity):
+    """Switch to enable or disable the live three-phase current envelope."""
+
+    def __init__(self, hass: HomeAssistant, entry: ConfigEntry, controller) -> None:
+        """Initialize the three-phase protection switch."""
+        self.hass = hass
+        self.entry = entry
+        self.controller = controller
+
+        self._attr_has_entity_name = True
+        self._attr_translation_key = "three_phase_protection"
+        self._attr_unique_id = f"{SYSTEM_UNIQUE_ID_PREFIX}three_phase_protection"
+        self.entity_id = system_entity_id("switch", "three_phase_protection")
+        self._attr_icon = "mdi:shield-check-outline"
+        self._attr_should_poll = False
+
+    @property
+    def is_on(self) -> bool:
+        """Return whether the phase safety envelope is active."""
+        return bool(self.controller._phase_power_limiter.enabled)
+
+    async def _set_enabled(self, enabled: bool) -> None:
+        """Apply and persist the protection flag without reloading platforms."""
+        self.controller._phase_power_limiter.enabled = enabled
+        new_data = dict(self.entry.data)
+        new_data[CONF_THREE_PHASE_ENABLED] = enabled
+        self.hass.config_entries.async_update_entry(self.entry, data=new_data)
+        _LOGGER.info("Three-phase current protection %s", "ENABLED" if enabled else "DISABLED")
+        self.async_write_ha_state()
+
+    async def async_turn_on(self, **kwargs) -> None:
+        """Enable the three-phase current protection envelope."""
+        await self._set_enabled(True)
+
+    async def async_turn_off(self, **kwargs) -> None:
+        """Disable the three-phase current protection envelope."""
+        await self._set_enabled(False)
 
     @property
     def device_info(self):
@@ -1785,3 +1861,120 @@ class PriceDischargeControlSwitch(SwitchEntity):
         }
 
 
+class SmartPredischargeSwitch(SwitchEntity):
+    """Opt-in anti-curtailment switch scoped to dynamic pricing."""
+
+    def __init__(self, hass: HomeAssistant, entry: ConfigEntry, controller) -> None:
+        self.hass = hass
+        self.entry = entry
+        self.controller = controller
+        self._attr_has_entity_name = True
+        self._attr_translation_key = "smart_predischarge"
+        self._attr_unique_id = f"{SYSTEM_UNIQUE_ID_PREFIX}smart_predischarge"
+        self.entity_id = system_entity_id("switch", "smart_predischarge")
+        self._attr_icon = "mdi:battery-arrow-down-outline"
+        self._attr_should_poll = False
+
+    @property
+    def is_on(self) -> bool:
+        return bool(self.controller.smart_predischarge_enabled)
+
+    async def async_turn_on(self, **kwargs) -> None:
+        """Enable and recalculate the current dynamic-pricing plan."""
+        self.controller.smart_predischarge_enabled = True
+        new_data = dict(self.entry.data)
+        new_data[CONF_SMART_PREDISCHARGE_ENABLED] = True
+        self.hass.config_entries.async_update_entry(self.entry, data=new_data)
+        _LOGGER.info("Smart pre-discharge ENABLED")
+        try:
+            await self.controller._pricing_mgr._evaluate_dynamic_pricing(
+                horizon=DynamicPricingEvaluationHorizon.REMAINING,
+                extended_horizon=True,
+            )
+        except Exception as err:  # keep a runtime toggle fail-safe
+            _LOGGER.warning("Smart pre-discharge evaluation failed after enable: %s", err)
+            self.controller._pricing_mgr.clear_curtailment_runtime("evaluation_error")
+        self.async_write_ha_state()
+
+    async def async_turn_off(self, **kwargs) -> None:
+        """Disable and immediately clean every smart runtime action."""
+        self.controller.smart_predischarge_enabled = False
+        new_data = dict(self.entry.data)
+        new_data[CONF_SMART_PREDISCHARGE_ENABLED] = False
+        self.hass.config_entries.async_update_entry(self.entry, data=new_data)
+        self.controller._pricing_mgr.clear_curtailment_runtime("disabled")
+        _LOGGER.info("Smart pre-discharge DISABLED")
+        self.async_write_ha_state()
+
+    @property
+    def device_info(self):
+        return {
+            "identifiers": {(DOMAIN, "marstek_venus_system")},
+            "name": "Omnibattery System",
+            "manufacturer": "Omnibattery",
+            "model": "Multi-Battery System",
+        }
+
+
+class NegativePriceChargingSwitch(SwitchEntity):
+    """Runtime opt-in for opportunistic charging at negative import prices."""
+
+    def __init__(self, hass: HomeAssistant, entry: ConfigEntry, controller) -> None:
+        self.hass = hass
+        self.entry = entry
+        self.controller = controller
+        self._attr_has_entity_name = True
+        self._attr_translation_key = "negative_price_charging"
+        self._attr_unique_id = f"{SYSTEM_UNIQUE_ID_PREFIX}negative_price_charging"
+        self.entity_id = system_entity_id("switch", "negative_price_charging")
+        self._attr_icon = "mdi:battery-charging-100"
+        self._attr_should_poll = False
+
+    @property
+    def is_on(self) -> bool:
+        return bool(self.controller.negative_price_charging_enabled)
+
+    async def async_turn_on(self, **kwargs) -> None:
+        """Enable the feature and immediately rebuild the typed calendar."""
+        self.controller.negative_price_charging_enabled = True
+        new_data = dict(self.entry.data)
+        new_data[CONF_NEGATIVE_PRICE_CHARGING_ENABLED] = True
+        self.hass.config_entries.async_update_entry(self.entry, data=new_data)
+        try:
+            await self.controller._pricing_mgr._evaluate_dynamic_pricing(
+                horizon=DynamicPricingEvaluationHorizon.REMAINING,
+                extended_horizon=True
+            )
+        except Exception as err:
+            _LOGGER.warning(
+                "Negative-price charging evaluation failed after enable: %s", err
+            )
+            self.controller._pricing_mgr.clear_negative_price_runtime(
+                "evaluation_error"
+            )
+        self.async_write_ha_state()
+
+    async def async_turn_off(self, **kwargs) -> None:
+        """Disable and remove only opportunistic work from the live schedule."""
+        active_purpose = getattr(
+            self.controller, "_active_dynamic_slot_purpose", None
+        )
+        self.controller.negative_price_charging_enabled = False
+        new_data = dict(self.entry.data)
+        new_data[CONF_NEGATIVE_PRICE_CHARGING_ENABLED] = False
+        self.hass.config_entries.async_update_entry(self.entry, data=new_data)
+        if active_purpose == "negative_price":
+            await self.controller._pricing_mgr._stop_dynamic_price_slot(
+                "negative_price_feature_disabled"
+            )
+        self.controller._pricing_mgr.clear_negative_price_runtime("disabled")
+        self.async_write_ha_state()
+
+    @property
+    def device_info(self):
+        return {
+            "identifiers": {(DOMAIN, "marstek_venus_system")},
+            "name": "Omnibattery System",
+            "manufacturer": "Omnibattery",
+            "model": "Multi-Battery System",
+        }

@@ -56,7 +56,6 @@ subpaquetes por responsabilidad.
 | `control/charge_delay.py` | — | Retraso de carga solar |
 | `control/max_soc_charge.py` | — | Reducción por voltaje al 100 % / protección de tope de carga |
 | `control/weekly_full_charge.py` | `WeeklyFullChargeManager` | Estado de carga semanal completa, persistencia y orquestación de escritura de registros |
-| `control/active_balance_mode.py` | — | Medición de balance activo de celdas |
 | `tracking/consumption_tracker.py` | `ConsumptionTracker` | Historial de consumo, acumuladores de energía diaria, detección de tiempos solares, backfill del recorder, captura diaria |
 | `tracking/balance_monitor.py` | `CellBalanceMonitor` | Medición del spread de tensión de celdas tras la carga completa e historial de salud |
 | `tracking/non_responsive_tracker.py` | `NonResponsiveTracker` | Detección de baterías sin respuesta y ventanas de exclusión de 5 minutos |
@@ -92,6 +91,14 @@ registro ni rutas HTTP se filtren a la capa de control.
 `apply_setpoint` devuelve un `SetpointResult` que lleva la potencia aplicada, si
 la escritura se confirmó por readback, la potencia entregada medida y un eco del
 estado nativo de la marca que el coordinador fusiona en `coordinator.data`.
+
+La propiedad manual individual se coordina por encima del driver. Durante la
+transición el controlador verifica una consigna de reposo (`0 W`) y después
+excluye la batería de las asignaciones automáticas. Los drivers sin registros de
+modo forzado/consigna (por ejemplo Zendure y Anker) reciben su consigna manual
+persistida de carga/descarga mediante `apply_setpoint` en cada ciclo de control;
+una selección manual de reposo (`None`) no se reafirma deliberadamente, para no
+entrar en conflicto con el modo elegido en la aplicación del equipo.
 
 ### Las capacidades reemplazan a los checks de versión
 

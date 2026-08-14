@@ -22,10 +22,12 @@ from homeassistant.util import dt as dt_util
 
 from custom_components.omnibattery import ChargeDischargeController
 from custom_components.omnibattery.const import (
+    DISCHARGE_ENGAGE_GRACE_S,
     IDLE_RUNAWAY_GRACE_S,
     PD_READBACK_EVERY_N_WRITES,
 )
 from custom_components.omnibattery.drivers import SetpointResult
+from custom_components.omnibattery.drivers.sessy import SessyLocalDriver
 from custom_components.omnibattery.tracking.non_responsive_tracker import (
     NonResponsiveTracker,
 )
@@ -64,6 +66,16 @@ class _DelayedReadbackCoord(FakeCoordinator):
             actuator_latency_s=1.0,
             readback_latency_s=4.0,
         )
+
+
+class _SessyCoord(FakeCoordinator):
+    """Sessy-like actuator with a one-minute standby-to-running transition."""
+
+    @property
+    def capabilities(self):
+        return SessyLocalDriver(
+            "sessy.local", session=MagicMock(closed=False)
+        ).capabilities
 
 
 def _SlowCoordFake(data):
@@ -289,6 +301,27 @@ async def test_skip_when_charge_unchanged():
     coord.apply_power.assert_not_called()
 
 
+async def test_power_write_is_capped_to_live_charge_limit():
+    coord = _Coord({
+        "force_mode": 0,
+        "set_charge_power": 0,
+        "set_discharge_power": 0,
+        "battery_power": 1500,
+    })
+    coord.max_charge_power = 1500
+    coord.apply_power = AsyncMock(
+        return_value=_ok(1500, battery_power_w=1500)
+    )
+    ctrl = _controller()
+
+    result = await ChargeDischargeController._set_battery_power(
+        ctrl, coord, 2500, 0, bypass_blockers=True
+    )
+
+    assert result is True
+    coord.apply_power.assert_awaited_once_with(1500, read_back=True)
+
+
 async def test_no_skip_when_charge_unchanged_but_not_delivering():
     """The v3 may keep echoing charge set-points after RS485 control drops."""
     coord = _Coord({
@@ -442,6 +475,36 @@ async def test_no_record_during_discharge_engage_grace():
     assert result is True
     coord.apply_power.assert_called_once()
     record.assert_not_called()  # suppressed: inverter still within engage grace
+
+
+async def test_sessy_startup_grace_prevents_false_non_responsive_detection():
+    """Sessy needs up to 60 s to leave standby after its first setpoint."""
+    coord = _SessyCoord(
+        name="Sessy",
+        is_available=True,
+        rs485_user_disabled=False,
+        balance_hold=False,
+        min_soc=10,
+        data={
+            "power_setpoint": 300,
+            "battery_power": 0,
+            "battery_soc": 80,
+        },
+        apply_power=AsyncMock(return_value=_ok(-300, battery_power_w=0)),
+    )
+    ctrl = _controller()
+    ctrl._last_commanded_net_sign[coord] = -1
+    # Past the generic 30 s grace, but still inside Sessy's 60 s startup window.
+    ctrl._discharge_engage_started[coord] = dt_util.utcnow() - timedelta(
+        seconds=DISCHARGE_ENGAGE_GRACE_S + 1
+    )
+    record = MagicMock(return_value=False)
+    ctrl._non_responsive.record_non_delivery = record
+
+    result = await ChargeDischargeController._set_battery_power(ctrl, coord, 0, 300)
+
+    assert result is True
+    record.assert_not_called()
 
 
 async def test_high_soc_standby_after_taper_reaches_wake_and_exclusion():

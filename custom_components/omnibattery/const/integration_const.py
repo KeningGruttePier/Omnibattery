@@ -80,6 +80,46 @@ CONF_SOLAR_PRODUCTION_SENSOR = "solar_production_sensor"
 CONF_HOUSEHOLD_CONSUMPTION_SENSOR = "household_consumption_sensor"  # legacy; migrated out in v6
 CONF_MAX_CONTRACTED_POWER = "max_contracted_power"
 
+# Optional three-phase current protection.  The main consumption sensor remains
+# the only control input; these current sensors are safety limits for the phase
+# where a battery is physically installed.
+CONF_THREE_PHASE_ENABLED = "three_phase_enabled"
+CONF_PHASE_1_CURRENT_SENSOR = "phase_1_current_sensor"
+CONF_PHASE_2_CURRENT_SENSOR = "phase_2_current_sensor"
+CONF_PHASE_3_CURRENT_SENSOR = "phase_3_current_sensor"
+CONF_PHASE_1_FUSE_SIZE = "phase_1_fuse_size"
+CONF_PHASE_2_FUSE_SIZE = "phase_2_fuse_size"
+CONF_PHASE_3_FUSE_SIZE = "phase_3_fuse_size"
+CONF_BATTERY_PHASE = "battery_phase"
+
+PHASE_L1 = "l1"
+PHASE_L2 = "l2"
+PHASE_L3 = "l3"
+PHASE_VALUES = (PHASE_L1, PHASE_L2, PHASE_L3)
+# Explicit selector value for a battery that is outside the protected phase
+# layout. Runtime leaves it outside the phase-protection envelope.
+PHASE_UNASSIGNED = "unassigned"
+PHASE_ASSIGNMENT_VALUES = (PHASE_UNASSIGNED, *PHASE_VALUES)
+PHASE_CONFIG = {
+    PHASE_L1: (CONF_PHASE_1_CURRENT_SENSOR, CONF_PHASE_1_FUSE_SIZE),
+    PHASE_L2: (CONF_PHASE_2_CURRENT_SENSOR, CONF_PHASE_2_FUSE_SIZE),
+    PHASE_L3: (CONF_PHASE_3_CURRENT_SENSOR, CONF_PHASE_3_FUSE_SIZE),
+}
+DEFAULT_THREE_PHASE_ENABLED = False
+DEFAULT_PHASE_FUSE_SIZE_A = 25
+
+
+def normalize_battery_phase(value: object) -> str:
+    """Normalize legacy/missing battery phase data to the selector value."""
+    return value if value in PHASE_VALUES else PHASE_UNASSIGNED
+
+
+# Battery set-points are expressed in active watts, while phase protection is
+# measured in RMS amperes.  Use a conservative fixed conversion for the
+# single-phase AC connection; the user-facing fuse limit remains in amperes.
+PHASE_NOMINAL_VOLTAGE_V = 230.0
+PHASE_BATTERY_POWER_FACTOR = 0.90
+
 # Time slots (operation slots) — v3 schema keys
 CONF_TIME_SLOTS = "no_discharge_time_slots"  # legacy key, kept for compat
 CONF_SLOT_START_TIME = "start_time"
@@ -114,9 +154,9 @@ MAX_TIME_SLOTS = 8
 # Default base consumption fallback (kWh/day)
 DEFAULT_BASE_CONSUMPTION_KWH = 5.0  # Fallback when no consumption history available
 
-# Predictive charging safety margin
+# Predictive charging / anti-curtailment safety margin
 CONF_PREDICTIVE_SAFETY_MARGIN_KWH = "predictive_safety_margin_kwh"
-DEFAULT_PREDICTIVE_SAFETY_MARGIN_KWH = 0.0  # kWh added to consumption forecast; 0 = no margin
+DEFAULT_PREDICTIVE_SAFETY_MARGIN_KWH = 0.0  # kWh buffer; 0 = no margin
 
 # Predictive charging grid-charge margin
 # Extra % charged from grid on top of the solar-deficit, to hedge against
@@ -145,6 +185,7 @@ FLOOR_HYSTERESIS_PCT = 5
 # Weekly Full Charge Configuration
 CONF_ENABLE_WEEKLY_FULL_CHARGE = "enable_weekly_full_charge"
 CONF_MANUAL_MODE_ENABLED = "manual_mode_enabled"
+CONF_BATTERY_MANUAL_MODE_ENABLED = "battery_manual_mode_enabled"
 CONF_PREDICTIVE_CHARGING_OVERRIDDEN = "predictive_charging_overridden"
 CONF_WEEKLY_FULL_CHARGE_DAY = "weekly_full_charge_day"
 CONF_ENABLE_WEEKLY_FULL_CHARGE_DELAY = "enable_weekly_full_charge_delay"
@@ -158,6 +199,10 @@ CONF_ENABLE_BALANCE_MONITOR = "enable_balance_monitor"
 # Cell Balance Monitor
 BALANCE_STORAGE_KEY = "balance_history"
 BALANCE_STORAGE_VERSION = 1
+# Public event emitted by the extracted active-balance blueprint after a
+# settled WAIT_MEASURE interval. The integration reads its own coordinator
+# telemetry when handling this event; the blueprint does not provide voltages.
+EVENT_BLUEPRINT_BALANCE_MEASUREMENT_READY = "omnibattery_balance_measurement_ready"
 # Marstek cells ship from the factory with a sizeable top-of-charge imbalance
 # (commonly ~170-180 mV). At 3.55 V the LiFePO4 curve is very steep, so this
 # factory spread is normal — not a fault. The status thresholds below are
@@ -186,11 +231,16 @@ NORMAL_BALANCE_TAPER_EXIT_CELL_VOLTAGE = 3.44
 NORMAL_BALANCE_PAUSE_CELL_VOLTAGE = 3.60
 NORMAL_BALANCE_CHARGE_POWER_W = 200
 NORMAL_BALANCE_MEASURE_WAIT_SECONDS = 60
-# Once the top voltage is reached the taper stops charging and latches. It does
-# NOT re-trickle when the cell relaxes (that would pin the cell at the top
-# voltage and keep some v3 BMSs from leaving standby to discharge). The latch
-# releases — allowing a later top-up to taper again — only after the battery has
-# actually been discharged by this SOC margin from where it latched.
+# Venus A/D can expose several coupled packs through one inverter. Their top
+# cell telemetry may reach the normal pause point while the other packs still
+# need charge, so keep the tapered command until the BMS confirms its cutoff.
+NORMAL_BALANCE_BMS_CUTOFF_VERSIONS = ("vA", "vD")
+# For Venus E models, once the top voltage is reached the taper stops charging
+# and latches. It does NOT re-trickle when the cell relaxes (that would pin the
+# cell at the top voltage and keep some v3 BMSs from leaving standby to
+# discharge). Venus A/D coupled packs use the BMS-owned path above instead. The
+# The normal SOC hysteresis releases after its configured percentage, while the
+# voltage taper latch itself releases below the 3.44 V exit threshold.
 # SOC recalibration on a stuck top voltage.
 # A pack that hits the top cell voltage (pause point) while the BMS reports a SOC
 # below full may have a drifted coulomb counter. Some BMS firmware only corrects
@@ -203,6 +253,9 @@ NORMAL_BALANCE_RECAL_SOC_THRESHOLD = 99        # %: below this, make one best-ef
 NORMAL_BALANCE_RECAL_CUTOFF_POWER_W = 10       # W: charge collapsed (BMS terminated)
 NORMAL_BALANCE_RECAL_CUTOFF_CYCLES = 5         # consecutive cycles to confirm the BMS cutoff
 NORMAL_BALANCE_RECAL_INVERTER_STANDBY = 1      # inverter_state raw value for Standby
+# After a cutoff above the pause voltage, allow one extra 200 W charge when the
+# cell has relaxed to this voltage.  The retry is deliberately one-shot.
+NORMAL_BALANCE_RECAL_RETRY_CELL_VOLTAGE = 3.57
 
 # BMS low-SOC discharge cutoff (low-SOC counterpart to NORMAL_BALANCE_RECAL_*).
 # Below this SOC the BMS may refuse to discharge on its own (protective cutoff,
@@ -332,31 +385,6 @@ IDLE_RUNAWAY_GRACE_S = 15
 # becomes dischargeable again after recovering this many percent above min_soc.
 DISCHARGE_MIN_SOC_REENTRY_MARGIN = 2
 
-# Active balance mode.
-# Once the battery has reached the top, keep the cells in the balancing window
-# with gentle charge/discharge micro-cycles instead of only resting at 100% SOC.
-ACTIVE_BALANCE_CHARGE_RESUME_CELL_VOLTAGE = 3.49
-ACTIVE_BALANCE_CHARGE_STOP_CELL_VOLTAGE = 3.60
-ACTIVE_BALANCE_DISCHARGE_STOP_CELL_VOLTAGE = 3.49
-ACTIVE_BALANCE_FINAL_DISCHARGE_STOP_CELL_VOLTAGE = 3.48
-ACTIVE_BALANCE_MEASURE_WAIT_SECONDS = 60
-ACTIVE_BALANCE_ADAPTIVE_RESUME_STEP_V = 0.01
-ACTIVE_BALANCE_ADAPTIVE_MIN_RESUME_CELL_VOLTAGE = 3.40
-# Give a new active-balance charge leg time to engage before a near-zero power
-# sample can count as BMS rejection. DISCHARGE -> CHARGE briefly reports Standby
-# and residual ~0 W while the new 95 W command is taking effect; without this
-# grace, repeated control ticks over that transition are mistaken for a cutoff.
-ACTIVE_BALANCE_CHARGE_ENGAGE_GRACE_S = 10
-# Consecutive ~0 W charge-rejection detections required after the engage grace
-# (or after charge has first been observed) before treating a below-stop charge
-# as a real BMS cut.
-ACTIVE_BALANCE_CHARGE_REJECT_DEBOUNCE_CYCLES = 3
-ACTIVE_BALANCE_CHARGE_POWER_W = 95
-ACTIVE_BALANCE_DISCHARGE_POWER_W = 200
-ACTIVE_BALANCE_MODE_TARGET_DELTA_V = 0.03
-
-# Per-battery scheduled active balance mode.
-CONF_ACTIVE_BALANCE_MODE_ENABLED = "active_balance_mode_enabled"
 CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED = "full_charge_voltage_taper_enabled"
 DEFAULT_FULL_CHARGE_VOLTAGE_TAPER_ENABLED = True
 
@@ -512,6 +540,110 @@ DEFAULT_SYSTEM_MAX_DISCHARGE_POWER = 0    # 0 = disabled
 # Legacy alias so existing __init__.py imports don't break during transition
 DEFAULT_SLOT_TARGET_GRID_POWER = DEFAULT_TARGET_GRID_POWER
 
+
+# --- Configured system power envelope ---------------------------------------
+# Single source of truth for "how much power did the user configure this system
+# to move", derived from config_entry.data alone (no hass, no coordinators).
+#
+# Deliberately NOT MarstekController._effective_system_capacity: that one sums
+# the *live* per-coordinator limits after temperature derate, SOC taper and slot
+# ceilings for the current control cycle. This is the *static configured*
+# envelope, which is what a UI bound must advertise. Do not merge them — slider
+# bounds must not jump around with battery temperature.
+
+def _non_negative_int(value) -> int:
+    """Coerce a config value to a non-negative int (missing/None/junk -> 0)."""
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def effective_battery_power_limits(battery) -> tuple[int, int]:
+    """Return the static effective (charge_w, discharge_w) limits for one battery.
+
+    New entries may persist the normalized ``device_max_*`` and
+    ``configured_max_*`` fields. Legacy entries use ``max_*_power`` and soft-max
+    drivers (for example Zendure and Anker) keep the user's additional ceiling
+    in ``user_max_*_power``. Missing normalized/soft-limit keys preserve legacy
+    entries while applying the same ``min(device, configured)`` rule.
+    """
+    device_charge = battery.get("device_max_charge_power")
+    device_discharge = battery.get("device_max_discharge_power")
+    configured_charge = battery.get("configured_max_charge_power")
+    configured_discharge = battery.get("configured_max_discharge_power")
+
+    if device_charge is None:
+        device_charge = battery.get("max_charge_power")
+    if device_discharge is None:
+        device_discharge = battery.get("max_discharge_power")
+    if configured_charge is None:
+        configured_charge = battery.get(
+            "user_max_charge_power", battery.get("max_charge_power")
+        )
+    if configured_discharge is None:
+        configured_discharge = battery.get(
+            "user_max_discharge_power", battery.get("max_discharge_power")
+        )
+
+    return (
+        min(_non_negative_int(device_charge), _non_negative_int(configured_charge)),
+        min(
+            _non_negative_int(device_discharge),
+            _non_negative_int(configured_discharge),
+        ),
+    )
+
+
+def total_battery_power(data) -> tuple[int, int]:
+    """Return summed static effective (charge_w, discharge_w) limits."""
+    batteries = data.get("batteries") or []
+    limits = [effective_battery_power_limits(battery) for battery in batteries]
+    return (
+        sum(charge_w for charge_w, _ in limits),
+        sum(discharge_w for _, discharge_w in limits),
+    )
+
+
+def system_power_limits_enabled(data) -> bool:
+    """Return whether the optional system-wide power cap is active.
+
+    Entries predating CONF_ENABLE_SYSTEM_POWER_LIMITS had the feature on iff a
+    non-zero cap was set, so that stays the default for the missing key.
+    """
+    charge = _non_negative_int(
+        data.get(CONF_SYSTEM_MAX_CHARGE_POWER, DEFAULT_SYSTEM_MAX_CHARGE_POWER)
+    )
+    discharge = _non_negative_int(
+        data.get(CONF_SYSTEM_MAX_DISCHARGE_POWER, DEFAULT_SYSTEM_MAX_DISCHARGE_POWER)
+    )
+    return bool(
+        data.get(CONF_ENABLE_SYSTEM_POWER_LIMITS, charge > 0 or discharge > 0)
+    )
+
+
+def effective_system_power(data) -> tuple[int, int]:
+    """Return (charge_w, discharge_w) after the optional system-wide cap.
+
+    A cap of 0 means "disabled" for that direction, mirroring
+    MarstekController._configured_system_limit. The cap can only narrow the
+    per-battery sum, never widen it.
+    """
+    charge_w, discharge_w = total_battery_power(data)
+    if not system_power_limits_enabled(data):
+        return charge_w, discharge_w
+
+    charge_cap = _non_negative_int(
+        data.get(CONF_SYSTEM_MAX_CHARGE_POWER, DEFAULT_SYSTEM_MAX_CHARGE_POWER)
+    )
+    discharge_cap = _non_negative_int(
+        data.get(CONF_SYSTEM_MAX_DISCHARGE_POWER, DEFAULT_SYSTEM_MAX_DISCHARGE_POWER)
+    )
+    return (
+        min(charge_w, charge_cap) if charge_cap else charge_w,
+        min(discharge_w, discharge_cap) if discharge_cap else discharge_w,
+    )
+
 # PD Tuning Profiles
 # One-click presets for the PD response-shape parameters (Kp, Kd, max power
 # change). Selecting a profile writes those at once; the "custom" profile leaves
@@ -599,6 +731,24 @@ CONF_DISCHARGE_PRICE_THRESHOLD = "discharge_price_threshold"
 CONF_MIN_ARBITRAGE_MARGIN = "min_arbitrage_margin"
 CONF_ROUND_TRIP_EFFICIENCY = "round_trip_efficiency"
 
+# Smart pre-discharge / anti-curtailment.  This is deliberately separate from
+# the normal predictive-charging settings: it is only read by dynamic pricing
+# and remains disabled for existing entries unless explicitly enabled.
+CONF_SMART_PREDISCHARGE_ENABLED = "smart_predischarge_enabled"
+CONF_NEGATIVE_INJECTION_THRESHOLD = "negative_injection_threshold"
+CONF_PREDISCHARGE_RESERVE_SOC = "predischarge_reserve_soc"
+CONF_PREDISCHARGE_MAX_EXPORT_POWER_W = "predischarge_max_export_power_w"
+DEFAULT_SMART_PREDISCHARGE_ENABLED = False
+DEFAULT_NEGATIVE_INJECTION_THRESHOLD = 0.0
+DEFAULT_PREDISCHARGE_RESERVE_SOC = 0.0
+DEFAULT_PREDISCHARGE_MAX_EXPORT_POWER_W = 0.0
+
+# Opportunistic import charging.  This is deliberately separate from
+# CONF_NEGATIVE_INJECTION_THRESHOLD: the latter prices exported solar for
+# anti-curtailment, while this feature reacts to negative grid-import prices.
+CONF_NEGATIVE_PRICE_CHARGING_ENABLED = "negative_price_charging_enabled"
+DEFAULT_NEGATIVE_PRICE_CHARGING_ENABLED = False
+
 PREDICTIVE_MODE_TIME_SLOT = "time_slot"
 PREDICTIVE_MODE_DYNAMIC_PRICING = "dynamic_pricing"
 PREDICTIVE_MODE_REALTIME_PRICE = "realtime_price"
@@ -620,6 +770,10 @@ PRICE_INTEGRATION_TIBBER = "tibber"
 # forecast-attribute based. How stale either cache may get before a refresh.
 TIBBER_REFRESH_MINUTES = 60
 NORDPOOL_REFRESH_MINUTES = 60
+
+# Marker for CONFIG_NUMBER_DEFINITIONS entries whose slider bounds are derived
+# at runtime; the authored min/max become the fallback.
+DYNAMIC_BOUNDS_SYSTEM_POWER = "system_power"
 
 # Configuration Number Definitions (for config entities exposed in the UI)
 CONFIG_NUMBER_DEFINITIONS = [
@@ -724,12 +878,16 @@ CONFIG_NUMBER_DEFINITIONS = [
     {
         "key": CONF_TARGET_GRID_POWER,
         "name": "PD Target Grid Power",
+        # Fallback only. The live bounds follow the configured system power
+        # envelope (see DYNAMIC_BOUNDS_SYSTEM_POWER); these apply when no
+        # battery limits are configured yet, or a direction is configured to 0 W.
         "min": -2500,
         "max": 2500,
         "step": 10,
         "unit": "W",
         "default": DEFAULT_TARGET_GRID_POWER,
         "icon": "mdi:transmission-tower-export",
+        "dynamic_bounds": DYNAMIC_BOUNDS_SYSTEM_POWER,
     },
     {
         "key": CONF_SYSTEM_MAX_CHARGE_POWER,
@@ -813,7 +971,7 @@ CONFIG_NUMBER_DEFINITIONS = [
         "key": CONF_CAPACITY_PROTECTION_LIMIT,
         "name": "Capacity Protection Peak Limit",
         "min": 500,
-        "max": 10000,
+        "max": 20000,
         "step": 100,
         "unit": "W",
         "default": DEFAULT_CAPACITY_PROTECTION_LIMIT,

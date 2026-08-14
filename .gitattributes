@@ -1,0 +1,10 @@
+# Store text files with Unix (LF) line endings in the repository and worktree.
+* text=auto eol=lf
+
+# Binary assets must never be line-ending normalized.
+*.gif binary
+*.ico binary
+*.jpeg binary
+*.jpg binary
+*.png binary
+*.webp binary

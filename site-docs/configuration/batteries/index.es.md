@@ -14,7 +14,7 @@ parte de los controles en tiempo de ejecución son comunes.
 | **Zendure** | API HTTP local | [Zendure](zendure.md) |
 | **Anker SOLIX** | Modbus TCP | [Anker SOLIX](anker.md) |
 | **Sessy** | API HTTP local mediante el dongle de Sessy | [Sessy](sessy.md) |
-| **Hoymiles MS-A2** | MQTT mediante Home Assistant | [Hoymiles MS-A2](hoymiles.md) |
+| **Hoymiles MS-A2 / HiBattery** | MQTT mediante Home Assistant | [Hoymiles MQTT](hoymiles.md) |
 
 ![Selector de marca de batería](../../assets/screenshots/configuration/battery-brand-form.png){ width="650"  style="display: block; margin: 0 auto;"}
 
@@ -55,6 +55,13 @@ Los valores de SOC máximo/mínimo y potencia máxima de carga/descarga se puede
 ajustar en cualquier momento desde los sliders de la integración sin
 reconfigurar. Los cambios se persisten y se restauran en cada reinicio de Home
 Assistant.
+
+El switch `Control Manual de Batería` también está disponible en tiempo de
+ejecución. Entrega la batería al usuario después de verificar `0 W`, la
+mantiene fuera del grupo automático y persiste esa propiedad entre reinicios.
+Consulta la [guía multi-batería](../../features/multi-battery.es.md#control-manual-por-batería)
+para conocer el comportamiento de la transición y el efecto sobre las demás
+baterías.
 
 ![Sliders de SOC y potencia](../../assets/screenshots/configuration/battery-runtime-sliders.png){ width="650"  style="display: block; margin: 0 auto;"}
 

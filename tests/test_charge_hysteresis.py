@@ -24,15 +24,21 @@ class _Coord:
     """Identity-hashable coordinator stand-in (used as a dict key)."""
 
     def __init__(self, *, soc, max_soc, base=None, active=False,
-                 vmax=3.30, pct=10, name="bat"):
+                 vmax=3.30, pct=10, name="bat", battery_version="v2"):
         self.name = name
+        self.battery_version = battery_version
         self.data = {"battery_soc": soc, "max_cell_voltage": vmax}
         self.max_soc = max_soc
+        self.min_soc = 10
         self.charge_hysteresis_percent = pct
         self.enable_charge_hysteresis = True
-        self.active_balance_mode_enabled = False
         self._hysteresis_active = active
         self._hysteresis_base_soc = base
+        self.battery_manual_mode_enabled = False
+        self.is_available = True
+        self._consecutive_failures = 0
+        self.rs485_user_disabled = False
+        self._discharge_min_soc_latched = False
 
 
 def _controller(coord, *, bms_full=False):
@@ -47,6 +53,7 @@ def _controller(coord, *, bms_full=False):
     ctrl = SimpleNamespace(
         coordinators=[coord],
         _weekly_full_charge_unlocked=lambda: False,
+        _normal_balance_bms_cutoff_retry_pending={},
         _normal_balance_recal_override={},
         _weekly_charge_mgr=SimpleNamespace(is_battery_full=lambda c: bms_full),
         _effective_charge_max_soc=lambda c, weekly: (c.max_soc, "config"),
@@ -127,3 +134,55 @@ def test_lowered_ceiling_still_latches_and_holds():
 
     assert c._hysteresis_active is True
     assert _hyst_blocked(ctrl, c)
+
+
+def test_venus_ad_top_voltage_does_not_create_charge_hysteresis_block():
+    c = _Coord(
+        soc=100,
+        max_soc=100,
+        vmax=3.60,
+        battery_version="vA",
+    )
+    ctrl = _controller(c)
+    ctrl._should_charge_to_bms_cutoff = lambda _coord, _max_soc: True
+
+    ChargeDischargeController._refresh_battery_charge_limit_blocks(ctrl)
+
+    assert c._hysteresis_active is False
+    assert not _hyst_blocked(ctrl, c)
+
+
+def test_venus_ad_top_voltage_remains_available_at_reported_100_soc():
+    c = _Coord(
+        soc=100,
+        max_soc=100,
+        vmax=3.57,
+        battery_version="vD",
+    )
+    ctrl = _controller(c)
+    ctrl._non_responsive = SimpleNamespace(is_excluded=lambda _coord: False)
+    ctrl._is_backup_function_active = lambda _coord: False
+    ctrl._is_manual_slot_owned = lambda _coord: False
+    ctrl.get_charge_blockers = lambda _coord: {}
+    ctrl.is_discharge_blocked = lambda _coord: False
+    ctrl.get_discharge_blockers = lambda _coord: {}
+    ctrl._should_charge_to_bms_cutoff = lambda _coord, _max_soc: True
+    ctrl._weekly_charge_mgr = SimpleNamespace(is_battery_full=lambda _coord: True)
+
+    assert ChargeDischargeController._get_available_batteries(ctrl, True, False) == [c]
+
+
+def test_venus_ad_first_cutoff_waiting_blocks_only_until_relaxation_retry():
+    c = _Coord(
+        soc=94,
+        max_soc=100,
+        vmax=3.60,
+        battery_version="vA",
+    )
+    ctrl = _controller(c)
+    ctrl._normal_balance_bms_cutoff_retry_pending[c] = True
+
+    ChargeDischargeController._refresh_battery_charge_limit_blocks(ctrl)
+
+    assert "bms_cutoff_retry" in ctrl._blocks[c]
+    assert not _hyst_blocked(ctrl, c)

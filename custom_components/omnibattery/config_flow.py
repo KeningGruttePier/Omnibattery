@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 from typing import Any
 
 import voluptuous as vol
@@ -36,6 +37,14 @@ from homeassistant.helpers.selector import (
     TextSelectorType,
 )
 
+from .infra.mac_tracking import (
+    CONF_MAC,
+    CONF_TRACK_MAC,
+    detect_mac,
+    evaluate_lease,
+    is_ip_based,
+    normalise_mac,
+)
 from .migration_flow import (
     LegacyDomainMigrationMixin,
     async_has_legacy_entries,
@@ -52,6 +61,21 @@ from .const import (
     CONF_SOLAR_FORECAST_SENSOR,
     CONF_SOLAR_PRODUCTION_SENSOR,
     CONF_MAX_CONTRACTED_POWER,
+    CONF_THREE_PHASE_ENABLED,
+    CONF_PHASE_1_CURRENT_SENSOR,
+    CONF_PHASE_2_CURRENT_SENSOR,
+    CONF_PHASE_3_CURRENT_SENSOR,
+    CONF_PHASE_1_FUSE_SIZE,
+    CONF_PHASE_2_FUSE_SIZE,
+    CONF_PHASE_3_FUSE_SIZE,
+    CONF_BATTERY_PHASE,
+    PHASE_L1,
+    PHASE_L2,
+    PHASE_L3,
+    PHASE_VALUES,
+    PHASE_UNASSIGNED,
+    normalize_battery_phase,
+    DEFAULT_THREE_PHASE_ENABLED,
     CONF_ENABLE_WEEKLY_FULL_CHARGE,
     CONF_WEEKLY_FULL_CHARGE_DAY,
     CONF_ENABLE_BALANCE_MONITOR,
@@ -72,6 +96,23 @@ from .const import (
     CONF_PRICE_INTEGRATION_TYPE,
     CONF_MAX_PRICE_THRESHOLD,
     CONF_DISCHARGE_PRICE_THRESHOLD,
+    CONF_SMART_PREDISCHARGE_ENABLED,
+    CONF_NEGATIVE_INJECTION_THRESHOLD,
+    CONF_PREDISCHARGE_RESERVE_SOC,
+    CONF_PREDISCHARGE_MAX_EXPORT_POWER_W,
+    CONF_PREDISCHARGE_EXPORT_MODE,
+    PREDISCHARGE_EXPORT_MODE_SELF_CONSUMPTION,
+    PREDISCHARGE_EXPORT_MODE_AUTOMATIC,
+    PREDISCHARGE_EXPORT_MODE_CUSTOM,
+    PREDISCHARGE_EXPORT_MODES,
+    DEFAULT_PREDISCHARGE_EXPORT_MODE,
+    normalize_predischarge_export_settings,
+    DEFAULT_SMART_PREDISCHARGE_ENABLED,
+    DEFAULT_NEGATIVE_INJECTION_THRESHOLD,
+    DEFAULT_PREDISCHARGE_RESERVE_SOC,
+    DEFAULT_PREDISCHARGE_MAX_EXPORT_POWER_W,
+    CONF_NEGATIVE_PRICE_CHARGING_ENABLED,
+    DEFAULT_NEGATIVE_PRICE_CHARGING_ENABLED,
     CONF_AVERAGE_PRICE_SENSOR,
     CONF_DP_PRICE_DISCHARGE_CONTROL,
     CONF_RT_PRICE_DISCHARGE_CONTROL,
@@ -115,15 +156,235 @@ from .drivers.zendure import (
 )
 from .drivers.anker import AnkerModbusDriver
 from .drivers.sessy import SessyLocalDriver
-from .drivers.hoymiles import HoymilesMqttDriver
+from .drivers.hoymiles import (
+    DEFAULT_HOYMILES_MODEL,
+    HOYMILES_MODEL_PROFILES,
+    HoymilesMqttDriver,
+    hoymiles_capacity_kwh,
+    hoymiles_model_profile,
+)
 from .pricing.nordpool import is_official_nordpool_sensor
 
 _ANKER_MAX_POWER_W = 3500
 _SESSY_MAX_CHARGE_POWER_W = 2200
 _SESSY_MAX_DISCHARGE_POWER_W = 1700
 _SESSY_DEFAULT_MIN_SOC = 5
-_HOYMILES_MAX_POWER_W = 2000
-_HOYMILES_DEFAULT_POWER_W = 1000
+_HOYMILES_MODEL_AUTO = "auto"
+
+
+def _hoymiles_model_selector(default: str = _HOYMILES_MODEL_AUTO):
+    """Build the MQTT model selector, retaining automatic discovery by default."""
+    options = [_HOYMILES_MODEL_AUTO, *(profile.key for profile in HOYMILES_MODEL_PROFILES)]
+    return vol.Required("hoymiles_model", default=default), SelectSelector(
+        SelectSelectorConfig(
+            options=options,
+            translation_key="hoymiles_model",
+            mode=SelectSelectorMode.DROPDOWN,
+        )
+    )
+
+
+def _hoymiles_model_hint(user_input: dict[str, Any]) -> str | None:
+    """Return an explicit model override or None for retained-topic discovery."""
+    selected = user_input.get("hoymiles_model", _HOYMILES_MODEL_AUTO)
+    return None if selected == _HOYMILES_MODEL_AUTO else selected
+
+
+def _parse_optional_float(value: Any) -> float | None:
+    """Parse a localized optional number while preserving an explicit zero."""
+    if value is None or value == "":
+        return None
+    return float(str(value).replace(",", "."))
+
+
+def _predischarge_export_defaults(
+    config: dict[str, Any],
+    *,
+    default_mode: str = DEFAULT_PREDISCHARGE_EXPORT_MODE,
+) -> tuple[str, float]:
+    """Return selector defaults, inferring the mode for legacy entries."""
+    stored_mode = config.get(CONF_PREDISCHARGE_EXPORT_MODE)
+    stored_power = config.get(
+        CONF_PREDISCHARGE_MAX_EXPORT_POWER_W,
+        DEFAULT_PREDISCHARGE_MAX_EXPORT_POWER_W,
+    )
+    if stored_mode is None and CONF_PREDISCHARGE_MAX_EXPORT_POWER_W not in config:
+        stored_mode = default_mode
+    return normalize_predischarge_export_settings(stored_mode, stored_power)
+
+
+def _predischarge_export_from_input(
+    user_input: dict[str, Any],
+    *,
+    fallback_mode: str,
+    fallback_power: float = 0.0,
+) -> tuple[str, float]:
+    """Normalize submitted selector data while accepting legacy test/API data."""
+    mode = user_input.get(CONF_PREDISCHARGE_EXPORT_MODE)
+    if mode is None and CONF_PREDISCHARGE_MAX_EXPORT_POWER_W not in user_input:
+        mode = fallback_mode
+    return normalize_predischarge_export_settings(
+        mode,
+        user_input.get(CONF_PREDISCHARGE_MAX_EXPORT_POWER_W, fallback_power),
+    )
+
+
+def _predischarge_export_mode_selector(default: str):
+    """Build the three-way deliberate-export selector."""
+    return vol.Required(CONF_PREDISCHARGE_EXPORT_MODE, default=default), SelectSelector(
+        SelectSelectorConfig(
+            options=list(PREDISCHARGE_EXPORT_MODES),
+            translation_key="predischarge_export_mode",
+            mode=SelectSelectorMode.LIST,
+        )
+    )
+
+
+def _predischarge_export_limit_selector(default: float):
+    """Build the custom deliberate-export limit field."""
+    return vol.Required(
+        CONF_PREDISCHARGE_MAX_EXPORT_POWER_W,
+        default=default,
+    ), NumberSelector(
+        NumberSelectorConfig(
+            min=0,
+            max=10000,
+            step=50,
+            unit_of_measurement="W",
+            mode=NumberSelectorMode.BOX,
+        )
+    )
+
+
+def _phase_sensor_schema_field(key: str, default: str | None = None):
+    """Return an optional phase current sensor field with its saved suggestion."""
+    field = (
+        vol.Optional(key, description={"suggested_value": default})
+        if default
+        else vol.Optional(key)
+    )
+    return field, EntitySelector(EntitySelectorConfig(domain="sensor"))
+
+
+def _phase_protection_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
+    """Build the protection form schema with an optional pair per phase."""
+    defaults = defaults or {}
+    schema: dict = {}
+    for key in (
+        CONF_PHASE_1_CURRENT_SENSOR,
+        CONF_PHASE_2_CURRENT_SENSOR,
+        CONF_PHASE_3_CURRENT_SENSOR,
+    ):
+        field, selector = _phase_sensor_schema_field(key, defaults.get(key))
+        schema[field] = selector
+    for key in (
+        CONF_PHASE_1_FUSE_SIZE,
+        CONF_PHASE_2_FUSE_SIZE,
+        CONF_PHASE_3_FUSE_SIZE,
+    ):
+        default = defaults.get(key)
+        field = (
+            vol.Optional(key, description={"suggested_value": default})
+            if default is not None
+            else vol.Optional(key)
+        )
+        schema[field] = NumberSelector(
+            NumberSelectorConfig(
+                min=1,
+                max=250,
+                step=1,
+                unit_of_measurement="A",
+                mode=NumberSelectorMode.BOX,
+            )
+        )
+    return vol.Schema(schema)
+
+
+def _battery_phase_schema(default: str | None = None):
+    """Return the phase selector used by battery limit and assignment forms."""
+    return vol.Required(
+        CONF_BATTERY_PHASE,
+        default=normalize_battery_phase(default),
+    ), SelectSelector(
+        SelectSelectorConfig(
+            options=[
+                {"value": PHASE_UNASSIGNED, "label": "Unassigned"},
+                {"value": PHASE_L1, "label": "L1"},
+                {"value": PHASE_L2, "label": "L2"},
+                {"value": PHASE_L3, "label": "L3"},
+            ],
+            translation_key="battery_phase",
+            mode=SelectSelectorMode.DROPDOWN,
+        )
+    )
+
+
+def _validate_phase_protection(hass, user_input: dict[str, Any]) -> dict[str, str]:
+    """Validate configured phase current sensors and fuse-size limits."""
+    errors: dict[str, str] = {}
+    phase_fields = (
+        (
+            CONF_PHASE_1_CURRENT_SENSOR,
+            CONF_PHASE_1_FUSE_SIZE,
+        ),
+        (
+            CONF_PHASE_2_CURRENT_SENSOR,
+            CONF_PHASE_2_FUSE_SIZE,
+        ),
+        (
+            CONF_PHASE_3_CURRENT_SENSOR,
+            CONF_PHASE_3_FUSE_SIZE,
+        ),
+    )
+    sensor_keys = tuple(sensor_key for sensor_key, _ in phase_fields)
+    sensor_ids = [user_input.get(key) for key in sensor_keys]
+
+    present_sensor_ids = [entity_id for entity_id in sensor_ids if entity_id]
+    if len(set(present_sensor_ids)) != len(present_sensor_ids):
+        for key, entity_id in zip(sensor_keys, sensor_ids):
+            if entity_id and present_sensor_ids.count(entity_id) > 1:
+                errors[key] = "phase_sensors_must_differ"
+
+    for sensor_key, limit_key in phase_fields:
+        entity_id = user_input.get(sensor_key)
+        raw_limit = user_input.get(limit_key)
+        sensor_present = bool(entity_id)
+        limit_present = raw_limit not in (None, "")
+        if sensor_present != limit_present:
+            errors.setdefault(
+                sensor_key if not sensor_present else limit_key,
+                "phase_sensor_and_limit_required",
+            )
+            continue
+        if not sensor_present:
+            continue
+
+        state = hass.states.get(entity_id) if entity_id else None
+        if state is None:
+            errors.setdefault(sensor_key, "phase_sensor_not_found")
+            continue
+        if not str(entity_id).startswith("sensor."):
+            errors[sensor_key] = "phase_sensor_invalid_domain"
+            continue
+        unit = state.attributes.get("unit_of_measurement")
+        if unit not in ("A", "mA"):
+            errors[sensor_key] = "phase_sensor_invalid_unit"
+
+        try:
+            value = float(raw_limit)
+        except (TypeError, ValueError):
+            value = 0.0
+        if not math.isfinite(value) or value <= 0:
+            errors[limit_key] = "phase_limit_must_be_positive"
+
+    return errors
+
+
+def _phase_assignment_is_valid(value: Any) -> bool:
+    """Return whether a stored battery phase is normalized and usable."""
+    # Empty values are accepted for legacy entries and normalized to the
+    # explicit selector value when the form is submitted.
+    return value in PHASE_VALUES or value == PHASE_UNASSIGNED or value in (None, "")
 
 
 def _soc_selector_limits(brand: str) -> tuple[int, int, int, int, int, int]:
@@ -144,16 +405,78 @@ def _soc_selector_limits(brand: str) -> tuple[int, int, int, int, int, int]:
     return min_lo, min_hi, min_default, 80, 100, 100
 
 
-def _hoymiles_apply_probe_caps(battery_data: dict, caps: dict) -> None:
+def _hoymiles_apply_probe_caps(
+    battery_data: dict, caps: dict, *, upgrade_legacy_defaults: bool = False
+) -> None:
+    previous_model = battery_data.get("hoymiles_model")
+    detected_model = caps.get("hoymiles_model")
+    if detected_model:
+        battery_data["hoymiles_model"] = detected_model
+    if caps.get("hoymiles_model_label"):
+        battery_data["hoymiles_model_label"] = caps["hoymiles_model_label"]
     for source, target in (("device_max_charge_power", "device_max_charge_power"),
                            ("device_max_discharge_power", "device_max_discharge_power")):
         if isinstance(caps.get(source), (int, float)) and caps[source] > 0:
-            battery_data[target] = min(_HOYMILES_MAX_POWER_W, int(caps[source]))
+            battery_data[target] = int(caps[source])
+
+    capacity = caps.get("battery_capacity_kwh")
+    if (
+        (not isinstance(capacity, (int, float)) or capacity <= 0)
+        and (detected_model or previous_model)
+    ):
+        capacity = hoymiles_capacity_kwh(
+            detected_model or previous_model,
+            battery_data.get("device_max_charge_power"),
+            battery_data.get("device_max_discharge_power"),
+        )
+    if not isinstance(capacity, (int, float)) or capacity <= 0:
+        capacity = None
+
+    # Entries created by the original MS-A2-only flow have no model marker and
+    # persist its 1000 W / 2.24 kWh defaults. When reconfiguration identifies a
+    # different product, replace only those indistinguishable legacy defaults.
+    detected_profile = hoymiles_model_profile(detected_model)
+    if upgrade_legacy_defaults and previous_model is None and detected_profile:
+        for key, device_key, legacy_default, profile_default in (
+            ("max_charge_power", "device_max_charge_power", 1000, detected_profile.max_charge_power_w),
+            ("max_discharge_power", "device_max_discharge_power", 1000, detected_profile.max_discharge_power_w),
+        ):
+            if int(battery_data.get(key, legacy_default) or 0) == legacy_default:
+                battery_data[key] = int(
+                    battery_data.get(device_key) or profile_default
+                )
+        if float(battery_data.get("battery_capacity_kwh", 2.24) or 0) == 2.24:
+            battery_data["battery_capacity_kwh"] = capacity
+    elif "battery_capacity_kwh" not in battery_data and capacity:
+        battery_data["battery_capacity_kwh"] = capacity
 
 
 def _hoymiles_power_ceilings(battery_data: dict) -> tuple[int, int]:
-    return tuple(max(100, min(_HOYMILES_MAX_POWER_W, int(battery_data.get(key) or _HOYMILES_DEFAULT_POWER_W)))
-                 for key in ("device_max_charge_power", "device_max_discharge_power"))
+    profile = hoymiles_model_profile(
+        battery_data.get("hoymiles_model") or DEFAULT_HOYMILES_MODEL
+    )
+    default_charge = profile.max_charge_power_w if profile else 1000
+    default_discharge = profile.max_discharge_power_w if profile else 1000
+    charge_maximum = profile.max_system_charge_power_w if profile else 10000
+    discharge_maximum = profile.max_system_discharge_power_w if profile else 10000
+    return (
+        max(100, min(charge_maximum, int(battery_data.get("device_max_charge_power") or default_charge))),
+        max(100, min(discharge_maximum, int(battery_data.get("device_max_discharge_power") or default_discharge))),
+    )
+
+
+def _hoymiles_capacity_default(battery_data: dict) -> float:
+    capacity = battery_data.get("battery_capacity_kwh")
+    if isinstance(capacity, (int, float)) and capacity > 0:
+        return round(float(capacity), 2)
+    model = battery_data.get("hoymiles_model")
+    if model:
+        return hoymiles_capacity_kwh(
+            model,
+            battery_data.get("device_max_charge_power"),
+            battery_data.get("device_max_discharge_power"),
+        ) or 2.24
+    return 2.24
 
 
 def _anker_apply_probe_caps(battery_data: dict, caps: dict) -> None:
@@ -342,10 +665,31 @@ def _scope_value_in_options(scope: str, opts: list[dict]) -> bool:
     return any(o["value"] == scope for o in opts)
 
 
-def _battery_hardware_max(bcfg: dict) -> int:
-    """Return the battery's hardware max power (W) from MAX_POWER_BY_VERSION."""
-    version = bcfg.get(CONF_BATTERY_VERSION, DEFAULT_VERSION)
-    return int(MAX_POWER_BY_VERSION.get(version, 2500))
+def _battery_hardware_max(bcfg: dict, power_key: str | None = None) -> int:
+    """Return the battery's hardware max power (W) for slot selectors.
+
+    Marstek batteries identify their hardware envelope through
+    ``battery_version``. Other drivers persist their discovered/configured
+    charge and discharge ceilings instead, so falling back to the Marstek v2
+    value would incorrectly cap their time-slot overrides at 2500 W.
+    """
+    version = bcfg.get(CONF_BATTERY_VERSION)
+    if version in MAX_POWER_BY_VERSION:
+        return int(MAX_POWER_BY_VERSION[version])
+
+    configured_limits: list[int] = []
+    keys = (power_key,) if power_key else ("max_charge_power", "max_discharge_power")
+    for key in keys:
+        try:
+            value = int(bcfg.get(key) or 0)
+        except (TypeError, ValueError):
+            continue
+        if value > 0:
+            configured_limits.append(value)
+    if configured_limits:
+        return max(configured_limits)
+
+    return int(MAX_POWER_BY_VERSION.get(DEFAULT_VERSION, 2500))
 
 
 def _max_system_hardware_power(battery_configs: list[dict]) -> int:
@@ -464,7 +808,8 @@ def _build_slot_step_b_schema(
         bcfg = battery_configs[idx]
         b_key = f"battery_{idx + 1}"
         b_prior = prior.get(b_key) or {}
-        hw_max = _battery_hardware_max(bcfg)
+        charge_max = _battery_hardware_max(bcfg, "max_charge_power")
+        discharge_max = _battery_hardware_max(bcfg, "max_discharge_power")
         if needs_soc:
             soc_min_def = b_prior.get("soc_min") or int(bcfg.get("min_soc") or DEFAULT_SLOT_SOC_MIN_FLOOR)
             soc_max_def = b_prior.get("soc_max") or int(bcfg.get("max_soc") or DEFAULT_SLOT_SOC_MAX_CEILING)
@@ -483,20 +828,20 @@ def _build_slot_step_b_schema(
                 step=1, mode=NumberSelectorMode.SLIDER,
             ))
         if needs_power:
-            charge_def = b_prior.get("max_charge_power_w") or int(bcfg.get("max_charge_power") or hw_max)
-            discharge_def = b_prior.get("max_discharge_power_w") or int(bcfg.get("max_discharge_power") or hw_max)
+            charge_def = b_prior.get("max_charge_power_w") or int(bcfg.get("max_charge_power") or charge_max)
+            discharge_def = b_prior.get("max_discharge_power_w") or int(bcfg.get("max_discharge_power") or discharge_max)
             fields[vol.Required(
                 _slot_field_key(idx, "max_charge_power_w"),
-                default=_clamp(charge_def, 100, hw_max),
+                default=_clamp(charge_def, 100, charge_max),
             )] = NumberSelector(NumberSelectorConfig(
-                min=100, max=hw_max, step=50, unit_of_measurement="W",
+                min=100, max=charge_max, step=50, unit_of_measurement="W",
                 mode=NumberSelectorMode.SLIDER,
             ))
             fields[vol.Required(
                 _slot_field_key(idx, "max_discharge_power_w"),
-                default=_clamp(discharge_def, 100, hw_max),
+                default=_clamp(discharge_def, 100, discharge_max),
             )] = NumberSelector(NumberSelectorConfig(
-                min=100, max=hw_max, step=50, unit_of_measurement="W",
+                min=100, max=discharge_max, step=50, unit_of_measurement="W",
                 mode=NumberSelectorMode.SLIDER,
             ))
     return vol.Schema(fields)
@@ -584,10 +929,76 @@ def _finalize_slot(step_a: dict, step_b: dict | None) -> dict:
     }
 
 
+
+def _mac_tracking_schema(defaults: dict) -> dict:
+    """Schema entries for the per-battery "find me again by MAC" opt-in.
+
+    Offered only for batteries addressed by IP; serial, ESPHome and MQTT are
+    reached by a device path or device id, so they have no address that can
+    drift. Defaults to off, so an install that never touches it is unaffected.
+    """
+    return {
+        vol.Optional(
+            CONF_TRACK_MAC, default=bool(defaults.get(CONF_TRACK_MAC, False))
+        ): BooleanSelector(),
+        vol.Optional(CONF_MAC, default=defaults.get(CONF_MAC) or ""): str,
+    }
+
+
+def _mac_defaults(hass, battery: dict) -> dict:
+    """Battery values with the MAC pre-filled from Home Assistant's DHCP cache.
+
+    Home Assistant keeps the leases it has seen, so on a setup where it shares a
+    network with the batteries the field arrives already filled and the user
+    only ticks the box. Where that cache is empty — Home Assistant on another
+    subnet, or in a container without host networking — the field stays blank
+    and is typed in by hand. The import is local and guarded because the dhcp
+    component is not a declared dependency of this integration.
+    """
+    defaults = dict(battery)
+    if defaults.get(CONF_MAC):
+        return defaults
+    try:
+        from homeassistant.components import dhcp
+
+        discovered = dhcp.async_discovered_service_info(hass)
+    except Exception as err:  # noqa: BLE001 - absence of the cache is not an error
+        # Expected on a large part of the supported range: the helper does not
+        # exist before recent Home Assistant releases, and the dhcp component
+        # itself may be absent. Log it so an empty field is explainable rather
+        # than mysterious; the user types the MAC by hand.
+        _LOGGER.debug("MAC auto-detection unavailable, manual entry required: %s", err)
+        return defaults
+    if detected := detect_mac(discovered or [], defaults.get(CONF_HOST) or ""):
+        defaults[CONF_MAC] = detected
+    return defaults
+
+
+def _validate_mac_tracking(user_input: dict) -> str | None:
+    """Return an error key when tracking is enabled without a usable MAC.
+
+    Refusing here rather than storing a malformed value keeps the lookup in
+    ``evaluate_lease`` a plain comparison: whatever is stored is already
+    normalised, so a lease can never silently fail to match.
+    """
+    if not user_input.get(CONF_TRACK_MAC):
+        return None
+    if normalise_mac(user_input.get(CONF_MAC)) is None:
+        return "invalid_mac"
+    return None
+
+
+def _apply_mac_tracking(user_input: dict, merged: dict) -> None:
+    """Persist the opt-in and the normalised MAC onto a battery entry."""
+    enabled = bool(user_input.get(CONF_TRACK_MAC))
+    merged[CONF_TRACK_MAC] = enabled
+    merged[CONF_MAC] = (normalise_mac(user_input.get(CONF_MAC)) or "") if enabled else ""
+
+
 class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Omnibattery."""
 
-    VERSION = 10
+    VERSION = 11
 
     def __init__(self):
         """Initialize the config flow."""
@@ -670,11 +1081,11 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
             if solar_sensor:
                 solar_state = self.hass.states.get(solar_sensor)
                 if solar_state is None:
-                    errors[CONF_SOLAR_PRODUCTION_SENSOR] = "sensor_not_found"
+                    errors[CONF_SOLAR_PRODUCTION_SENSOR] = "solar_production_sensor_not_found"
                 else:
                     unit = solar_state.attributes.get("unit_of_measurement", "")
                     if unit not in ["W", "kW"]:
-                        errors[CONF_SOLAR_PRODUCTION_SENSOR] = "invalid_unit"
+                        errors[CONF_SOLAR_PRODUCTION_SENSOR] = "solar_production_invalid_unit"
 
             if not errors:
                 self.config_data["consumption_sensor"] = user_input["consumption_sensor"]
@@ -682,6 +1093,11 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
                 self.config_data[CONF_SOLAR_PRODUCTION_SENSOR] = solar_sensor
                 self.config_data[CONF_METER_INVERTED] = user_input.get(CONF_METER_INVERTED, False)
                 self.config_data["max_contracted_power"] = user_input["max_contracted_power"]
+                self.config_data[CONF_THREE_PHASE_ENABLED] = bool(
+                    user_input.get(CONF_THREE_PHASE_ENABLED, DEFAULT_THREE_PHASE_ENABLED)
+                )
+                if self.config_data[CONF_THREE_PHASE_ENABLED]:
+                    return await self.async_step_three_phase()
                 return await self.async_step_batteries()
 
         return self.async_show_form(
@@ -702,9 +1118,42 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
                         EntitySelector(EntitySelectorConfig(domain="sensor")),
                     vol.Optional(CONF_SOLAR_PRODUCTION_SENSOR):
                         EntitySelector(EntitySelectorConfig(domain="sensor")),
+                    vol.Optional(
+                        CONF_THREE_PHASE_ENABLED,
+                        default=DEFAULT_THREE_PHASE_ENABLED,
+                    ): BooleanSelector(),
                 }
             ),
             errors=errors if errors else None,
+        )
+
+    async def async_step_three_phase(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Configure the optional per-phase safety sensors and limits."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            errors = _validate_phase_protection(self.hass, user_input)
+            if not errors:
+                self.config_data.update(
+                    {
+                        key: user_input.get(key)
+                        for key in (
+                            CONF_PHASE_1_CURRENT_SENSOR,
+                            CONF_PHASE_2_CURRENT_SENSOR,
+                            CONF_PHASE_3_CURRENT_SENSOR,
+                            CONF_PHASE_1_FUSE_SIZE,
+                            CONF_PHASE_2_FUSE_SIZE,
+                            CONF_PHASE_3_FUSE_SIZE,
+                        )
+                    }
+                )
+                return await self.async_step_batteries()
+
+        return self.async_show_form(
+            step_id="three_phase",
+            data_schema=_phase_protection_schema(),
+            errors=errors or None,
         )
 
     async def async_step_restore_backup(
@@ -795,7 +1244,7 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
                                 {"value": "esphome", "label": "Marstek via LilyGo RS485 (ESPHome)"},
                                 {"value": "anker", "label": "Anker SOLIX Solarbank Max AC / 4 E5000 Pro"},
                                 {"value": "sessy", "label": "Sessy"},
-                                {"value": "hoymiles", "label": "Hoymiles MS-A2"},
+                                {"value": "hoymiles", "label": "Hoymiles MQTT"},
                             ],
                             mode=SelectSelectorMode.DROPDOWN,
                         )),
@@ -982,11 +1431,15 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
         }), errors=errors, description_placeholders={"battery_num": str(self.battery_index + 1)})
 
     async def async_step_battery_connection_hoymiles(self, user_input: dict[str, Any] | None = None) -> FlowResult:
-        """Configure an MS-A2 through Home Assistant's configured MQTT broker."""
+        """Configure a Hoymiles battery through Home Assistant's MQTT broker."""
         errors = {}
         if user_input is not None:
             device_id = user_input["device_id"].strip()
-            ok, caps = await HoymilesMqttDriver.probe(self.hass, device_id)
+            ok, caps = await HoymilesMqttDriver.probe(
+                self.hass,
+                device_id,
+                model_hint=_hoymiles_model_hint(user_input),
+            )
             if not ok:
                 errors["base"] = "cannot_connect"
             else:
@@ -994,9 +1447,11 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
                     CONF_PORT: 0, "device_id": device_id, "brand": "hoymiles"})
                 _hoymiles_apply_probe_caps(self._current_battery_data, caps)
                 return await self.async_step_battery_limits()
+        model_field, model_selector = _hoymiles_model_selector()
         return self.async_show_form(step_id="battery_connection_hoymiles", data_schema=vol.Schema({
-            vol.Required(CONF_NAME, default=f"Hoymiles MS-A2 {self.battery_index + 1}"): str,
+            vol.Required(CONF_NAME, default=f"Hoymiles {self.battery_index + 1}"): str,
             vol.Required("device_id"): str,
+            model_field: model_selector,
         }), errors=errors, description_placeholders={"battery_num": str(self.battery_index + 1)})
 
 
@@ -1044,6 +1499,7 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Step 3c: Power and SOC limits for the current battery."""
+        errors: dict[str, str] = {}
         battery_num = self.battery_index + 1
         brand = self._current_battery_data.get("brand", "marstek")
         if brand == "zendure":
@@ -1072,38 +1528,53 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
         ) = _soc_selector_limits(brand)
 
         if user_input is not None:
-            merged = dict(self._current_battery_data)
-            if brand == "anker":
-                # Power caps are device sensors (10036/10038), not setup inputs.
-                charge_w, discharge_w = _anker_power_ceilings(self._current_battery_data)
-                merged["max_charge_power"] = charge_w
-                merged["max_discharge_power"] = discharge_w
+            phase = user_input.get(CONF_BATTERY_PHASE, "")
+            if self.config_data.get(CONF_THREE_PHASE_ENABLED) and not _phase_assignment_is_valid(phase):
+                errors[CONF_BATTERY_PHASE] = "battery_phase_required"
+            if mac_error := _validate_mac_tracking(user_input):
+                errors[CONF_MAC] = mac_error
+            if errors:
+                user_input = None
             else:
-                merged["max_charge_power"] = int(user_input["max_charge_power"])
-                merged["max_discharge_power"] = int(user_input["max_discharge_power"])
-            merged["max_soc"] = int(user_input["max_soc"])
-            merged["min_soc"] = int(user_input["min_soc"])
-            _seed_software_power_limits(merged, brand)
-            # Hysteresis is mandatory; floor the percent against SOC drift.
-            merged["enable_charge_hysteresis"] = True
-            merged["charge_hysteresis_percent"] = max(
-                MIN_CHARGE_HYSTERESIS_PERCENT,
-                int(user_input.get("charge_hysteresis_percent", DEFAULT_CHARGE_HYSTERESIS_PERCENT)),
-            )
-            merged["backup_offgrid_threshold"] = int(user_input.get("backup_offgrid_threshold", 50))
-            merged[CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED] = (
-                False if brand in ("zendure", "anker", "sessy", "hoymiles")
-                else user_input.get(CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED, DEFAULT_FULL_CHARGE_VOLTAGE_TAPER_ENABLED)
-            )
-            if brand in ("zendure", "sessy", "hoymiles"):
-                merged["battery_capacity_kwh"] = round(float(user_input.get("battery_capacity_kwh", 2.24 if brand == "hoymiles" else 0.0)), 2)
-            self.battery_configs.append(merged)
-            self.battery_index += 1
+                merged = dict(self._current_battery_data)
+                if brand == "anker":
+                    # Power caps are device sensors (10036/10038), not setup inputs.
+                    charge_w, discharge_w = _anker_power_ceilings(self._current_battery_data)
+                    merged["max_charge_power"] = charge_w
+                    merged["max_discharge_power"] = discharge_w
+                else:
+                    merged["max_charge_power"] = int(user_input["max_charge_power"])
+                    merged["max_discharge_power"] = int(user_input["max_discharge_power"])
+                merged["max_soc"] = int(user_input["max_soc"])
+                merged["min_soc"] = int(user_input["min_soc"])
+                if self.config_data.get(CONF_THREE_PHASE_ENABLED):
+                    merged[CONF_BATTERY_PHASE] = normalize_battery_phase(phase)
+                _seed_software_power_limits(merged, brand)
+                # Hysteresis is mandatory; floor the percent against SOC drift.
+                merged["enable_charge_hysteresis"] = True
+                merged["charge_hysteresis_percent"] = max(
+                    MIN_CHARGE_HYSTERESIS_PERCENT,
+                    int(user_input.get("charge_hysteresis_percent", DEFAULT_CHARGE_HYSTERESIS_PERCENT)),
+                )
+                merged["backup_offgrid_threshold"] = int(user_input.get("backup_offgrid_threshold", 50))
+                merged[CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED] = (
+                    False if brand in ("zendure", "anker", "sessy", "hoymiles")
+                    else user_input.get(CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED, DEFAULT_FULL_CHARGE_VOLTAGE_TAPER_ENABLED)
+                )
+                if brand in ("zendure", "sessy", "hoymiles"):
+                    capacity_default = (
+                        _hoymiles_capacity_default(self._current_battery_data)
+                        if brand == "hoymiles" else 0.0
+                    )
+                    merged["battery_capacity_kwh"] = round(float(user_input.get("battery_capacity_kwh", capacity_default)), 2)
+                _apply_mac_tracking(user_input, merged)
+                self.battery_configs.append(merged)
+                self.battery_index += 1
 
-            if self.battery_index >= self.config_data["num_batteries"]:
-                self.config_data["batteries"] = self.battery_configs
-                return await self.async_step_time_slots()
-            return await self.async_step_battery_brand()
+                if self.battery_index >= self.config_data["num_batteries"]:
+                    self.config_data["batteries"] = self.battery_configs
+                    return await self.async_step_time_slots()
+                return await self.async_step_battery_brand()
 
         _schema: dict = {}
         if brand != "anker":
@@ -1138,12 +1609,26 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
                 NumberSelectorConfig(min=0.01, max=100, step=0.01, unit_of_measurement="kWh", mode=NumberSelectorMode.BOX)
             )
         elif brand in ("zendure", "hoymiles"):
-            _schema[vol.Optional("battery_capacity_kwh", default=2.24 if brand == "hoymiles" else 0.0)] = NumberSelector(
+            capacity_default = (
+                _hoymiles_capacity_default(self._current_battery_data)
+                if brand == "hoymiles" else 0.0
+            )
+            _schema[vol.Optional("battery_capacity_kwh", default=capacity_default)] = NumberSelector(
                 NumberSelectorConfig(min=0.01 if brand == "hoymiles" else 0, max=100, step=0.01, unit_of_measurement="kWh", mode=NumberSelectorMode.BOX)
+            )
+        if self.config_data.get(CONF_THREE_PHASE_ENABLED):
+            # Keep the established L1 suggestion for a brand-new setup while
+            # allowing the explicit Unassigned option when needed.
+            phase_field, phase_selector = _battery_phase_schema(PHASE_L1)
+            _schema[phase_field] = phase_selector
+        if is_ip_based(self._current_battery_data):
+            _schema.update(
+                _mac_tracking_schema(_mac_defaults(self.hass, self._current_battery_data))
             )
         return self.async_show_form(
             step_id="battery_limits",
             data_schema=vol.Schema(_schema),
+            errors=errors or None,
             description_placeholders={"battery_num": str(battery_num)},
         )
 
@@ -1575,10 +2060,8 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
                                 errors["solar_forecast_sensor"] = "invalid_unit"
 
                 if not errors:
-                    max_price_raw = user_input.get(CONF_MAX_PRICE_THRESHOLD)
-                    max_price = float(str(max_price_raw).replace(",", ".")) if max_price_raw else None
-                    discharge_price_raw = user_input.get(CONF_DISCHARGE_PRICE_THRESHOLD)
-                    discharge_price = float(str(discharge_price_raw).replace(",", ".")) if discharge_price_raw else None
+                    max_price = _parse_optional_float(user_input.get(CONF_MAX_PRICE_THRESHOLD))
+                    discharge_price = _parse_optional_float(user_input.get(CONF_DISCHARGE_PRICE_THRESHOLD))
 
                     if max_price is not None and discharge_price is not None and discharge_price < max_price:
                         errors[CONF_DISCHARGE_PRICE_THRESHOLD] = "discharge_below_charge"
@@ -1594,7 +2077,31 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
                         self.config_data["charging_time_slot"] = None
                         self.config_data[CONF_PREDICTIVE_SAFETY_MARGIN_KWH] = user_input.get(CONF_PREDICTIVE_SAFETY_MARGIN_KWH, DEFAULT_PREDICTIVE_SAFETY_MARGIN_KWH)
                         self.config_data[CONF_PREDICTIVE_GRID_CHARGE_MARGIN_PCT] = user_input.get(CONF_PREDICTIVE_GRID_CHARGE_MARGIN_PCT, DEFAULT_PREDICTIVE_GRID_CHARGE_MARGIN_PCT)
-
+                        self.config_data[CONF_NEGATIVE_PRICE_CHARGING_ENABLED] = user_input.get(
+                            CONF_NEGATIVE_PRICE_CHARGING_ENABLED,
+                            DEFAULT_NEGATIVE_PRICE_CHARGING_ENABLED,
+                        )
+                        self.config_data[CONF_SMART_PREDISCHARGE_ENABLED] = user_input.get(
+                            CONF_SMART_PREDISCHARGE_ENABLED, DEFAULT_SMART_PREDISCHARGE_ENABLED
+                        )
+                        self.config_data[CONF_NEGATIVE_INJECTION_THRESHOLD] = user_input.get(
+                            CONF_NEGATIVE_INJECTION_THRESHOLD, DEFAULT_NEGATIVE_INJECTION_THRESHOLD
+                        )
+                        self.config_data[CONF_PREDISCHARGE_RESERVE_SOC] = user_input.get(
+                            CONF_PREDISCHARGE_RESERVE_SOC, DEFAULT_PREDISCHARGE_RESERVE_SOC
+                        )
+                        export_mode, export_power = _predischarge_export_from_input(
+                            user_input,
+                            fallback_mode=DEFAULT_PREDISCHARGE_EXPORT_MODE,
+                            fallback_power=DEFAULT_PREDISCHARGE_MAX_EXPORT_POWER_W,
+                        )
+                        self.config_data[CONF_PREDISCHARGE_EXPORT_MODE] = export_mode
+                        self.config_data[CONF_PREDISCHARGE_MAX_EXPORT_POWER_W] = export_power
+                        if (
+                            export_mode == PREDISCHARGE_EXPORT_MODE_CUSTOM
+                            and CONF_PREDISCHARGE_MAX_EXPORT_POWER_W not in user_input
+                        ):
+                            return await self.async_step_predischarge_export_limit()
                         return await self._finish_setup()
             except Exception as e:
                 _LOGGER.error("Error validating dynamic pricing config: %s", e)
@@ -1635,11 +2142,45 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
         schema_dict[vol.Optional(CONF_PREDICTIVE_GRID_CHARGE_MARGIN_PCT, default=DEFAULT_PREDICTIVE_GRID_CHARGE_MARGIN_PCT)] = NumberSelector(
             NumberSelectorConfig(min=0, max=100, step=5, unit_of_measurement="%", mode=NumberSelectorMode.BOX)
         )
-
+        schema_dict[vol.Optional(CONF_NEGATIVE_PRICE_CHARGING_ENABLED, default=DEFAULT_NEGATIVE_PRICE_CHARGING_ENABLED)] = bool
+        schema_dict[vol.Optional(CONF_SMART_PREDISCHARGE_ENABLED, default=DEFAULT_SMART_PREDISCHARGE_ENABLED)] = bool
+        schema_dict[vol.Optional(CONF_NEGATIVE_INJECTION_THRESHOLD, default=DEFAULT_NEGATIVE_INJECTION_THRESHOLD)] = NumberSelector(
+            NumberSelectorConfig(min=-2, max=2, step=0.001, unit_of_measurement="€/kWh", mode=NumberSelectorMode.BOX)
+        )
+        schema_dict[vol.Optional(CONF_PREDISCHARGE_RESERVE_SOC, default=DEFAULT_PREDISCHARGE_RESERVE_SOC)] = NumberSelector(
+            NumberSelectorConfig(min=0, max=100, step=1, unit_of_measurement="%", mode=NumberSelectorMode.BOX)
+        )
+        mode_field, mode_selector = _predischarge_export_mode_selector(
+            DEFAULT_PREDISCHARGE_EXPORT_MODE
+        )
+        schema_dict[mode_field] = mode_selector
         return self.async_show_form(
             step_id="dynamic_pricing_config",
             data_schema=vol.Schema(schema_dict),
             errors=errors,
+        )
+
+    async def async_step_predischarge_export_limit(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Configure the W limit only for the custom export policy."""
+        if user_input is not None:
+            _mode, export_power = _predischarge_export_from_input(
+                user_input,
+                fallback_mode=PREDISCHARGE_EXPORT_MODE_CUSTOM,
+            )
+            self.config_data[CONF_PREDISCHARGE_EXPORT_MODE] = PREDISCHARGE_EXPORT_MODE_CUSTOM
+            self.config_data[CONF_PREDISCHARGE_MAX_EXPORT_POWER_W] = export_power
+            return await self._finish_setup()
+
+        _mode, export_power = _predischarge_export_defaults(
+            self.config_data,
+            default_mode=PREDISCHARGE_EXPORT_MODE_CUSTOM,
+        )
+        limit_field, limit_selector = _predischarge_export_limit_selector(export_power)
+        return self.async_show_form(
+            step_id="predischarge_export_limit",
+            data_schema=vol.Schema({limit_field: limit_selector}),
         )
 
     async def async_step_realtime_price_config(
@@ -1736,6 +2277,7 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
         self.config_data.setdefault(CONF_CAPACITY_PROTECTION_EXCLUDED_DEVICES, False)
         self.config_data.setdefault(CONF_ENABLE_HOURLY_BALANCE, False)
         self.config_data.setdefault(CONF_ENABLE_SYSTEM_POWER_LIMITS, False)
+        self.config_data.setdefault(CONF_THREE_PHASE_ENABLED, DEFAULT_THREE_PHASE_ENABLED)
         self.config_data[CONF_ENABLE_BALANCE_MONITOR] = True
         return self.async_create_entry(title="Omnibattery", data=self.config_data)
 
@@ -2186,7 +2728,11 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
         errors = {}
         if user_input is not None:
             device_id = user_input["device_id"].strip()
-            ok, caps = await HoymilesMqttDriver.probe(self.hass, device_id)
+            ok, caps = await HoymilesMqttDriver.probe(
+                self.hass,
+                device_id,
+                model_hint=_hoymiles_model_hint(user_input),
+            )
             if not ok:
                 errors["base"] = "cannot_connect"
             else:
@@ -2196,21 +2742,100 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
                 updated = dict(current)
                 updated.update({CONF_NAME: user_input[CONF_NAME], CONF_HOST: device_id, CONF_PORT: 0,
                                 "device_id": device_id, "brand": "hoymiles"})
-                _hoymiles_apply_probe_caps(updated, caps)
+                _hoymiles_apply_probe_caps(
+                    updated, caps, upgrade_legacy_defaults=True
+                )
                 self._reconfigure_batteries.append(updated)
                 self.battery_index += 1
                 if self.battery_index >= len(entry.data.get("batteries", [])):
                     return self.async_update_reload_and_abort(entry, data_updates={"batteries": self._reconfigure_batteries})
                 return await self.async_step_reconfigure_battery()
+        model_field, model_selector = _hoymiles_model_selector(
+            current.get("hoymiles_model", _HOYMILES_MODEL_AUTO)
+        )
         return self.async_show_form(step_id="reconfigure_battery_hoymiles", data_schema=vol.Schema({
-            vol.Required(CONF_NAME, default=current.get(CONF_NAME, "Hoymiles MS-A2")): str,
+            vol.Required(CONF_NAME, default=current.get(CONF_NAME, "Hoymiles")): str,
             vol.Required("device_id", default=current.get("device_id", current.get(CONF_HOST, ""))): str,
+            model_field: model_selector,
         }), errors=errors, description_placeholders={"battery_num": str(self.battery_index + 1)})
 
     @staticmethod
     @callback
     def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:
         return OptionsFlowHandler(config_entry)
+
+
+    async def async_step_dhcp(self, discovery_info: Any) -> FlowResult:
+        """Follow a tracked battery when its router hands it a different address.
+
+        Reached through the ``registered_devices`` matcher in the manifest, which
+        fires for any device whose MAC sits in the device registry. All this step
+        does is turn the lease into a verdict and act on it; every guard lives in
+        ``infra.mac_tracking`` so it can be tested without a running Home
+        Assistant. It always aborts — there is no user-facing flow here.
+        """
+        reason = await self._async_apply_dhcp_lease(
+            getattr(discovery_info, "macaddress", None),
+            getattr(discovery_info, "ip", "") or "",
+        )
+        return self.async_abort(reason=reason)
+
+    def _dhcp_reachability_probe(self, entry: ConfigEntry):
+        """Return a callable answering whether battery *index* still responds.
+
+        A device can hold two addresses at once, so a lease for a new address is
+        not on its own a reason to abandon one that still works.
+        """
+
+        def _is_reachable(index: int) -> bool:
+            data = (self.hass.data.get(DOMAIN) or {}).get(entry.entry_id) or {}
+            coordinators = data.get("coordinators") or []
+            if index >= len(coordinators):
+                return False
+            return bool(getattr(coordinators[index], "is_available", False))
+
+        return _is_reachable
+
+    async def _async_apply_dhcp_lease(self, mac: Any, host: str) -> str:
+        """Move a battery onto ``host`` when exactly one may safely be moved.
+
+        Returns the abort reason, which doubles as the log line: every refusal
+        names the single guard that fired.
+        """
+        for entry in self.hass.config_entries.async_entries(DOMAIN):
+            batteries = [dict(b) for b in entry.data.get("batteries", [])]
+            verdict = evaluate_lease(
+                batteries, mac, host, self._dhcp_reachability_probe(entry)
+            )
+            if not verdict.should_update:
+                if verdict.reason not in ("no_match", "invalid_mac"):
+                    _LOGGER.debug(
+                        "DHCP lease %s -> %s not applied to %s: %s",
+                        mac, host, entry.title, verdict.reason,
+                    )
+                continue
+
+            battery = batteries[verdict.index]
+            old_host = battery.get(CONF_HOST) or ""
+            port = battery.get(CONF_PORT)
+            slave = battery.get(CONF_SLAVE_ID, DEFAULT_SLAVE_ID)
+            battery[CONF_HOST] = host
+
+            # Rewrites the device key and the entity unique_ids while keeping the
+            # entity_ids, so history and long-term statistics survive the move.
+            self._migrate_battery_registry_ids(
+                entry, old_host, port, host, port, slave, slave
+            )
+            self.hass.config_entries.async_update_entry(
+                entry, data={**entry.data, "batteries": batteries}
+            )
+            _LOGGER.info(
+                "Battery %s moved from %s to %s (MAC %s); connection updated",
+                battery.get(CONF_NAME, "?"), old_host, host, mac,
+            )
+            await self.hass.config_entries.async_reload(entry.entry_id)
+            return "ip_updated"
+        return "no_tracked_battery"
 
 
 class OptionsFlowHandler(OptionsFlow):
@@ -2313,6 +2938,10 @@ class OptionsFlowHandler(OptionsFlow):
     async def async_step_sensors(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """Configure consumption sensor and optional solar forecast sensor."""
         errors = {}
+        current_three_phase_enabled = self.config_entry.data.get(
+            CONF_THREE_PHASE_ENABLED,
+            DEFAULT_THREE_PHASE_ENABLED,
+        )
         try:
             if user_input is not None:
                 # Validate solar forecast sensor if provided
@@ -2331,11 +2960,11 @@ class OptionsFlowHandler(OptionsFlow):
                 if solar_sensor:
                     solar_state = self.hass.states.get(solar_sensor)
                     if solar_state is None:
-                        errors[CONF_SOLAR_PRODUCTION_SENSOR] = "sensor_not_found"
+                        errors[CONF_SOLAR_PRODUCTION_SENSOR] = "solar_production_sensor_not_found"
                     else:
                         unit = solar_state.attributes.get("unit_of_measurement", "")
                         if unit not in ["W", "kW"]:
-                            errors[CONF_SOLAR_PRODUCTION_SENSOR] = "invalid_unit"
+                            errors[CONF_SOLAR_PRODUCTION_SENSOR] = "solar_production_invalid_unit"
 
                 if not errors:
                     self.config_data["consumption_sensor"] = user_input["consumption_sensor"]
@@ -2343,6 +2972,15 @@ class OptionsFlowHandler(OptionsFlow):
                     self.config_data[CONF_SOLAR_PRODUCTION_SENSOR] = solar_sensor
                     self.config_data[CONF_METER_INVERTED] = user_input.get(CONF_METER_INVERTED, False)
                     self.config_data["max_contracted_power"] = user_input["max_contracted_power"]
+                    enabled = bool(
+                        user_input.get(
+                            CONF_THREE_PHASE_ENABLED,
+                            current_three_phase_enabled,
+                        )
+                    )
+                    self.config_data[CONF_THREE_PHASE_ENABLED] = enabled
+                    if enabled:
+                        return await self.async_step_three_phase()
                     return await self._save_and_finish()
 
             # Load current configuration with defensive defaults
@@ -2373,9 +3011,102 @@ class OptionsFlowHandler(OptionsFlow):
                         EntitySelector(EntitySelectorConfig(domain="sensor")),
                     vol.Optional(CONF_SOLAR_PRODUCTION_SENSOR, description={"suggested_value": current_solar} if current_solar else {}):
                         EntitySelector(EntitySelectorConfig(domain="sensor")),
+                    vol.Required(
+                        CONF_THREE_PHASE_ENABLED,
+                        default=current_three_phase_enabled,
+                    ): BooleanSelector(),
                 }
             ),
             errors=errors if errors else None,
+        )
+
+    async def async_step_three_phase(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Configure or edit the optional per-phase safety protection."""
+        errors: dict[str, str] = {}
+        current = self.config_entry.data
+        defaults = {
+            key: current.get(key)
+            for key in (
+                CONF_PHASE_1_CURRENT_SENSOR,
+                CONF_PHASE_2_CURRENT_SENSOR,
+                CONF_PHASE_3_CURRENT_SENSOR,
+                CONF_PHASE_1_FUSE_SIZE,
+                CONF_PHASE_2_FUSE_SIZE,
+                CONF_PHASE_3_FUSE_SIZE,
+            )
+        }
+        if user_input is not None:
+            errors = _validate_phase_protection(self.hass, user_input)
+            if not errors:
+                self.config_data.update(
+                    {
+                        key: user_input.get(key)
+                        for key in (
+                            CONF_PHASE_1_CURRENT_SENSOR,
+                            CONF_PHASE_2_CURRENT_SENSOR,
+                            CONF_PHASE_3_CURRENT_SENSOR,
+                            CONF_PHASE_1_FUSE_SIZE,
+                            CONF_PHASE_2_FUSE_SIZE,
+                            CONF_PHASE_3_FUSE_SIZE,
+                        )
+                    }
+                )
+                self.config_data[CONF_THREE_PHASE_ENABLED] = True
+                batteries = [dict(b) for b in current.get("batteries", [])]
+                if batteries:
+                    # Protection configuration is deliberately a two-step
+                    # operation: every physical assignment is confirmed after
+                    # the current sensors, even when an older assignment is
+                    # already saved. This makes the wiring explicit whenever
+                    # the protection settings are edited, while keeping the
+                    # saved phase as the form's initial selection.
+                    self._phase_assignment_batteries = batteries
+                    self._phase_assignment_index = 0
+                    return await self.async_step_phase_assignments()
+                return await self._save_and_finish()
+
+        return self.async_show_form(
+            step_id="three_phase",
+            data_schema=_phase_protection_schema(defaults),
+            errors=errors or None,
+        )
+
+    async def async_step_phase_assignments(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Collect every battery's physical L1/L2/L3 assignment atomically."""
+        batteries = getattr(self, "_phase_assignment_batteries", [])
+        index = getattr(self, "_phase_assignment_index", 0)
+        if index >= len(batteries):
+            self.config_data["batteries"] = batteries
+            return await self._save_and_finish()
+
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            phase = user_input.get(CONF_BATTERY_PHASE)
+            if not _phase_assignment_is_valid(phase):
+                errors[CONF_BATTERY_PHASE] = "battery_phase_required"
+            else:
+                batteries[index][CONF_BATTERY_PHASE] = normalize_battery_phase(phase)
+                self._phase_assignment_index = index + 1
+                return await self.async_step_phase_assignments()
+
+        current = batteries[index]
+        phase_field, phase_selector = _battery_phase_schema(
+            current.get(CONF_BATTERY_PHASE)
+            if _phase_assignment_is_valid(current.get(CONF_BATTERY_PHASE))
+            else PHASE_UNASSIGNED
+        )
+        return self.async_show_form(
+            step_id="phase_assignments",
+            data_schema=vol.Schema({phase_field: phase_selector}),
+            errors=errors or None,
+            description_placeholders={
+                "battery_num": str(index + 1),
+                "battery_name": str(current.get(CONF_NAME, f"Battery {index + 1}")),
+            },
         )
 
     async def async_step_batteries(self, user_input: dict[str, Any] | None = None) -> FlowResult:
@@ -2443,7 +3174,7 @@ class OptionsFlowHandler(OptionsFlow):
                                 {"value": "esphome", "label": "Marstek via LilyGo RS485 (ESPHome)"},
                                 {"value": "anker", "label": "Anker SOLIX Solarbank Max AC / 4 E5000 Pro"},
                                 {"value": "sessy", "label": "Sessy"},
-                                {"value": "hoymiles", "label": "Hoymiles MS-A2"},
+                                {"value": "hoymiles", "label": "Hoymiles MQTT"},
                             ],
                             mode=SelectSelectorMode.DROPDOWN,
                         )),
@@ -2709,23 +3440,35 @@ class OptionsFlowHandler(OptionsFlow):
 
 
     async def async_step_battery_connection_hoymiles(self, user_input: dict[str, Any] | None = None) -> FlowResult:
-        """Configure the MS-A2 MQTT device id in the options flow."""
+        """Configure a Hoymiles MQTT device id in the options flow."""
         errors = {}
         current_batteries = self.config_entry.data.get("batteries", [])
         current = current_batteries[self.battery_index] if self.battery_index < len(current_batteries) else {}
         if user_input is not None:
             device_id = user_input["device_id"].strip()
-            ok, caps = await HoymilesMqttDriver.probe(self.hass, device_id)
+            ok, caps = await HoymilesMqttDriver.probe(
+                self.hass,
+                device_id,
+                model_hint=_hoymiles_model_hint(user_input),
+            )
             if not ok:
                 errors["base"] = "cannot_connect"
             else:
                 self._current_battery_data.update({CONF_NAME: user_input[CONF_NAME], CONF_HOST: device_id,
                     CONF_PORT: 0, "device_id": device_id, "brand": "hoymiles"})
-                _hoymiles_apply_probe_caps(self._current_battery_data, caps)
+                _hoymiles_apply_probe_caps(
+                    self._current_battery_data,
+                    caps,
+                    upgrade_legacy_defaults=bool(current),
+                )
                 return await self.async_step_battery_limits()
+        model_field, model_selector = _hoymiles_model_selector(
+            current.get("hoymiles_model", _HOYMILES_MODEL_AUTO)
+        )
         return self.async_show_form(step_id="battery_connection_hoymiles", data_schema=vol.Schema({
-            vol.Required(CONF_NAME, default=current.get(CONF_NAME, f"Hoymiles MS-A2 {self.battery_index + 1}")): str,
+            vol.Required(CONF_NAME, default=current.get(CONF_NAME, f"Hoymiles {self.battery_index + 1}")): str,
             vol.Required("device_id", default=current.get("device_id", current.get(CONF_HOST, ""))): str,
+            model_field: model_selector,
         }), errors=errors, description_placeholders={"battery_num": str(self.battery_index + 1)})
 
     async def async_step_battery_connection_anker(self, user_input: dict[str, Any] | None = None) -> FlowResult:
@@ -2796,6 +3539,7 @@ class OptionsFlowHandler(OptionsFlow):
 
     async def async_step_battery_limits(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """Configure power and SOC limits for the current battery."""
+        errors: dict[str, str] = {}
         try:
             battery_num = self.battery_index + 1
             brand = self._current_battery_data.get("brand", "marstek")
@@ -2826,6 +3570,20 @@ class OptionsFlowHandler(OptionsFlow):
             current_batteries = self.config_entry.data.get("batteries", [])
 
             if user_input is not None:
+                phase = user_input.get(CONF_BATTERY_PHASE, "")
+                if self.config_entry.data.get(
+                    CONF_THREE_PHASE_ENABLED,
+                    self.config_data.get(CONF_THREE_PHASE_ENABLED, DEFAULT_THREE_PHASE_ENABLED),
+                ) and not _phase_assignment_is_valid(phase):
+                    errors[CONF_BATTERY_PHASE] = "battery_phase_required"
+                    user_input = None
+                if user_input is not None and (
+                    mac_error := _validate_mac_tracking(user_input)
+                ):
+                    errors[CONF_MAC] = mac_error
+                    user_input = None
+
+            if user_input is not None:
                 # Start from existing battery config to preserve persisted keys not in this form.
                 if self.battery_index < len(current_batteries):
                     merged = dict(current_batteries[self.battery_index])
@@ -2841,6 +3599,11 @@ class OptionsFlowHandler(OptionsFlow):
                     merged["max_discharge_power"] = int(user_input["max_discharge_power"])
                 merged["max_soc"] = int(user_input["max_soc"])
                 merged["min_soc"] = int(user_input["min_soc"])
+                if self.config_entry.data.get(
+                    CONF_THREE_PHASE_ENABLED,
+                    self.config_data.get(CONF_THREE_PHASE_ENABLED, DEFAULT_THREE_PHASE_ENABLED),
+                ):
+                    merged[CONF_BATTERY_PHASE] = normalize_battery_phase(phase)
                 _seed_software_power_limits(merged, brand)
                 # Hysteresis is mandatory; floor the percent against SOC drift.
                 merged["enable_charge_hysteresis"] = True
@@ -2854,7 +3617,12 @@ class OptionsFlowHandler(OptionsFlow):
                     else user_input.get(CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED, DEFAULT_FULL_CHARGE_VOLTAGE_TAPER_ENABLED)
                 )
                 if brand in ("zendure", "sessy", "hoymiles"):
-                    merged["battery_capacity_kwh"] = round(float(user_input.get("battery_capacity_kwh", 2.24 if brand == "hoymiles" else 0.0)), 2)
+                    capacity_default = (
+                        _hoymiles_capacity_default(self._current_battery_data)
+                        if brand == "hoymiles" else 0.0
+                    )
+                    merged["battery_capacity_kwh"] = round(float(user_input.get("battery_capacity_kwh", capacity_default)), 2)
+                _apply_mac_tracking(user_input, merged)
                 self.battery_configs.append(merged)
                 self.battery_index += 1
 
@@ -2865,7 +3633,8 @@ class OptionsFlowHandler(OptionsFlow):
                 return await self.async_step_battery_brand()
 
             if self.battery_index < len(current_batteries):
-                current_battery = current_batteries[self.battery_index]
+                current_battery = dict(current_batteries[self.battery_index])
+                current_battery.update(self._current_battery_data)
                 defaults = {
                     "max_charge_power": min(current_battery.get("max_charge_power", max_charge_power), max_charge_power),
                     "max_discharge_power": min(current_battery.get("max_discharge_power", max_discharge_power), max_discharge_power),
@@ -2880,7 +3649,14 @@ class OptionsFlowHandler(OptionsFlow):
                         CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED,
                         DEFAULT_FULL_CHARGE_VOLTAGE_TAPER_ENABLED,
                     ),
-                    "battery_capacity_kwh": current_battery.get("battery_capacity_kwh", 2.24 if brand == "hoymiles" else 0.0),
+                    "battery_capacity_kwh": current_battery.get(
+                        "battery_capacity_kwh",
+                        _hoymiles_capacity_default(self._current_battery_data)
+                        if brand == "hoymiles" else 0.0,
+                    ),
+                    CONF_BATTERY_PHASE: normalize_battery_phase(
+                        current_battery.get(CONF_BATTERY_PHASE, PHASE_UNASSIGNED)
+                    ),
                 }
             else:
                 defaults = {
@@ -2903,7 +3679,11 @@ class OptionsFlowHandler(OptionsFlow):
                     "charge_hysteresis_percent": DEFAULT_CHARGE_HYSTERESIS_PERCENT,
                     "backup_offgrid_threshold": 50,
                     CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED: DEFAULT_FULL_CHARGE_VOLTAGE_TAPER_ENABLED,
-                    "battery_capacity_kwh": 2.24 if brand == "hoymiles" else 0.0,
+                    "battery_capacity_kwh": (
+                        _hoymiles_capacity_default(self._current_battery_data)
+                        if brand == "hoymiles" else 0.0
+                    ),
+                    CONF_BATTERY_PHASE: PHASE_UNASSIGNED,
                 }
         except Exception as e:
             _LOGGER.error("Error in options flow battery_limits step: %s", e, exc_info=True)
@@ -2943,9 +3723,22 @@ class OptionsFlowHandler(OptionsFlow):
             _schema[vol.Optional("battery_capacity_kwh", default=defaults["battery_capacity_kwh"])] = NumberSelector(
                 NumberSelectorConfig(min=0.01 if brand == "hoymiles" else 0, max=100, step=0.01, unit_of_measurement="kWh", mode=NumberSelectorMode.BOX)
             )
+        if self.config_entry.data.get(
+            CONF_THREE_PHASE_ENABLED,
+            self.config_data.get(CONF_THREE_PHASE_ENABLED, DEFAULT_THREE_PHASE_ENABLED),
+        ):
+            phase_field, phase_selector = _battery_phase_schema(
+                defaults.get(CONF_BATTERY_PHASE, PHASE_UNASSIGNED)
+            )
+            _schema[phase_field] = phase_selector
+        if is_ip_based(self._current_battery_data):
+            _schema.update(
+                _mac_tracking_schema(_mac_defaults(self.hass, self._current_battery_data))
+            )
         return self.async_show_form(
             step_id="battery_limits",
             data_schema=vol.Schema(_schema),
+            errors=errors or None,
             description_placeholders={"battery_num": str(battery_num)},
         )
 
@@ -3428,10 +4221,8 @@ class OptionsFlowHandler(OptionsFlow):
                                 errors["solar_forecast_sensor"] = "invalid_unit"
 
                 if not errors:
-                    max_price_raw = user_input.get(CONF_MAX_PRICE_THRESHOLD)
-                    max_price = float(str(max_price_raw).replace(",", ".")) if max_price_raw else None
-                    discharge_price_raw = user_input.get(CONF_DISCHARGE_PRICE_THRESHOLD)
-                    discharge_price = float(str(discharge_price_raw).replace(",", ".")) if discharge_price_raw else None
+                    max_price = _parse_optional_float(user_input.get(CONF_MAX_PRICE_THRESHOLD))
+                    discharge_price = _parse_optional_float(user_input.get(CONF_DISCHARGE_PRICE_THRESHOLD))
 
                     if max_price is not None and discharge_price is not None and discharge_price < max_price:
                         errors[CONF_DISCHARGE_PRICE_THRESHOLD] = "discharge_below_charge"
@@ -3447,6 +4238,38 @@ class OptionsFlowHandler(OptionsFlow):
                         self.config_data["charging_time_slot"] = None
                         self.config_data[CONF_PREDICTIVE_SAFETY_MARGIN_KWH] = user_input.get(CONF_PREDICTIVE_SAFETY_MARGIN_KWH, DEFAULT_PREDICTIVE_SAFETY_MARGIN_KWH)
                         self.config_data[CONF_PREDICTIVE_GRID_CHARGE_MARGIN_PCT] = user_input.get(CONF_PREDICTIVE_GRID_CHARGE_MARGIN_PCT, DEFAULT_PREDICTIVE_GRID_CHARGE_MARGIN_PCT)
+                        self.config_data[CONF_NEGATIVE_PRICE_CHARGING_ENABLED] = user_input.get(
+                            CONF_NEGATIVE_PRICE_CHARGING_ENABLED,
+                            existing_config.get(CONF_NEGATIVE_PRICE_CHARGING_ENABLED, DEFAULT_NEGATIVE_PRICE_CHARGING_ENABLED),
+                        )
+                        self.config_data[CONF_SMART_PREDISCHARGE_ENABLED] = user_input.get(
+                            CONF_SMART_PREDISCHARGE_ENABLED,
+                            existing_config.get(CONF_SMART_PREDISCHARGE_ENABLED, DEFAULT_SMART_PREDISCHARGE_ENABLED),
+                        )
+                        self.config_data[CONF_NEGATIVE_INJECTION_THRESHOLD] = user_input.get(
+                            CONF_NEGATIVE_INJECTION_THRESHOLD,
+                            existing_config.get(CONF_NEGATIVE_INJECTION_THRESHOLD, DEFAULT_NEGATIVE_INJECTION_THRESHOLD),
+                        )
+                        self.config_data[CONF_PREDISCHARGE_RESERVE_SOC] = user_input.get(
+                            CONF_PREDISCHARGE_RESERVE_SOC,
+                            existing_config.get(CONF_PREDISCHARGE_RESERVE_SOC, DEFAULT_PREDISCHARGE_RESERVE_SOC),
+                        )
+                        existing_export_mode, existing_export_power = _predischarge_export_defaults(
+                            existing_config,
+                            default_mode=PREDISCHARGE_EXPORT_MODE_SELF_CONSUMPTION,
+                        )
+                        export_mode, export_power = _predischarge_export_from_input(
+                            user_input,
+                            fallback_mode=existing_export_mode,
+                            fallback_power=existing_export_power,
+                        )
+                        self.config_data[CONF_PREDISCHARGE_EXPORT_MODE] = export_mode
+                        self.config_data[CONF_PREDISCHARGE_MAX_EXPORT_POWER_W] = export_power
+                        if (
+                            export_mode == PREDISCHARGE_EXPORT_MODE_CUSTOM
+                            and CONF_PREDISCHARGE_MAX_EXPORT_POWER_W not in user_input
+                        ):
+                            return await self.async_step_predischarge_export_limit()
                         return await self._save_and_finish()
             except Exception as e:
                 _LOGGER.error("Error validating dynamic pricing config: %s", e)
@@ -3460,6 +4283,23 @@ class OptionsFlowHandler(OptionsFlow):
         default_dp_discharge_control = existing_config.get(CONF_DP_PRICE_DISCHARGE_CONTROL, False)
         default_margin = existing_config.get(CONF_PREDICTIVE_SAFETY_MARGIN_KWH, DEFAULT_PREDICTIVE_SAFETY_MARGIN_KWH)
         default_grid_margin = existing_config.get(CONF_PREDICTIVE_GRID_CHARGE_MARGIN_PCT, DEFAULT_PREDICTIVE_GRID_CHARGE_MARGIN_PCT)
+        default_negative_price_enabled = existing_config.get(
+            CONF_NEGATIVE_PRICE_CHARGING_ENABLED,
+            DEFAULT_NEGATIVE_PRICE_CHARGING_ENABLED,
+        )
+        default_smart_predischarge = existing_config.get(
+            CONF_SMART_PREDISCHARGE_ENABLED, DEFAULT_SMART_PREDISCHARGE_ENABLED
+        )
+        default_negative_threshold = existing_config.get(
+            CONF_NEGATIVE_INJECTION_THRESHOLD, DEFAULT_NEGATIVE_INJECTION_THRESHOLD
+        )
+        default_reserve_soc = existing_config.get(
+            CONF_PREDISCHARGE_RESERVE_SOC, DEFAULT_PREDISCHARGE_RESERVE_SOC
+        )
+        default_export_mode = _predischarge_export_defaults(
+            existing_config,
+            default_mode=PREDISCHARGE_EXPORT_MODE_SELF_CONSUMPTION,
+        )[0]
 
         schema_dict: dict = {
             vol.Required(CONF_PRICE_INTEGRATION_TYPE, default=default_integration):
@@ -3503,11 +4343,45 @@ class OptionsFlowHandler(OptionsFlow):
         schema_dict[vol.Optional(CONF_PREDICTIVE_GRID_CHARGE_MARGIN_PCT, default=default_grid_margin)] = NumberSelector(
             NumberSelectorConfig(min=0, max=100, step=5, unit_of_measurement="%", mode=NumberSelectorMode.BOX)
         )
-
+        schema_dict[vol.Optional(CONF_NEGATIVE_PRICE_CHARGING_ENABLED, default=default_negative_price_enabled)] = bool
+        schema_dict[vol.Optional(CONF_SMART_PREDISCHARGE_ENABLED, default=default_smart_predischarge)] = bool
+        schema_dict[vol.Optional(CONF_NEGATIVE_INJECTION_THRESHOLD, default=default_negative_threshold)] = NumberSelector(
+            NumberSelectorConfig(min=-2, max=2, step=0.001, unit_of_measurement="€/kWh", mode=NumberSelectorMode.BOX)
+        )
+        schema_dict[vol.Optional(CONF_PREDISCHARGE_RESERVE_SOC, default=default_reserve_soc)] = NumberSelector(
+            NumberSelectorConfig(min=0, max=100, step=1, unit_of_measurement="%", mode=NumberSelectorMode.BOX)
+        )
+        mode_field, mode_selector = _predischarge_export_mode_selector(default_export_mode)
+        schema_dict[mode_field] = mode_selector
         return self.async_show_form(
             step_id="dynamic_pricing_config",
             data_schema=vol.Schema(schema_dict),
             errors=errors,
+        )
+
+    async def async_step_predischarge_export_limit(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Configure the W limit only for the custom export policy."""
+        if user_input is not None:
+            _mode, export_power = _predischarge_export_from_input(
+                user_input,
+                fallback_mode=PREDISCHARGE_EXPORT_MODE_CUSTOM,
+            )
+            self.config_data[CONF_PREDISCHARGE_EXPORT_MODE] = PREDISCHARGE_EXPORT_MODE_CUSTOM
+            self.config_data[CONF_PREDISCHARGE_MAX_EXPORT_POWER_W] = export_power
+            return await self._save_and_finish()
+
+        export_config = dict(self.config_entry.data)
+        export_config.update(self.config_data)
+        _mode, export_power = _predischarge_export_defaults(
+            export_config,
+            default_mode=PREDISCHARGE_EXPORT_MODE_CUSTOM,
+        )
+        limit_field, limit_selector = _predischarge_export_limit_selector(export_power)
+        return self.async_show_form(
+            step_id="predischarge_export_limit",
+            data_schema=vol.Schema({limit_field: limit_selector}),
         )
 
     async def async_step_realtime_price_config(

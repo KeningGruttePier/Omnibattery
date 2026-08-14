@@ -7,11 +7,16 @@ Charges batteries to **100% once a week** so the pack reaches the LFP top-balanc
 | Profile | Description | Switch | Default |
 | --- | --- | --- | --- | 
 | **100% charge voltage taper** | Slows charging near top voltage window to allow some minor cell balancing | `full_charge_voltage_taper` | On |
-| **Active cell balancing** | Full cell balancing - repeated slow charge/discharge near top voltage window until `cell_delta_V` drops below 0.03 V or switched off | `active_balance_mode` | Off |
 
-The 100% charge voltage taper uses the same voltage profile as a normal battery configured with `max_soc = 100`. The weekly feature only raises the target to 100%; it does not use a separate balancing algorithm.
+For Venus E models, the 100% charge voltage taper uses the same voltage profile
+as a normal battery configured with `max_soc = 100`. The weekly feature only
+raises the target to 100%; it does not use a separate balancing algorithm.
 
-Active cell balancing repeatedly cycles slow charge or discharge near the top voltage window until the measured top-voltage delta is at or below 0.03 V, or until the user turns the switch off.
+On Venus A/D with coupled packs, the normal 3.60 V stop is also bypassed and a
+reported 100% SOC from the first pack does not finish the cycle. The tapered
+200 W command remains active until the shared BMS cutoff is confirmed.
+
+For deliberate active cell balancing, use the optional [Marstek active-balance blueprint](../blueprints.md#active-cell-balancing-for-one-marstek-battery). It runs one battery at a time through the per-battery Battery Manual Mode switch and is independent of this weekly feature.
 
 !!! warning "Cell balancing"
     Active cell balancing is **very slow**. Reducing the top-of-charge cell delta by roughly 5 mV typically takes around 24 hours of cumulative time at the top of the balance window.
@@ -34,12 +39,16 @@ See [Cell balancing](cell-balance-monitor.md) for full details.
 
 ## When the cycle completes
 
-The weekly charge is marked **Complete** only when every battery is genuinely full — not merely when a cell touches the 3.60 V top voltage. A battery counts as full when either:
+The weekly charge is marked **Complete** only when every battery is genuinely full — not merely when a cell touches the 3.60 V top voltage. For Venus E models, a battery counts as full when either:
 
 - its reported SOC reaches **100%**, or
 - a **BMS cutoff** is confirmed: charge collapses to ≤10 W with the inverter in Standby for 5 consecutive cycles (~10 s). During the weekly charge this is recognised whenever the pack is in the top taper zone (≥ 3.48 V), so a pack with a drifted SOC still completes.
 
-The 60-second cell-delta measurement still runs as a diagnostic, but it no longer gates completion. On completion the configured max SOC (and the hardware cutoff register on v2) is restored, and charge hysteresis is re-enabled.
+For Venus A/D with coupled packs, the BMS cutoff is required after the tapered
+charge reaches the top-voltage path, even if the reported SOC has already
+reached 100%.
+
+The 60-second cell-delta measurement still runs as a diagnostic, but it no longer gates completion. For Venus A/D, the measurement starts after the confirmed BMS cutoff so the reduced charge is never interrupted before all coupled packs are full. On completion the configured max SOC (and the hardware cutoff register on v2) is restored, and charge hysteresis is re-enabled.
 
 The **Weekly Full Charge** sensor exposes per-battery diagnostics under its `batteries` attribute: live SOC and BMS-cutoff cycle count while charging, and a completion snapshot (`soc_at_completion`, `max_cell_voltage_at_completion`, `completion_reason`, `bms_cutoff_cycles`).
 
