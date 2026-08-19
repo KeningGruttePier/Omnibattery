@@ -700,6 +700,7 @@
           "time_slots": "Tijdslots",
           "excluded_devices": "Uitgesloten apparaten",
           "predictive_charging": "Voorspellend laden",
+          "pricing": "Elektriciteitstarieven",
           "weekly_full_charge": "Wekelijkse volledige lading",
           "charge_delay": "Zonne-oplaadvertraging",
           "temp_charge_limit": "Temperatuurbegrenzing laden",
@@ -1279,7 +1280,8 @@
         "ckw": "CKW (Zwitserland)",
         "epex": "EPEX Spot (bijv. aWATTar)",
         "entsoe": "ENTSO-e (Transparency Platform)",
-        "tibber": "Tibber (servicegebaseerd)"
+        "tibber": "Tibber (servicegebaseerd)",
+        "frank_energie": "Frank Energie"
       }
     },
     "predischarge_export_mode": {
