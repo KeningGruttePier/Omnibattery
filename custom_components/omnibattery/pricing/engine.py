@@ -34,6 +34,7 @@ from ..const import (
     PRICE_INTEGRATION_EPEX,
     PRICE_INTEGRATION_ENTSOE,
     PRICE_INTEGRATION_TIBBER,
+    PRICE_INTEGRATION_FRANK_ENERGIE,
     NORDPOOL_REFRESH_MINUTES,
     TIBBER_REFRESH_MINUTES,
     PREDICTIVE_MODE_DYNAMIC_PRICING,
@@ -92,6 +93,7 @@ _PRICE_LIST_ATTRS = {
     PRICE_INTEGRATION_CKW: ("prices",),
     PRICE_INTEGRATION_EPEX: ("data",),
     PRICE_INTEGRATION_ENTSOE: ("prices_today", "prices_tomorrow"),
+    PRICE_INTEGRATION_FRANK_ENERGIE: ("prices",),
 }
 
 
@@ -581,6 +583,8 @@ class PricingManager:
                 raw_slots = calculations.parse_epex_prices(attrs)
             elif self._controller.price_integration_type == PRICE_INTEGRATION_ENTSOE:
                 raw_slots = calculations.parse_entsoe_prices(attrs)
+            elif self._controller.price_integration_type == PRICE_INTEGRATION_FRANK_ENERGIE:
+                raw_slots = calculations.parse_frank_energie_prices(attrs)
             else:
                 # Nordpool
                 raw_slots = calculations.parse_nordpool_prices(attrs)
