@@ -125,6 +125,7 @@ from .const import (
     PRICE_INTEGRATION_EPEX,
     PRICE_INTEGRATION_ENTSOE,
     PRICE_INTEGRATION_TIBBER,
+    PRICE_INTEGRATION_FRANK_ENERGIE,
     CONF_METER_INVERTED,
     CONF_PREDICTIVE_SAFETY_MARGIN_KWH,
     DEFAULT_PREDICTIVE_SAFETY_MARGIN_KWH,
@@ -2034,6 +2035,10 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
                             prices = attrs.get("prices_today")
                             if not prices or not isinstance(prices, (list, tuple)) or len(prices) == 0:
                                 errors[CONF_PRICE_SENSOR] = "no_price_data"
+                        elif integration_type == PRICE_INTEGRATION_FRANK_ENERGIE:
+                            prices = attrs.get("prices")
+                            if not prices or not isinstance(prices, (list, tuple)) or len(prices) == 0:
+                                errors[CONF_PRICE_SENSOR] = "no_price_data"
                         else:  # Nordpool
                             if (
                                 "raw_today" not in attrs
@@ -2118,6 +2123,7 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
                             PRICE_INTEGRATION_EPEX,
                             PRICE_INTEGRATION_ENTSOE,
                             PRICE_INTEGRATION_TIBBER,
+                            PRICE_INTEGRATION_FRANK_ENERGIE,
                         ],
                         translation_key="price_integration_type",
                         mode=SelectSelectorMode.DROPDOWN,
@@ -2932,8 +2938,23 @@ class OptionsFlowHandler(OptionsFlow):
                 "time_slots",
                 "excluded_devices",
                 "predictive_charging",
+                "pricing",
             ],
         )
+
+    async def async_step_pricing(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """Jump straight to the price-source screen for the active predictive mode.
+
+        Unlike "Predictive charging", this skips the enable/disable toggle and
+        mode picker so an already-configured price source (dynamic pricing or
+        real-time price) can be edited directly. Time-slot mode or predictive
+        charging not yet enabled has no price source to edit, so it lands on
+        the dynamic pricing screen to let the user set one up from scratch.
+        """
+        mode = self.config_entry.data.get(CONF_PREDICTIVE_CHARGING_MODE, PREDICTIVE_MODE_TIME_SLOT)
+        if mode == PREDICTIVE_MODE_REALTIME_PRICE:
+            return await self.async_step_realtime_price_config()
+        return await self.async_step_dynamic_pricing_config()
 
     async def async_step_sensors(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """Configure consumption sensor and optional solar forecast sensor."""
@@ -4196,6 +4217,10 @@ class OptionsFlowHandler(OptionsFlow):
                             prices = attrs.get("prices_today")
                             if not prices or not isinstance(prices, (list, tuple)) or len(prices) == 0:
                                 errors[CONF_PRICE_SENSOR] = "no_price_data"
+                        elif integration_type == PRICE_INTEGRATION_FRANK_ENERGIE:
+                            prices = attrs.get("prices")
+                            if not prices or not isinstance(prices, (list, tuple)) or len(prices) == 0:
+                                errors[CONF_PRICE_SENSOR] = "no_price_data"
                         else:  # Nordpool
                             if (
                                 "raw_today" not in attrs
@@ -4312,6 +4337,7 @@ class OptionsFlowHandler(OptionsFlow):
                             PRICE_INTEGRATION_EPEX,
                             PRICE_INTEGRATION_ENTSOE,
                             PRICE_INTEGRATION_TIBBER,
+                            PRICE_INTEGRATION_FRANK_ENERGIE,
                         ],
                         translation_key="price_integration_type",
                         mode=SelectSelectorMode.DROPDOWN,
