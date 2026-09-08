@@ -1,6 +1,6 @@
 # Battery configuration
 
-Omnibattery can coordinate up to six batteries in one installation. Choose the
+Omnibattery can coordinate up to ten batteries in one installation. Choose the
 brand for each unit in the Home Assistant wizard, then use the corresponding
 page below for its connection fields and brand-specific limits. The control
 loop, dashboard, predictive charging and most runtime controls are shared.
@@ -12,6 +12,7 @@ loop, dashboard, predictive charging and most runtime controls are shared.
 | **Marstek** | Modbus TCP, Modbus RTU or a LilyGo/ESPHome bridge | [Marstek](marstek.md) |
 | **Zendure** | Local HTTP API | [Zendure](zendure.md) |
 | **Anker SOLIX** | Modbus TCP | [Anker SOLIX](anker.md) |
+| **Huawei SUN2000 + LUNA2000** | Modbus TCP, with Huawei Solar services or direct control | [Huawei](huawei.md) |
 | **Sessy** | Local HTTP API through the Sessy dongle | [Sessy](sessy.md) |
 | **Hoymiles MS-A2 / HiBattery** | MQTT through Home Assistant | [Hoymiles MQTT](hoymiles.md) |
 
@@ -23,7 +24,7 @@ to Home Assistant by a LilyGo bridge.
 
 ## Number of batteries
 
-Select how many battery units you have (1–6). The integration asks you to
+Select how many battery units you have (1–10). The integration asks you to
 configure each unit separately, so a mixed installation can combine supported
 brands.
 

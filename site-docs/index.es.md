@@ -3,8 +3,9 @@
 **Omnibattery** es una integración personalizada para Home Assistant que monitoriza y controla baterías solares enchufables de varias marcas. Actualmente es compatible con:
 
 - **Marstek** Venus E/C (v2/v3), Venus A y Venus D mediante Modbus TCP, Modbus RTU o un puente LilyGo RS485/ESPHome.
-- **Zendure** SolarFlow 2400 AC+, 2400 AC Pro, 1600 AC+, 800 Pro, 800 Plus y 800 mediante HTTP local.
+- **Zendure** SolarFlow 4000 Mix Pro, 4000 Mix AC+, 2400 AC+, 2400 AC Pro, 1600 AC+, 800 Pro, 800 Plus y 800 mediante HTTP local.
 - **Anker SOLIX** Solarbank Max AC y Solarbank 4 E5000 Pro mediante Modbus TCP.
+- **Huawei** SUN2000 + LUNA2000 mediante Modbus TCP (validado en SUN2000-8K-MAP0).
 - **Sessy** Home Battery mediante la API local de su dongle (se buscan testers).
 - **Hoymiles** MS-A2 mediante la integración MQTT configurada en Home Assistant.
 
@@ -20,11 +21,11 @@
 
 -   :material-battery-sync: **Multi-batería**
 
-    Coordina hasta 6 baterías con prioridades de SOC, histéresis de energía y distribución de potencia basada en la eficiencia.
+    Coordina hasta 10 baterías con prioridades de SOC, histéresis de energía y distribución de potencia basada en la eficiencia.
 
 -   :material-brand_family: **Multi-marca**
 
-    Combina baterías Marstek, Zendure, Anker SOLIX, Sessy y Hoymiles en una misma instalación, compartiendo el bucle de control, las entidades de sistema y las funciones de gestión energética.
+    Combina baterías Marstek, Zendure, Anker SOLIX, Huawei, Sessy y Hoymiles en una misma instalación, compartiendo el bucle de control, las entidades de sistema y las funciones de gestión energética.
 
 -   :material-view-dashboard: **Dashboard integrado**
 
@@ -40,7 +41,7 @@
 
 El panel se instala automáticamente como un panel lateral de Home Assistant; no necesita tarjetas HACS adicionales ni configuración YAML. Incluye tres pestañas:
 
-- **Resumen** con anillo de SOC animado, diagrama de flujo energético Red↔Casa↔Batería↔Solar, diagnósticos y una cuadrícula de gráficos 2×2
+- **Resumen** con anillo de SOC animado, diagrama de flujo energético Red↔Casa↔Batería↔Solar, diagnósticos, una cuadrícula de gráficos 2×2 y una línea temporal diaria real/prevista
 - **Baterías** con SOC/potencia por batería, salud y celdas, energía diaria, MPPT opcional, información de firmware y controles
 - **Control** con los ajustes de todo el sistema agrupados por funcionalidad, cada uno con su interruptor y sus parámetros
 
@@ -51,7 +52,7 @@ El panel se instala automáticamente como un panel lateral de Home Assistant; no
 - **Controlador PD (Zero Export/Import)**: ajusta en tiempo real la potencia de la batería para mantener el intercambio con la red próximo a cero.
 - **Perfiles PD de un clic y sensor de calidad de control**: selecciona una respuesta de Muy suave a Muy agresiva y consulta el veredicto de calidad para saber si la regulación es estable, oscilante o lenta.
 - **Modo de seguimiento directo sin PD** (opt-in): la batería sigue el sensor de consumo 1:1 en cada ciclo — sin integral, derivada, suavizado ni limitador de rampa — para instalaciones que prefieren seguimiento directo al controlador PD.
-- **Compatibilidad multi-marca**: combina baterías compatibles Marstek, Zendure, Anker SOLIX, Sessy y Hoymiles en la misma instalación.
+- **Compatibilidad multi-marca**: combina baterías compatibles Marstek, Zendure, Anker SOLIX, Huawei, Sessy y Hoymiles en la misma instalación.
 - **Carga predictiva**: tres modos (franja horaria, precio dinámico, precio en tiempo real — incluyendo Tibber) que cargan desde la red solo cuando el balance energético lo requiere. Utiliza una media móvil de 7 días del consumo real del hogar para decidir si es necesario cargar desde la red.
 - **Gestión multi-batería**: selección inteligente con prioridades de SOC, histéresis de energía y eficiencia por zona de operación.
 - **Franjas horarias**: controlan de forma independiente las ventanas de carga y descarga, con parámetros de SOC y potencia por franja.

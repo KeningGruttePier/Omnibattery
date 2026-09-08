@@ -1,6 +1,6 @@
 # Configuración de baterías
 
-Omnibattery puede coordinar hasta seis baterías en una misma instalación.
+Omnibattery puede coordinar hasta diez baterías en una misma instalación.
 Selecciona la marca de cada unidad en el asistente de Home Assistant y consulta
 después la página correspondiente para sus campos de conexión y límites
 específicos. El bucle de control, el dashboard, la carga predictiva y la mayor
@@ -13,6 +13,7 @@ parte de los controles en tiempo de ejecución son comunes.
 | **Marstek** | Modbus TCP, Modbus RTU o puente LilyGo/ESPHome | [Marstek](marstek.md) |
 | **Zendure** | API HTTP local | [Zendure](zendure.md) |
 | **Anker SOLIX** | Modbus TCP | [Anker SOLIX](anker.md) |
+| **Huawei SUN2000 + LUNA2000** | Modbus TCP, con servicios Huawei Solar o control directo | [Huawei](huawei.md) |
 | **Sessy** | API HTTP local mediante el dongle de Sessy | [Sessy](sessy.md) |
 | **Hoymiles MS-A2 / HiBattery** | MQTT mediante Home Assistant | [Hoymiles MQTT](hoymiles.md) |
 
@@ -24,7 +25,7 @@ batería se exponga a Home Assistant mediante un puente LilyGo.
 
 ## Número de baterías
 
-Selecciona cuántas unidades tienes (1–6). La integración te pedirá configurar
+Selecciona cuántas unidades tienes (1–10). La integración te pedirá configurar
 cada unidad por separado, por lo que una instalación mixta puede combinar
 marcas compatibles.
 
